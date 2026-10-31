@@ -10,7 +10,7 @@
 
 use std::rc::Rc;
 
-use objc2::{ClassType, MainThreadOnly, define_class, runtime::NSObject};
+use objc2::{ClassType, MainThreadOnly, define_class, msg_send, rc::Retained, runtime::NSObject};
 use objc2_foundation::{NSObjectProtocol, NSSet};
 use objc2_ui_kit::{
     UIOpenURLContext, UIResponder, UIScene, UISceneConnectionOptions, UISceneDelegate,
@@ -54,8 +54,16 @@ define_class!(
             window::scene_connected(window_scene, mtm);
             shared.scene_connected(shared::scene_key(scene), mtm);
             // A cold launch from a link carries the URLs here instead of in
-            // `scene:openURLContexts:`; GPUI has launched by now.
-            shared.deliver_urls(urls(&options.URLContexts()));
+            // `scene:openURLContexts:`; GPUI has launched by now. The header
+            // declares the set nonnull, but UIKit returns nil when the launch
+            // carried no URL, and objc2's typed getter panics on nil.
+            // SAFETY: `URLContexts` takes no arguments and returns an
+            // `NSSet<UIOpenURLContext>` or nil; `Option` admits both.
+            let contexts: Option<Retained<NSSet<UIOpenURLContext>>> =
+                unsafe { msg_send![options, URLContexts] };
+            if let Some(contexts) = contexts {
+                shared.deliver_urls(urls(&contexts));
+            }
         }
 
         #[unsafe(method(sceneDidDisconnect:))]
