@@ -22,6 +22,7 @@ dispatch2.workspace           = true
 etagere.workspace             = true
 font-kit.workspace            = true
 foreign-types.workspace       = true
+futures-channel.workspace     = true
 gpui.workspace                = true
 image.workspace               = true
 metal.workspace               = true

@@ -32,11 +32,6 @@ pub use platform::IosPlatform;
 
 /// The GPUI application on iPadOS, the counterpart of
 /// `gpui_platform::application()` on desktop targets.
-///
-/// Wave 0 skeleton: the platform stream replaces the body with
-/// `gpui::Application::with_platform(Rc::new(IosPlatform::new()))` once
-/// `IosPlatform` implements `gpui::Platform`.
-#[allow(clippy::todo)]
 pub fn application() -> gpui::Application {
-    todo!("platform stream")
+    gpui::Application::with_platform(std::rc::Rc::new(IosPlatform::new()))
 }
