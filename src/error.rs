@@ -4,15 +4,6 @@ use thiserror::Error;
 /// `anyhow::Result`, so these convert at that boundary and keep their source.
 #[derive(Debug, Error)]
 pub enum Error {
-    /// No Metal device, which every iPad that runs iPadOS 17 has.
-    #[error("no Metal device is available")]
-    NoMetalDevice,
-    /// A Metal shader library or pipeline failed to build.
-    #[error("Metal {stage} failed: {message}")]
-    Metal {
-        stage: &'static str,
-        message: String,
-    },
     /// The display link could not be created for a screen.
     #[error("CADisplayLink could not be created")]
     DisplayLink,
@@ -20,6 +11,8 @@ pub enum Error {
     /// asking the system for one was refused.
     #[error("no window scene is available for a new window")]
     NoScene,
+    #[error(transparent)]
+    Renderer(#[from] crate::renderer::Error),
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;

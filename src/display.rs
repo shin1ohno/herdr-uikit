@@ -50,10 +50,6 @@ impl IosDisplay {
     /// foreground-active scenes has focus (Stage Manager can show one on each
     /// screen), so ties go to the device's own screen and then to the screen
     /// the app saw first, and the answer holds while nothing changes.
-    #[expect(
-        dead_code,
-        reason = "the platform module calls this; that module is still a Wave 0 stub"
-    )]
     pub(crate) fn primary(mtm: MainThreadMarker) -> Self {
         let builtin = builtin_screen(mtm);
         let screen = scene_screens(&builtin, mtm)
@@ -81,19 +77,7 @@ impl IosDisplay {
         displays
     }
 
-    #[expect(
-        dead_code,
-        reason = "the window module calls this; that module is still a Wave 0 stub"
-    )]
-    pub(crate) fn find_by_id(id: DisplayId, mtm: MainThreadMarker) -> Option<Self> {
-        Self::all(mtm).into_iter().find(|display| display.id == id)
-    }
-
     /// The display for `screen`, such as the one a window's scene is on.
-    #[expect(
-        dead_code,
-        reason = "for the window module's `PlatformWindow::display`, still a Wave 0 stub"
-    )]
     pub(crate) fn for_screen(screen: Retained<UIScreen>, mtm: MainThreadMarker) -> Self {
         Self::with_builtin(screen, &builtin_screen(mtm))
     }

@@ -71,10 +71,6 @@ struct IosTextSystemState {
 }
 
 impl IosTextSystem {
-    #[allow(
-        dead_code,
-        reason = "`IosPlatform` constructs the text system; drop this once the platform stream lands"
-    )]
     pub(crate) fn new() -> Self {
         Self(RwLock::new(IosTextSystemState {
             memory_source: MemSource::empty(),

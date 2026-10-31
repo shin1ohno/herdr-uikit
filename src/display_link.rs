@@ -65,10 +65,6 @@ impl DisplayLink {
     /// A paused link that calls `callback` on every frame once started, paced
     /// by the device's own screen until [`set_screen`](Self::set_screen)
     /// names the window's.
-    #[expect(
-        dead_code,
-        reason = "the window module creates one per window; that module is still a Wave 0 stub"
-    )]
     pub(crate) fn new(mtm: MainThreadMarker, callback: FrameCallback) -> crate::Result<Self> {
         let target = DisplayLinkTarget::new(mtm, callback);
         // SAFETY: `target` is a live object that implements `step:` with the
@@ -95,10 +91,6 @@ impl DisplayLink {
     /// is paused. The window calls this with its scene's screen when it opens
     /// and whenever the scene moves to another screen; naming the current
     /// screen again does nothing. On failure the old link keeps running.
-    #[expect(
-        dead_code,
-        reason = "the window module calls this for its scene's screen; that module is still a Wave 0 stub"
-    )]
     pub(crate) fn set_screen(&mut self, screen: &UIScreen) -> crate::Result<()> {
         if self
             .screen
@@ -120,18 +112,10 @@ impl DisplayLink {
         Ok(())
     }
 
-    #[expect(
-        dead_code,
-        reason = "the window module starts it when its window shows; that module is still a Wave 0 stub"
-    )]
     pub(crate) fn start(&mut self) {
         self.link.setPaused(false);
     }
 
-    #[expect(
-        dead_code,
-        reason = "the window module stops it when its window hides; that module is still a Wave 0 stub"
-    )]
     pub(crate) fn stop(&mut self) {
         self.link.setPaused(true);
     }

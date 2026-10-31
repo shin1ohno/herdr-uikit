@@ -21,7 +21,6 @@ mod shared;
 mod slot;
 mod system;
 mod thermal;
-mod wave0_shims;
 
 use std::{
     ffi::OsString,
@@ -143,15 +142,20 @@ impl Platform for IosPlatform {
     /// Apps cannot hide one another on iPadOS, so there is nothing to show.
     fn unhide_other_apps(&self) {}
 
+    /// Screens are UIKit objects, so off the main thread there are none.
     fn displays(&self) -> Vec<Rc<dyn PlatformDisplay>> {
-        IosDisplay::all()
+        let Some(mtm) = MainThreadMarker::new() else {
+            return Vec::new();
+        };
+        IosDisplay::all(mtm)
             .into_iter()
             .map(|display| -> Rc<dyn PlatformDisplay> { Rc::new(display) })
             .collect()
     }
 
     fn primary_display(&self) -> Option<Rc<dyn PlatformDisplay>> {
-        Some(Rc::new(IosDisplay::primary()))
+        let mtm = MainThreadMarker::new()?;
+        Some(Rc::new(IosDisplay::primary(mtm)))
     }
 
     fn active_window(&self) -> Option<AnyWindowHandle> {

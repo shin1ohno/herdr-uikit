@@ -69,18 +69,6 @@ impl From<&gpui::Scene> for SceneStats {
     }
 }
 
-// The integrator owns crate::Error. Until it adds Renderer(#[from] renderer::Error),
-// adapt only at the unchanged platform constructor's reporting boundary.
-pub(super) fn into_platform_error(error: Error) -> crate::Error {
-    match error {
-        Error::NoMetalDevice => crate::Error::NoMetalDevice,
-        error => crate::Error::Metal {
-            stage: "renderer",
-            message: error.to_string(),
-        },
-    }
-}
-
 impl std::fmt::Display for SceneStats {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(

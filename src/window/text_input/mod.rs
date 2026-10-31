@@ -109,10 +109,6 @@ impl TextInputView {
     /// The focused element's text assistance: autocorrection, capitalization,
     /// suggestions, and the return key's label. Smart punctuation stays off.
     /// The window forwards `PlatformWindow::set_text_input_configuration`.
-    #[allow(
-        dead_code,
-        reason = "until the window forwards PlatformWindow::set_text_input_configuration, the traits stay at GPUI's defaults"
-    )]
     pub(crate) fn set_text_input_configuration(&self, configuration: &TextInputConfiguration) {
         self.view.request_traits(Traits::from(configuration));
     }

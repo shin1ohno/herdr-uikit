@@ -53,14 +53,10 @@ pub(crate) struct Renderer {
     path_intermediate_texture: Option<metal::Texture>,
     path_intermediate_msaa_texture: Option<metal::Texture>,
 }
-#[allow(
-    dead_code,
-    reason = "The window stream has not yet wired the renderer contract"
-)]
 impl Renderer {
     /// Creates the layer and runtime-compiled pipelines; UIKit hosts the retained layer.
     pub(crate) fn new(instance_buffer_pool: Context, transparent: bool) -> crate::Result<Self> {
-        Self::new_inner(instance_buffer_pool, transparent).map_err(error::into_platform_error)
+        Self::new_inner(instance_buffer_pool, transparent).map_err(crate::Error::from)
     }
 
     fn new_inner(instance_buffer_pool: Context, transparent: bool) -> Result<Self> {

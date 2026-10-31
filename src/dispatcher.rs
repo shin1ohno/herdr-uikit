@@ -26,13 +26,6 @@ const MAX_DELAY_NANOS: i64 = 1 << 62;
 pub(crate) struct IosDispatcher {}
 
 impl IosDispatcher {
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the platform module constructs it; that module is still a Wave 0 stub"
-        )
-    )]
     pub(crate) fn new() -> Self {
         Self {}
     }
