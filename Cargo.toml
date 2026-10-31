@@ -22,6 +22,7 @@ dispatch2.workspace           = true
 etagere.workspace             = true
 font-kit.workspace            = true
 foreign-types.workspace       = true
+futures-channel.workspace     = true
 gpui.workspace                = true
 image.workspace               = true
 metal.workspace               = true
@@ -37,6 +38,7 @@ raw-window-handle.workspace   = true
 smallvec.workspace            = true
 thiserror.workspace           = true
 tracing.workspace             = true
+uuid.workspace                = true
 
 # Build scripts run on the host, so the script checks CARGO_CFG_TARGET_OS
 # rather than a target table, which Cargo would match against the host.
