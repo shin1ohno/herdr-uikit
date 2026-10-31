@@ -1,0 +1,44 @@
+[package]
+description            = "GPUI platform for iPadOS on UIKit: lifecycle, windows, Metal rendering, Core Text, touch and keyboard input"
+edition.workspace      = true
+license.workspace      = true
+name                   = "herdr-uikit"
+publish.workspace      = true
+rust-version.workspace = true
+version.workspace      = true
+
+[lints]
+workspace = true
+
+# Every dependency is iOS-only, so the crate is empty and costs nothing when the
+# workspace builds for macOS, Linux, or Windows.
+[target.'cfg(target_os = "ios")'.dependencies]
+anyhow.workspace              = true
+block2.workspace              = true
+core-foundation.workspace     = true
+core-graphics-text.workspace  = true
+core-text.workspace           = true
+dispatch2.workspace           = true
+etagere.workspace             = true
+font-kit.workspace            = true
+foreign-types.workspace       = true
+gpui.workspace                = true
+image.workspace               = true
+metal.workspace               = true
+objc.workspace                = true
+objc2.workspace               = true
+objc2-core-foundation         = { features = ["CFCGTypes", "CFString"], workspace = true }
+objc2-foundation              = { features = ["NSArray", "NSData", "NSDictionary", "NSEnumerator", "NSGeometry", "NSNotification", "NSObjCRuntime", "NSObject", "NSRange", "NSRunLoop", "NSSet", "NSString", "NSThread", "NSURL", "NSValue"], workspace = true }
+objc2-quartz-core.workspace   = true
+objc2-ui-kit.workspace        = true
+parking_lot.workspace         = true
+pathfinder_geometry.workspace = true
+raw-window-handle.workspace   = true
+smallvec.workspace            = true
+thiserror.workspace           = true
+tracing.workspace             = true
+
+# Build scripts run on the host, so the script checks CARGO_CFG_TARGET_OS
+# rather than a target table, which Cargo would match against the host.
+[build-dependencies]
+cbindgen.workspace = true
