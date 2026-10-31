@@ -44,3 +44,8 @@ uuid.workspace                = true
 # rather than a target table, which Cargo would match against the host.
 [build-dependencies]
 cbindgen.workspace = true
+
+# examples/uikit_smoke.rs draws a UILabel with UIKit alone; only the examples
+# and tests build with these extra features.
+[target.'cfg(target_os = "ios")'.dev-dependencies]
+objc2-ui-kit = { features = ["NSText", "UIFont", "UILabel"], workspace = true }
