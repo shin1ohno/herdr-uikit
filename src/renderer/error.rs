@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 /// Structured renderer failures, retained until GPUI's reporting boundary.
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq, Eq)]
 pub enum Error {
     // keep-sorted start
     #[error("Metal returned nil allocating {resource}")]
@@ -44,7 +44,7 @@ pub enum Error {
 }
 
 /// Counts only: errors must never include terminal or scene contents.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct SceneStats {
     paths: usize,
     shadows: usize,

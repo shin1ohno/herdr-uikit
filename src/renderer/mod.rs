@@ -13,9 +13,11 @@ mod atlas;
 mod buffers;
 mod drawing;
 mod error;
+mod failures;
 mod limits;
 mod pipelines;
 mod resources;
+mod retry;
 mod shared;
 mod types;
 // keep-sorted end
@@ -32,7 +34,7 @@ use gpui::{
 use metal::MTLPixelFormat;
 use parking_lot::Mutex;
 use pipelines::*;
-use std::{ffi::c_void, mem, ops::Range, sync::Arc};
+use std::{ffi::c_void, mem, ops::Range, sync::Arc, time::Instant};
 use types::*;
 
 const SHADERS_SOURCE_FILE: &str = include_str!(concat!(env!("OUT_DIR"), "/stitched_shaders.metal"));
@@ -52,6 +54,9 @@ pub(crate) struct Renderer {
     sprite_atlas: Arc<MetalAtlas>,
     path_intermediate_texture: Option<metal::Texture>,
     path_intermediate_msaa_texture: Option<metal::Texture>,
+    path_texture_retry: retry::Retry,
+    path_texture_failures: failures::FailureLog,
+    frame_failures: failures::FailureLog,
 }
 impl Renderer {
     /// Creates the layer and runtime-compiled pipelines; UIKit hosts the retained layer.
@@ -78,6 +83,9 @@ impl Renderer {
             sprite_atlas,
             path_intermediate_texture: None,
             path_intermediate_msaa_texture: None,
+            path_texture_retry: retry::Retry::default(),
+            path_texture_failures: failures::FailureLog::default(),
+            frame_failures: failures::FailureLog::default(),
         })
     }
 
@@ -90,23 +98,46 @@ impl Renderer {
     }
     /// Resize on every layout and scale change; size is device pixels (points × scale).
     pub(crate) fn update_drawable_size(&mut self, size: Size<DevicePixels>) {
-        if self.drawable_size == size {
-            return;
+        if self.drawable_size != size {
+            self.drawable_size = size;
+            self.path_intermediate_texture = None;
+            self.path_intermediate_msaa_texture = None;
+            if size.width.0 > 0 && size.height.0 > 0 {
+                let mut drawable_size = self.layer.drawable_size();
+                drawable_size.width = size.width.0 as f64;
+                drawable_size.height = size.height.0 as f64;
+                self.layer.set_drawable_size(drawable_size);
+            }
         }
-        self.drawable_size = size;
         if size.width.0 <= 0 || size.height.0 <= 0 {
-            self.path_intermediate_texture = None;
-            self.path_intermediate_msaa_texture = None;
+            self.path_texture_retry.succeeded();
             return;
         }
-        let mut drawable_size = self.layer.drawable_size();
-        drawable_size.width = size.width.0 as f64;
-        drawable_size.height = size.height.0 as f64;
-        self.layer.set_drawable_size(drawable_size);
-        if let Err(error) = self.update_path_intermediate_textures(size) {
-            self.path_intermediate_texture = None;
-            self.path_intermediate_msaa_texture = None;
-            tracing::warn!(%error, "resizing Metal textures failed");
+        self.ensure_path_intermediate_textures(Instant::now());
+    }
+
+    fn path_intermediate_textures_ready(&self) -> bool {
+        self.path_intermediate_texture.is_some()
+            && (PATH_SAMPLE_COUNT == 1 || self.path_intermediate_msaa_texture.is_some())
+    }
+
+    fn ensure_path_intermediate_textures(&mut self, now: Instant) {
+        if self.path_intermediate_textures_ready() || !self.path_texture_retry.allows(now) {
+            return;
+        }
+        match self.update_path_intermediate_textures(self.drawable_size) {
+            Ok(()) => {
+                self.path_texture_retry.succeeded();
+                self.path_texture_failures.clear();
+            }
+            Err(error) => {
+                self.path_intermediate_texture = None;
+                self.path_intermediate_msaa_texture = None;
+                self.path_texture_retry.failed(now);
+                if let Some(error) = self.path_texture_failures.record(error) {
+                    tracing::warn!(%error, "resizing Metal textures failed");
+                }
+            }
         }
     }
 
@@ -118,12 +149,9 @@ impl Renderer {
         texture_descriptor.set_storage_mode(metal::MTLStorageMode::Private);
         texture_descriptor
             .set_usage(metal::MTLTextureUsage::RenderTarget | metal::MTLTextureUsage::ShaderRead);
-        self.path_intermediate_texture = Some(resources::texture(
-            &self.shared.device,
-            &texture_descriptor,
-        )?);
+        let texture = resources::texture(&self.shared.device, &texture_descriptor)?;
 
-        if PATH_SAMPLE_COUNT > 1 {
+        let msaa_texture = if PATH_SAMPLE_COUNT > 1 {
             // Simulator supports only Private MSAA textures, even on Apple GPUs.
             #[cfg(target_env = "sim")]
             let storage_mode = metal::MTLStorageMode::Private;
@@ -134,11 +162,13 @@ impl Renderer {
             msaa_descriptor.set_texture_type(metal::MTLTextureType::D2Multisample);
             msaa_descriptor.set_storage_mode(storage_mode);
             msaa_descriptor.set_sample_count(PATH_SAMPLE_COUNT as _);
-            self.path_intermediate_msaa_texture =
-                Some(resources::texture(&self.shared.device, &msaa_descriptor)?);
+            Some(resources::texture(&self.shared.device, &msaa_descriptor)?)
         } else {
-            self.path_intermediate_msaa_texture = None;
-        }
+            None
+        };
+        // Install the pair only after every allocation succeeds.
+        self.path_intermediate_texture = Some(texture);
+        self.path_intermediate_msaa_texture = msaa_texture;
         Ok(())
     }
 
@@ -163,6 +193,14 @@ impl Renderer {
         if self.drawable_size.width.0 <= 0 || self.drawable_size.height.0 <= 0 {
             return;
         }
+        if !scene.paths.is_empty() && !self.path_intermediate_textures_ready() {
+            // Drawing may continue without another layout callback. Retry only
+            // when the cooldown permits it, and keep incomplete frames offscreen.
+            self.ensure_path_intermediate_textures(Instant::now());
+            if !self.path_intermediate_textures_ready() {
+                return;
+            }
+        }
         let layer = self.layer.clone();
         let viewport_size = self.drawable_size;
         let drawable = if let Some(drawable) = layer.next_drawable() {
@@ -178,10 +216,13 @@ impl Renderer {
         let command_buffer = match self.render_frame(scene, drawable.texture(), viewport_size) {
             Ok(command_buffer) => command_buffer,
             Err(error) => {
-                tracing::warn!(%error, "failed to render");
+                if let Some(error) = self.frame_failures.record(error) {
+                    tracing::warn!(%error, "failed to render");
+                }
                 return;
             }
         };
+        self.frame_failures.clear();
 
         if self.presents_with_transaction {
             command_buffer.commit();

@@ -1,5 +1,8 @@
 //! Checked allocation: metal's infallible constructors wrap nil without checking it.
-#![allow(unsafe_code)]
+#![allow(
+    unsafe_code,
+    reason = "checks nullable Metal constructors before wrapping their Objective-C objects"
+)]
 use super::{Error, Result};
 use foreign_types::{ForeignType, ForeignTypeRef};
 use objc2::{msg_send, runtime::AnyObject};
@@ -64,6 +67,72 @@ fn wrap_texture(raw: *mut AnyObject) -> Result<metal::Texture> {
     }
     // SAFETY: checked non-null, owned +1 MTLTexture; the wrapper releases it once.
     Ok(unsafe { metal::Texture::from_ptr(raw.cast()) })
+}
+
+pub(super) fn command_queue(device: &metal::DeviceRef) -> Result<metal::CommandQueue> {
+    // SAFETY: device is a live MTLDevice. newCommandQueue takes no arguments
+    // and returns an owned nullable MTLCommandQueue (+1).
+    let raw: *mut AnyObject = unsafe {
+        let object = &*device.as_ptr().cast::<AnyObject>();
+        msg_send![object, newCommandQueue]
+    };
+    wrap_command_queue(raw)
+}
+
+fn wrap_command_queue(raw: *mut AnyObject) -> Result<metal::CommandQueue> {
+    if raw.is_null() {
+        return Err(Error::Allocation {
+            resource: "command queue",
+        });
+    }
+    // SAFETY: checked non-null, owned +1 MTLCommandQueue; the wrapper releases it once.
+    Ok(unsafe { metal::CommandQueue::from_ptr(raw.cast()) })
+}
+
+pub(super) fn command_buffer(queue: &metal::CommandQueueRef) -> Result<metal::CommandBuffer> {
+    // SAFETY: queue is a live MTLCommandQueue. commandBuffer takes no arguments
+    // and returns an autoreleased nullable MTLCommandBuffer (+0).
+    let raw: *mut AnyObject = unsafe {
+        let object = &*queue.as_ptr().cast::<AnyObject>();
+        msg_send![object, commandBuffer]
+    };
+    wrap_command_buffer(raw)
+}
+
+fn wrap_command_buffer(raw: *mut AnyObject) -> Result<metal::CommandBuffer> {
+    if raw.is_null() {
+        return Err(Error::Allocation {
+            resource: "command buffer",
+        });
+    }
+    // SAFETY: checked non-null, live autoreleased MTLCommandBuffer. to_owned
+    // retains the borrowed +0 object before the current autorelease pool drains.
+    Ok(unsafe { metal::CommandBufferRef::from_ptr(raw.cast()) }.to_owned())
+}
+
+pub(super) fn render_command_encoder(
+    command_buffer: &metal::CommandBufferRef,
+    descriptor: &metal::RenderPassDescriptorRef,
+) -> Result<metal::RenderCommandEncoder> {
+    // SAFETY: both objects are live Metal objects. This selector accepts the
+    // descriptor and returns an autoreleased nullable MTLRenderCommandEncoder (+0).
+    let raw: *mut AnyObject = unsafe {
+        let object = &*command_buffer.as_ptr().cast::<AnyObject>();
+        let descriptor = &*descriptor.as_ptr().cast::<AnyObject>();
+        msg_send![object, renderCommandEncoderWithDescriptor: descriptor]
+    };
+    wrap_render_command_encoder(raw)
+}
+
+fn wrap_render_command_encoder(raw: *mut AnyObject) -> Result<metal::RenderCommandEncoder> {
+    if raw.is_null() {
+        return Err(Error::Allocation {
+            resource: "render command encoder",
+        });
+    }
+    // SAFETY: checked non-null, live autoreleased MTLRenderCommandEncoder.
+    // to_owned retains the +0 object; dropping the wrapper balances that retain.
+    Ok(unsafe { metal::RenderCommandEncoderRef::from_ptr(raw.cast()) }.to_owned())
 }
 
 #[cfg(test)]

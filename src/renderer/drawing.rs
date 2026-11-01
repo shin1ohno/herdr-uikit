@@ -66,11 +66,11 @@ impl Renderer {
         viewport_size: Size<DevicePixels>,
     ) -> Result<metal::CommandBuffer> {
         let command_queue = self.shared.command_queue.clone();
-        let command_buffer = command_queue.new_command_buffer();
+        let command_buffer = resources::command_buffer(&command_queue)?;
         let alpha = if self.opaque { 1. } else { 0. };
 
         let mut command_encoder = new_command_encoder_for_texture(
-            command_buffer,
+            &command_buffer,
             texture,
             viewport_size,
             Some(metal::MTLClearColor::new(0., 0., 0., alpha)),
@@ -79,10 +79,10 @@ impl Renderer {
         for batch in scene.batches() {
             match batch {
                 PrimitiveBatch::Shadows(range) => {
-                    self.draw_shadows(range, instance_bindings, viewport_size, command_encoder)
+                    self.draw_shadows(range, instance_bindings, viewport_size, &command_encoder)
                 }
                 PrimitiveBatch::Quads(range) => {
-                    self.draw_quads(range, instance_bindings, viewport_size, command_encoder)
+                    self.draw_quads(range, instance_bindings, viewport_size, &command_encoder)
                 }
                 PrimitiveBatch::Paths(range) => {
                     let paths = &scene.paths[range];
@@ -92,11 +92,11 @@ impl Renderer {
                         paths,
                         writer,
                         viewport_size,
-                        command_buffer,
+                        &command_buffer,
                     )?;
 
                     command_encoder = new_command_encoder_for_texture(
-                        command_buffer,
+                        &command_buffer,
                         texture,
                         viewport_size,
                         None,
@@ -107,7 +107,7 @@ impl Renderer {
                             paths,
                             writer,
                             viewport_size,
-                            command_encoder,
+                            &command_encoder,
                         )
                     {
                         command_encoder.end_encoding();
@@ -115,7 +115,7 @@ impl Renderer {
                     }
                 }
                 PrimitiveBatch::Underlines(range) => {
-                    self.draw_underlines(range, instance_bindings, viewport_size, command_encoder)
+                    self.draw_underlines(range, instance_bindings, viewport_size, &command_encoder)
                 }
                 PrimitiveBatch::MonochromeSprites { texture_id, range } => self
                     .draw_monochrome_sprites(
@@ -123,7 +123,7 @@ impl Renderer {
                         range,
                         instance_bindings,
                         viewport_size,
-                        command_encoder,
+                        &command_encoder,
                     ),
                 PrimitiveBatch::PolychromeSprites { texture_id, range } => self
                     .draw_polychrome_sprites(
@@ -131,7 +131,7 @@ impl Renderer {
                         range,
                         instance_bindings,
                         viewport_size,
-                        command_encoder,
+                        &command_encoder,
                     ),
                 PrimitiveBatch::Surfaces(_) => {
                     static WARN: std::sync::Once = std::sync::Once::new();
@@ -145,7 +145,7 @@ impl Renderer {
 
         command_encoder.end_encoding();
 
-        Ok(command_buffer.to_owned())
+        Ok(command_buffer)
     }
 
     fn draw_paths_to_intermediate(
@@ -191,7 +191,8 @@ impl Renderer {
             color_attachment.set_store_action(metal::MTLStoreAction::Store);
         }
 
-        let command_encoder = command_buffer.new_render_command_encoder(render_pass_descriptor);
+        let command_encoder =
+            resources::render_command_encoder(command_buffer, render_pass_descriptor)?;
         command_encoder.set_render_pipeline_state(&self.shared.paths_rasterization_pipeline_state);
         command_encoder.set_vertex_buffer(
             PathRasterizationInputIndex::Vertices as u64,
@@ -530,12 +531,12 @@ impl Renderer {
         );
     }
 }
-fn new_command_encoder_for_texture<'a>(
-    command_buffer: &'a metal::CommandBufferRef,
-    texture: &'a metal::TextureRef,
+fn new_command_encoder_for_texture(
+    command_buffer: &metal::CommandBufferRef,
+    texture: &metal::TextureRef,
     viewport_size: Size<DevicePixels>,
     clear_color: Option<metal::MTLClearColor>,
-) -> Result<&'a metal::RenderCommandEncoderRef> {
+) -> Result<metal::RenderCommandEncoder> {
     let render_pass_descriptor = metal::RenderPassDescriptor::new();
     let color_attachment = render_pass_descriptor
         .color_attachments()
@@ -550,7 +551,8 @@ fn new_command_encoder_for_texture<'a>(
         color_attachment.set_load_action(metal::MTLLoadAction::Load);
     }
 
-    let command_encoder = command_buffer.new_render_command_encoder(render_pass_descriptor);
+    let command_encoder =
+        resources::render_command_encoder(command_buffer, render_pass_descriptor)?;
     command_encoder.set_viewport(metal::MTLViewport {
         originX: 0.0,
         originY: 0.0,

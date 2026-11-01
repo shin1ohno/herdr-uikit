@@ -108,7 +108,7 @@ impl SharedResources {
             "polychrome_sprite_fragment",
             MTLPixelFormat::BGRA8Unorm,
         )?;
-        let command_queue = device.new_command_queue();
+        let command_queue = resources::command_queue(&device)?;
         Ok(Self {
             device,
             _library: library,
