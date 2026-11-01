@@ -4,11 +4,16 @@
 //! reports two-finger trackpad scrolling and mouse wheels. Clicks and drags
 //! are touches, handled in `touch`.
 
+mod cursor;
+
+pub(crate) use cursor::set_cursor_style;
+pub(super) use cursor::{Pointer, clear_window};
+
 use std::{mem, rc::Rc};
 
 use gpui::{
-    MouseExitEvent, MouseMoveEvent, PlatformInput, ScrollDelta, ScrollWheelEvent, TouchPhase,
-    point, px,
+    CursorStyle, MouseExitEvent, MouseMoveEvent, PlatformInput, ScrollDelta, ScrollWheelEvent,
+    TouchPhase, point, px,
 };
 use objc2::{MainThreadMarker, MainThreadOnly, runtime::AnyObject, sel};
 use objc2_core_foundation::CGPoint;
@@ -95,6 +100,10 @@ impl Window {
             }
             return;
         }
+        cursor::entered(self);
+        if self.state.borrow().closed {
+            return;
+        }
         if entered {
             call(&self.callbacks.hover_status, |callback| callback(true));
         }
@@ -122,13 +131,16 @@ impl Window {
         let (exited, position, modifiers) = {
             let mut state = self.state.borrow_mut();
             state.hover_ending = false;
+            state.cursor_style = CursorStyle::Arrow;
             (
                 mem::replace(&mut state.hovered, false),
                 state.mouse_position,
                 state.modifiers,
             )
         };
+        clear_window(self);
         if exited {
+            self.pointer.invalidate();
             call(&self.callbacks.hover_status, |callback| callback(false));
             self.dispatch(PlatformInput::MouseExited(MouseExitEvent {
                 position,

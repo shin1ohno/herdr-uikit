@@ -6,8 +6,8 @@
 
 #![allow(
     unsafe_code,
-    reason = "reads UIKit's extern string constants, trait getters objc2 marks unsafe for \
-              thread safety, and NSValue's untyped CGRect payload"
+    reason = "reads UIKit constants, traits and NSValue's CGRect payload, and sends the \
+              keyboard layout guide selectors whose generated superclass feature is not enabled"
 )]
 
 use std::{
@@ -16,20 +16,24 @@ use std::{
 };
 
 use gpui::{Bounds, px, size};
-use objc2::rc::Retained;
+use objc2::{msg_send, rc::Retained};
 use objc2_core_foundation::{CGFloat, CGRect};
 use objc2_foundation::{NSDictionary, NSNotification, NSNumber, NSString, NSValue};
 use objc2_quartz_core::CATransaction;
 use objc2_ui_kit::{
     NSValueUIGeometryExtensions, UICoordinateSpace, UIKeyboardAnimationDurationUserInfoKey,
-    UIKeyboardFrameEndUserInfoKey, UIScreen, UITraitEnvironment, UIUserInterfaceStyle,
+    UIKeyboardFrameEndUserInfoKey, UIKeyboardIsLocalUserInfoKey, UILayoutGuide,
+    UISceneActivationState, UIScreen, UITraitEnvironment, UIUserInterfaceStyle,
 };
 
 use super::{
     convert,
     frame::InsetAnimation,
+    keyboard::{Context as KeyboardContext, ResignContext},
     state::{Window, call},
 };
+
+mod keyboard_geometry;
 
 impl Window {
     /// The view was laid out: its size, the window's position in the scene,
@@ -106,6 +110,7 @@ impl Window {
         // UIKit lay the view out again when they change.
         self.traits_changed();
         self.safe_area_changed();
+        self.sample_keyboard_layout();
     }
 
     /// The trait collection changed: the light or dark appearance, or the
@@ -142,6 +147,59 @@ impl Window {
             state.insets.clone()
         };
         call(&self.callbacks.insets_changed, |callback| callback(insets));
+        self.force_frame();
+    }
+
+    /// The layout guide is UIKit's window-local keyboard geometry. It also
+    /// catches a keyboard that was already visible before this view observed
+    /// its frame notifications, and scene geometry changes with no keyboard
+    /// movement. Offscreen and floating keyboards leave a zero-height guide.
+    pub(super) fn sample_keyboard_layout(&self) {
+        // SAFETY: UIView returns its UIKeyboardLayoutGuide, a UILayoutGuide
+        // subclass. These selectors exist on the minimum supported iOS 17;
+        // objc2's typed subclass needs the unused UITrackingLayoutGuide feature.
+        let guide: Retained<UILayoutGuide> = unsafe { msg_send![&*self.view, keyboardLayoutGuide] };
+        // SAFETY: this is the UIKeyboardLayoutGuide returned immediately above.
+        let uses_bottom_safe_area: bool = unsafe { msg_send![&*guide, usesBottomSafeArea] };
+        if uses_bottom_safe_area {
+            // SAFETY: as above; the setter takes an Objective-C BOOL.
+            let _: () = unsafe { msg_send![&*guide, setUsesBottomSafeArea: false] };
+        }
+        let keyboard = guide.layoutFrame();
+        let target = keyboard_geometry::bottom_inset(self.view.bounds(), keyboard) as f32;
+        let insets = {
+            let mut state = self.state.borrow_mut();
+            // The notification's target is animated on display-link ticks;
+            // sampling UIKit's final model frame here must not jump ahead.
+            if state.closed
+                || state.keyboard_animation.is_some()
+                || state.insets.ime.bottom == px(target)
+            {
+                return;
+            }
+            state.insets.ime.bottom = px(target);
+            state.insets.clone()
+        };
+        tracing::debug!(
+            ?keyboard,
+            inset = target,
+            "keyboard layout guide inset changed"
+        );
+        call(&self.callbacks.insets_changed, |callback| callback(insets));
+        self.force_frame();
+    }
+
+    /// A first-responder or input-view transition can leave the keyboard in
+    /// place, with no frame notification. Reconcile after UIKit has applied
+    /// that transition, even if only GPUI's content changed in the meantime.
+    pub(super) fn reconcile_keyboard_layout(&self) {
+        if self.state.borrow().closed {
+            return;
+        }
+        self.view.setNeedsLayout();
+        self.view.layoutIfNeeded();
+        self.sample_keyboard_layout();
+        self.force_frame();
     }
 
     /// `UIKeyboardWillChangeFrameNotification`: the software keyboard (or a
@@ -164,23 +222,36 @@ impl Window {
             return;
         };
         let screen = ui_window.screen();
-        // Every window hears of every keyboard. With an external display,
-        // one on the other screen covers nothing here. UIKit's headers say
-        // the show and hide notifications carry the keyboard's screen and
-        // this one carries none; a screen, when given, decides.
-        let elsewhere = notification
+        let relevant = self
+            .keyboard_notification_context(notification)
+            .is_relevant();
+        let screen_matches = notification
             .object()
             .and_then(|object| object.downcast::<UIScreen>().ok())
-            .is_some_and(|keyboard_screen| !ptr::eq(&*keyboard_screen, &*screen));
-        let target = if elsewhere {
-            0.0
-        } else {
-            // The keyboard's frame is in its screen's coordinate space.
-            let keyboard = self
-                .view
-                .convertRect_fromCoordinateSpace(end_frame, &screen.coordinateSpace());
-            convert::keyboard_overlap(self.view.bounds(), keyboard) as f32
+            .map(|keyboard_screen| ptr::eq(&*keyboard_screen, &*screen));
+        // Compare in the screen's coordinate space. The drawing view can be
+        // offset in a Stage Manager window, so its local bounds cannot be
+        // compared directly with the notification's screen-space rectangle.
+        let view_in_screen = self
+            .view
+            .convertRect_toCoordinateSpace(self.view.bounds(), &screen.coordinateSpace());
+        let Some(target) =
+            keyboard_geometry::screen_inset(view_in_screen, screen.bounds(), end_frame, relevant)
+        else {
+            // Other clients' notifications must leave our guide's inset and
+            // any animation in progress untouched, rather than animate to zero.
+            return;
         };
+        let target = target as f32;
+        tracing::debug!(
+            ?end_frame,
+            ?view_in_screen,
+            ?screen_matches,
+            relevant,
+            inset = target,
+            ?duration,
+            "keyboard frame inset computed"
+        );
 
         let insets = {
             let mut state = self.state.borrow_mut();
@@ -211,10 +282,76 @@ impl Window {
         match insets {
             Some(insets) => {
                 call(&self.callbacks.insets_changed, |callback| callback(insets));
+                self.force_frame();
             }
             // The display link steps the animation.
             None => self.request_frame(),
         }
+    }
+
+    pub(super) fn keyboard_notification_context(
+        &self,
+        notification: &NSNotification,
+    ) -> KeyboardContext {
+        let (active, scene, text_requested, ui_window) = {
+            let state = self.state.borrow();
+            (
+                !state.closed && state.is_active,
+                state.scene.clone(),
+                state.text_input_focused,
+                state.ui_window.clone(),
+            )
+        };
+        // Every window hears of every keyboard. With an external display,
+        // one on the other screen covers nothing here. UIKit's headers say
+        // the show and hide notifications carry the keyboard's screen and
+        // this one carries none. Matching screens still need a local keyboard
+        // and this window's active text client.
+        let screen_matches = notification
+            .object()
+            .and_then(|object| object.downcast::<UIScreen>().ok())
+            .map(|keyboard_screen| {
+                ui_window
+                    .as_ref()
+                    .is_some_and(|window| ptr::eq(&*keyboard_screen, &*window.screen()))
+            });
+        // GPUI still owns a text client after the hide key resigns UIKit's
+        // responder. Dismissal controls acquisition, not notification ownership.
+        // SAFETY: the key is an immutable UIKit string constant. A missing or
+        // non-number locality value does not establish ownership.
+        let local = notification.userInfo().is_some_and(|info| unsafe {
+            bool_value(&info, UIKeyboardIsLocalUserInfoKey) == Some(true)
+        });
+        KeyboardContext {
+            active: active
+                && scene.is_some_and(|scene| {
+                    scene.activationState() == UISceneActivationState::ForegroundActive
+                }),
+            first_responder: self.text_input.view().isFirstResponder(),
+            key_window: ui_window.is_some_and(|window| window.isKeyWindow()),
+            local,
+            screen_matches,
+            text_requested,
+        }
+    }
+
+    pub(super) fn keyboard_resign_context(&self, first_responder: bool) -> ResignContext {
+        let (active, focused, keyboard, scene, ui_window) = {
+            let state = self.state.borrow();
+            (
+                !state.closed && state.is_active,
+                state.text_input_focused,
+                state.keyboard,
+                state.scene.clone(),
+                state.ui_window.clone(),
+            )
+        };
+        let active = active
+            && scene.is_some_and(|scene| {
+                scene.activationState() == UISceneActivationState::ForegroundActive
+            })
+            && ui_window.is_some_and(|window| window.isKeyWindow());
+        keyboard.resign_context(active, first_responder, focused)
     }
 
     /// The scale of the screen the view is on: the trait collection's once
@@ -250,4 +387,9 @@ fn rect_value(info: &NSDictionary, key: &NSString) -> Option<CGRect> {
 fn double_value(info: &NSDictionary, key: &NSString) -> Option<f64> {
     let number: Retained<NSNumber> = info.objectForKey(key)?.downcast().ok()?;
     Some(number.doubleValue())
+}
+
+fn bool_value(info: &NSDictionary, key: &NSString) -> Option<bool> {
+    let number: Retained<NSNumber> = info.objectForKey(key)?.downcast().ok()?;
+    Some(number.boolValue())
 }

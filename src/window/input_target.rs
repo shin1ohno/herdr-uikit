@@ -5,9 +5,12 @@
 
 use std::rc::Weak;
 
-use gpui::{PlatformInput, PlatformInputHandler};
+use gpui::{Capslock, Modifiers, PlatformInput, PlatformInputHandler};
 
-use super::state::{Window, call};
+use super::{
+    keyboard::{ResignContext, ResignReason},
+    state::{Window, call},
+};
 
 /// A weak handle to one window's event callback and input handler. Cloning is
 /// cheap; every method is a no-op once the window has closed.
@@ -45,6 +48,86 @@ impl InputTarget {
         self.window
             .upgrade()
             .map_or(1.0, |window| window.state.borrow().scale_factor)
+    }
+
+    pub(crate) fn accessibility_label(&self) -> String {
+        self.window
+            .upgrade()
+            .map_or_else(String::new, |window| window.state.borrow().title.clone())
+    }
+
+    pub(crate) fn text_input_focused(&self) -> bool {
+        self.window
+            .upgrade()
+            .is_some_and(|window| window.state.borrow().text_input_focused)
+    }
+
+    pub(crate) fn modifiers(&self) -> (Modifiers, Capslock) {
+        self.window.upgrade().map_or_else(
+            || (Modifiers::default(), Capslock::default()),
+            |window| {
+                let state = window.state.borrow();
+                (state.modifiers, state.capslock)
+            },
+        )
+    }
+
+    /// The drawing view receives and forwards hardware keys in key-only
+    /// mode; repeats must work with either of the window's responders.
+    pub(crate) fn has_key_responder(&self) -> bool {
+        self.window.upgrade().is_some_and(|window| {
+            window.text_input.view().isFirstResponder() || window.view.isFirstResponder()
+        })
+    }
+
+    /// Keyboard visibility can change without a frame notification when
+    /// UIKit switches text clients while the keyboard is already up.
+    pub(crate) fn reconcile_keyboard_layout(&self) {
+        if let Some(window) = self.window.upgrade() {
+            window.reconcile_keyboard_layout();
+        }
+    }
+
+    pub(super) fn keyboard_needs_responder_restart(&self) -> bool {
+        self.window
+            .upgrade()
+            .is_some_and(|window| window.state.borrow().keyboard.minimized)
+    }
+
+    pub(super) fn text_input_resign_context(&self, first_responder: bool) -> ResignContext {
+        self.window
+            .upgrade()
+            .map_or_else(ResignContext::default, |window| {
+                window.keyboard_resign_context(first_responder)
+            })
+    }
+
+    pub(super) fn text_input_did_resign(&self, context: ResignContext) {
+        if let Some(window) = self.window.upgrade() {
+            window.state.borrow_mut().keyboard.resigned(context);
+        }
+    }
+
+    pub(super) fn expect_keyboard_hide(&self, reason: ResignReason) {
+        if let Some(window) = self.window.upgrade() {
+            window.state.borrow_mut().keyboard.expect_hide(reason);
+        }
+    }
+
+    pub(super) fn text_input_did_acquire(&self) {
+        if let Some(window) = self.window.upgrade() {
+            window.state.borrow_mut().keyboard.acquired();
+        }
+    }
+
+    pub(super) fn text_input_can_acquire(&self) -> bool {
+        self.window.upgrade().is_some_and(|window| {
+            let state = window.state.borrow();
+            !state.closed
+                && state.is_active
+                && state.text_input_focused
+                && state.keyboard.dismissal.allows_text()
+        })
     }
 }
 

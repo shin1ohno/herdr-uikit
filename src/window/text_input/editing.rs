@@ -66,7 +66,7 @@ impl GPUITextInputView {
         let selected = snapshot
             .selection
             .as_ref()
-            .is_some_and(|selection| !selection.is_empty());
+            .is_some_and(|(selection, _)| !selection.is_empty());
         if snapshot.marked.is_some() || selected || !self.tap_key(keymap::backspace()) {
             self.delete_in_handler();
         }

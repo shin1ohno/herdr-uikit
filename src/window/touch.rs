@@ -41,13 +41,17 @@ impl Window {
 
     fn direct_touch(&self, touch: &UITouch, event: Option<&UIEvent>, stage: TouchStage) {
         let key = TouchKey::new(touch);
+        let position = self.location(touch);
         let (id, phase) = {
             let mut state = self.state.borrow_mut();
             let touches = &mut state.touches;
+            if stage != TouchStage::Began && touches.get(&key).is_none() {
+                return;
+            }
             // A touch that began before this view saw it (in another view, or
             // before the window attached) has no `Started` in GPUI, so its
             // later phases are dropped rather than invented.
-            match stage {
+            let (id, phase) = match stage {
                 TouchStage::Began => (touches.start(key), TouchPhase::Started),
                 TouchStage::Moved => match touches.get(&key) {
                     Some(id) => (id, TouchPhase::Moved),
@@ -61,7 +65,8 @@ impl Window {
                     Some(id) => (id, TouchPhase::Cancelled),
                     None => return,
                 },
-            }
+            };
+            (id, phase)
         };
         let predicted_position = match (stage, event) {
             (TouchStage::Moved, Some(event)) => self.predicted_position(touch, event),
@@ -73,7 +78,7 @@ impl Window {
         self.dispatch(PlatformInput::Touch(TouchEvent {
             id,
             phase,
-            position: self.location(touch),
+            position,
             predicted_position,
             force,
         }));

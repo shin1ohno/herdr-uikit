@@ -3,26 +3,26 @@
 //! about, and the hardware keys in flight.
 
 use std::cell::{Cell, RefCell};
-use std::ops::Range;
 
-use gpui::{Bounds, Pixels, PlatformInputHandler};
+use gpui::{Bounds, Pixels};
 use objc2::rc::{Retained, Weak};
 use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2_ui_kit::{UITextInputDelegate, UIView};
 
 use super::super::input_target::InputTarget;
+pub(super) use super::super::text_state::TextState;
 use super::keys::KeyState;
 use super::traits::Traits;
 
-/// Whether the software keyboard may show. The view stays first responder in
-/// both modes so hardware key presses keep reaching GPUI.
+/// Whether the software keyboard may show. The drawing view owns first
+/// responder in key-only mode and forwards hardware presses here.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Mode {
     /// The focused element takes text: no `inputView`, so UIKit shows the
     /// software keyboard when no hardware keyboard is attached.
     Text,
-    /// Nothing takes text: an empty `inputView` keeps the software keyboard
-    /// hidden while hardware keys still arrive for shortcuts.
+    /// Nothing takes text: the drawing view receives hardware keys, avoiding
+    /// UIKit's assistant bar for a text responder with an empty `inputView`.
     KeyOnly,
 }
 
@@ -45,10 +45,25 @@ pub(super) enum Acquire {
 }
 
 impl Acquire {
+    /// Only a text client may acquire the text view. Key-only input belongs
+    /// to the drawing view, even when an older text request is still queued.
+    pub(super) fn for_mode(mode: Option<Mode>) -> Self {
+        match mode {
+            Some(Mode::Text) => Self::Requested,
+            Some(Mode::KeyOnly) | None => Self::Settled,
+        }
+    }
+
     /// Whether a flush calls `becomeFirstResponder` on a view that is not
     /// first responder.
     pub(super) fn wants_first_responder(self) -> bool {
         self != Self::Settled
+    }
+
+    /// Expanding a minimized keyboard requires a fresh native acquisition;
+    /// ordinary flushes and a never-shown keyboard must keep their responder.
+    pub(super) fn needs_responder_restart(self, minimized: bool) -> bool {
+        self == Self::Requested && minimized
     }
 
     /// Whether a failed attempt is the first for this request, and worth
@@ -81,7 +96,7 @@ pub(super) struct Ivars {
     pub(super) applied_traits: Cell<Traits>,
     /// The text state as UIKit last knew it, to tell it about changes GPUI
     /// made on its own (focus moves, edits by key bindings).
-    pub(super) snapshot: RefCell<Snapshot>,
+    pub(super) snapshot: RefCell<TextState>,
     /// The caret GPUI last reported, for geometry the handler cannot give.
     pub(super) caret: Cell<Option<Bounds<Pixels>>>,
     pub(super) input_delegate: RefCell<Weak<ProtocolObject<dyn UITextInputDelegate>>>,
@@ -101,7 +116,7 @@ impl Ivars {
             key_only_input_view,
             traits: Cell::new(Traits::default()),
             applied_traits: Cell::new(Traits::default()),
-            snapshot: RefCell::new(Snapshot::default()),
+            snapshot: RefCell::new(TextState::default()),
             caret: Cell::new(None),
             input_delegate: RefCell::new(Weak::default()),
             marked_text_style: RefCell::new(None),
@@ -109,17 +124,6 @@ impl Ivars {
             keys: RefCell::new(KeyState::default()),
         }
     }
-}
-
-/// The focused element's text state in UTF-16 offsets.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(super) struct Snapshot {
-    /// GPUI has an input handler for the focused element.
-    pub(super) handler: bool,
-    pub(super) selection: Option<Range<usize>>,
-    pub(super) marked: Option<Range<usize>>,
-    /// The document length, when the handler knows it.
-    pub(super) len: Option<usize>,
 }
 
 /// What UIKit must be told after the text state changed underneath it.
@@ -130,26 +134,18 @@ pub(super) enum Change {
     Text,
 }
 
-impl Snapshot {
-    /// Reads the state through the handler.
-    pub(super) fn read(handler: &mut PlatformInputHandler) -> Self {
-        Self {
-            handler: true,
-            selection: handler
-                .selected_text_range(false)
-                .map(|selection| selection.range),
-            marked: handler.marked_text_range(),
-            len: handler.text_length_utf16(),
-        }
-    }
-
-    /// Text changes (including a different handler) subsume selection
-    /// changes: UIKit re-reads the selection after `textDidChange:`.
+impl TextState {
+    /// Handler availability, composition, document size, or text at a fixed
+    /// caret require text callbacks. A caret move uses selection callbacks.
     pub(super) fn change_since(&self, old: &Self) -> Change {
         if self.handler != old.handler || self.marked != old.marked || self.len != old.len {
             Change::Text
         } else if self.selection != old.selection {
+            // Moving the caret also moves the sampled context window. That
+            // alone is a selection change, not an outside text edit.
             Change::Selection
+        } else if self.context != old.context {
+            Change::Text
         } else {
             Change::None
         }
@@ -160,7 +156,7 @@ impl Snapshot {
     /// offset they did report.
     pub(super) fn document_len(&self) -> usize {
         self.len.unwrap_or_else(|| {
-            let selection = self.selection.as_ref().map_or(0, |range| range.end);
+            let selection = self.selection.as_ref().map_or(0, |(range, _)| range.end);
             let marked = self.marked.as_ref().map_or(0, |range| range.end);
             selection.max(marked)
         })

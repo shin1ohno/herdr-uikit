@@ -15,3 +15,9 @@ error-handling, file-size, and `unsafe` rules.
 The iOS renderer omits Core Video surfaces: the pinned GPUI exposes the
 `PaintSurface` image buffer only on macOS. Unsupported surfaces are skipped
 with a one-time warning.
+
+The CSS weight and stretch mappings in `src/text_system/font_properties.rs`
+are adapted from `zed-font-kit` 0.14.1-zed's Core Text loader. Font-kit is
+Copyright 2018 The Pathfinder Project Developers and is available under the
+Apache License, Version 2.0 or the MIT license; this adaptation uses Apache-2.0.
+The iOS adaptation accepts Core Text's boolean-valued zero traits safely.

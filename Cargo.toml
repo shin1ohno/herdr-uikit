@@ -32,7 +32,7 @@ objc2.workspace               = true
 objc2-core-foundation         = { features = ["CFCGTypes", "CFString"], workspace = true }
 objc2-foundation              = { features = ["NSArray", "NSData", "NSDictionary", "NSEnumerator", "NSGeometry", "NSNotification", "NSObjCRuntime", "NSObject", "NSRange", "NSRunLoop", "NSSet", "NSString", "NSThread", "NSURL", "NSValue"], workspace = true }
 objc2-quartz-core             = { features = ["CAFrameRateRange"], workspace = true }
-objc2-ui-kit.workspace        = true
+objc2-ui-kit                  = { features = ["UIAccessibility", "UIAccessibilityConstants"], workspace = true }
 parking_lot.workspace         = true
 pathfinder_geometry.workspace = true
 raw-window-handle.workspace   = true

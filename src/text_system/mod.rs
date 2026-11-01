@@ -16,6 +16,7 @@
 mod convert;
 mod error;
 mod family;
+mod font_properties;
 mod fonts;
 mod layout;
 mod open_type;

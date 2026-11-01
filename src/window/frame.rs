@@ -96,6 +96,14 @@ impl Window {
 
     /// One display link tick, on the main thread.
     fn tick(&self) {
+        if !self.state.borrow().can_draw() {
+            self.stop_display_link();
+            return;
+        }
+        // Updating insets invalidates the entire layout. Sample before taking
+        // force_render so this very frame bypasses cached view geometry.
+        self.step_keyboard_animation(Instant::now());
+        self.sample_keyboard_layout();
         let options = {
             let mut state = self.state.borrow_mut();
             if state.can_draw() {
@@ -113,7 +121,6 @@ impl Window {
             return;
         };
 
-        self.step_keyboard_animation(Instant::now());
         call(&self.callbacks.request_frame, |callback| callback(options));
         self.flush_input_handler_change();
 
@@ -160,6 +167,7 @@ impl Window {
                 return;
             }
             state.insets.ime.bottom = bottom;
+            state.force_render = true;
             state.insets.clone()
         };
         call(&self.callbacks.insets_changed, |callback| callback(insets));

@@ -848,4 +848,3 @@ fragment float4 path_sprite_fragment(
   constexpr sampler intermediate_texture_sampler(mag_filter::linear, min_filter::linear);
   return intermediate_texture.sample(intermediate_texture_sampler, input.texture_coords);
 }
-

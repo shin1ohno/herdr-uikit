@@ -306,9 +306,13 @@ impl Platform for IosPlatform {
         Err(Error::AuxiliaryExecutable.into())
     }
 
-    /// The pointer's look belongs to each view's `UIPointerInteraction`,
-    /// which `crate::window` owns; there is no app-wide cursor to set.
-    fn set_cursor_style(&self, _style: CursorStyle) {}
+    /// GPUI calls this for the hovered window. Its interaction owns the
+    /// native shape; there is no app-wide UIKit cursor.
+    fn set_cursor_style(&self, style: CursorStyle) {
+        if let Some(mtm) = MainThreadMarker::new() {
+            window::set_cursor_style(style, mtm);
+        }
+    }
 
     /// iPadOS hides the pointer itself while the user types.
     fn hide_cursor_until_mouse_moves(&self) {}

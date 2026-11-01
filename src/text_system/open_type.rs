@@ -27,7 +27,7 @@ use core_text::{
 use font_kit::font::Font as FontKitFont;
 use gpui::{FontFallbacks, FontFeatures};
 
-use super::{error::Error, fonts::trait_number};
+use super::{error::Error, font_properties::trait_number};
 
 /// Replaces `font` with a copy carrying `features` and, when there are any,
 /// `fallbacks` ahead of the system's cascade list.

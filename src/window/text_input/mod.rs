@@ -7,14 +7,15 @@
 //! and friends) arrive here too and become `KeyDown`, `KeyUp`, and
 //! `ModifiersChanged`, so shortcuts work with and without a text field.
 //!
-//! The view stays first responder in two modes. In text mode its `inputView`
-//! is nil, so UIKit shows the software keyboard when no hardware keyboard is
-//! attached. In key-only mode its `inputView` is an empty view, which hides
-//! the software keyboard while hardware key presses keep reaching GPUI. It
-//! takes first responder only when the window asks for a mode or it moves
-//! into a window. When UIKit gives first responder to someone else (the
-//! keyboard's dismiss key, an alert's or a picker's text field), the view
-//! leaves it there until the window asks again.
+//! In text mode the view is first responder and its `inputView` is nil, so
+//! UIKit shows the software keyboard when no hardware keyboard is attached.
+//! In key-only mode the drawing view owns first responder and forwards
+//! hardware presses here; resigning this text client also removes UIKit's
+//! input-assistant bar. The text view takes first responder only when the
+//! window asks for text mode or it moves into a window with text mode still
+//! requested. When UIKit gives first responder to someone else (the keyboard's
+//! dismiss key, an alert's or a picker's text field), it leaves it there until
+//! the window asks again.
 //!
 //! The window owns one `TextInputView` as a subview of its `GPUIView` and
 //! calls the methods below, often while GPUI is drawing. They only record
@@ -22,6 +23,8 @@
 //! answers first-responder and delegate calls by asking the text input for
 //! its state, which needs the input handler GPUI is holding at that moment.
 
+mod accessibility;
+mod actions;
 mod editing;
 mod geometry;
 mod keymap;
@@ -39,10 +42,10 @@ mod view_class;
 mod tests;
 
 use gpui::{Bounds, Pixels, TextInputConfiguration};
-use objc2::{MainThreadMarker, rc::Retained};
+use objc2::{DefinedClass, MainThreadMarker, rc::Retained};
 use objc2_ui_kit::UIView;
 
-use super::input_target::InputTarget;
+use super::{input_target::InputTarget, keyboard::ResignReason};
 use state::Mode;
 use traits::Traits;
 use view_class::GPUITextInputView;
@@ -60,8 +63,9 @@ impl TextInputView {
     }
 
     /// The view to add as a subview of the window's `GPUIView`. It is
-    /// zero-sized at the origin, so it takes no touches and its coordinates
-    /// are the `GPUIView`'s, which are GPUI's window coordinates.
+    /// at the drawing view's origin with matching bounds. Its hit-test
+    /// override takes no touches, and its coordinates are the `GPUIView`'s,
+    /// which are GPUI's window coordinates.
     pub(crate) fn view(&self) -> Retained<UIView> {
         Retained::into_super(self.view.clone())
     }
@@ -77,13 +81,22 @@ impl TextInputView {
         self.view.request_mode(Mode::Text);
     }
 
-    /// Key-only mode: the view stays (or becomes) first responder so hardware
-    /// key presses still reach GPUI for shortcuts, but its `inputView` is an
-    /// empty zero-height view and `reloadInputViews` hides the software
-    /// keyboard. The window calls this when the focused element stops taking
-    /// text, or when GPUI dismisses the software keyboard.
+    /// Key-only mode: the window gives first responder to the drawing view,
+    /// which forwards hardware presses for shortcuts. This text client does
+    /// not acquire first responder, so UIKit removes its keyboard and input
+    /// assistant. The window calls this when text focus ends or GPUI dismisses
+    /// the software keyboard.
     pub(crate) fn deactivate(&self) {
         self.view.request_mode(Mode::KeyOnly);
+    }
+
+    /// Marks an intentional native resignation before UIKit can synchronously
+    /// deliver its hide notifications or responder callback.
+    pub(super) fn resign(&self, reason: ResignReason) {
+        if self.view.isFirstResponder() {
+            self.view.ivars().target.expect_keyboard_hide(reason);
+            self.view.resignFirstResponder();
+        }
     }
 
     /// GPUI replaced or changed the input handler. The flush re-reads the

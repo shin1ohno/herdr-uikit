@@ -16,7 +16,8 @@ use gpui::{Bounds, Pixels};
 use objc2::{DefinedClass, sel};
 use objc2_ui_kit::UITextInputDelegate;
 
-use super::state::{Acquire, Change, Mode, Snapshot};
+use super::super::keyboard::{ResignContext, ResignReason};
+use super::state::{Acquire, Change, Mode, TextState};
 use super::traits::Traits;
 use super::view_class::GPUITextInputView;
 
@@ -30,17 +31,20 @@ impl GPUITextInputView {
     /// UIKit gave it to: the window asked for a mode, or the view moved into
     /// a window.
     pub(super) fn request_first_responder(&self) {
-        self.ivars().acquire.set(Acquire::Requested);
+        self.ivars()
+            .acquire
+            .set(Acquire::for_mode(self.ivars().mode.get()));
         self.schedule_flush();
     }
 
     /// UIKit took first responder away: the keyboard's dismiss key, another
     /// responder becoming first (an alert's or a picker's text field), or the
     /// view leaving its window. Flushes leave it there until the next request.
-    pub(super) fn did_resign_first_responder(&self) {
+    pub(super) fn did_resign_first_responder(&self, context: ResignContext) {
         tracing::debug!("text input view resigned first responder");
         self.ivars().applied_mode.set(None);
         self.ivars().acquire.set(Acquire::Settled);
+        self.ivars().target.text_input_did_resign(context);
     }
 
     pub(super) fn request_traits(&self, traits: Traits) {
@@ -56,8 +60,8 @@ impl GPUITextInputView {
     }
 
     /// The handler's current state, or the default when GPUI has none.
-    pub(super) fn read_snapshot(&self) -> Snapshot {
-        self.with_handler(Snapshot::read).unwrap_or_default()
+    pub(super) fn read_snapshot(&self) -> TextState {
+        self.with_handler(TextState::sample).unwrap_or_default()
     }
 
     /// Records the state after an edit UIKit made, which it already knows.
@@ -82,17 +86,45 @@ impl GPUITextInputView {
         let Some(mode) = ivars.mode.get() else {
             return;
         };
+        if mode == Mode::KeyOnly {
+            return;
+        }
         // `didMoveToWindow` requests again once there is a window to become
         // first responder in.
         if self.window().is_none() {
             return;
         }
-        if self.isFirstResponder() {
-            ivars.acquire.set(Acquire::Settled);
-            if ivars.applied_mode.replace(Some(mode)) != Some(mode) {
-                self.reloadInputViews();
-            }
+        if !ivars.target.text_input_can_acquire() {
             return;
+        }
+        if self.isFirstResponder() {
+            let acquire = ivars.acquire.get();
+            let requested = acquire == Acquire::Requested;
+            if acquire.needs_responder_restart(ivars.target.keyboard_needs_responder_restart()) {
+                // reloadInputViews does not expand an iPad keyboard minimized
+                // with its own hide key while this view remains responder.
+                // Only an explicit request restarts that native acquisition.
+                tracing::debug!("restarting text responder for a minimized keyboard");
+                ivars.target.expect_keyboard_hide(ResignReason::Restart);
+                self.resignFirstResponder();
+                ivars.acquire.set(Acquire::Requested);
+            } else {
+                ivars.acquire.set(Acquire::Settled);
+                if requested {
+                    ivars.target.text_input_did_acquire();
+                }
+                let mode_changed = ivars.applied_mode.replace(Some(mode)) != Some(mode);
+                if mode_changed {
+                    self.reloadInputViews();
+                }
+                if mode_changed || requested {
+                    ivars.target.reconcile_keyboard_layout();
+                }
+                if mode_changed {
+                    self.accessibility_text_entry_acquired();
+                }
+                return;
+            }
         }
         let acquire = ivars.acquire.get();
         if !acquire.wants_first_responder() {
@@ -101,7 +133,10 @@ impl GPUITextInputView {
         // Becoming first responder reads `inputView` afresh.
         let became = self.becomeFirstResponder();
         if became {
+            ivars.target.text_input_did_acquire();
             ivars.applied_mode.set(Some(mode));
+            ivars.target.reconcile_keyboard_layout();
+            self.accessibility_text_entry_acquired();
         } else if acquire.reports_failure() {
             tracing::debug!(
                 ?mode,
@@ -116,6 +151,7 @@ impl GPUITextInputView {
         let changed = self.ivars().applied_traits.replace(traits) != traits;
         if changed && self.isFirstResponder() && self.ivars().mode.get() == Some(Mode::Text) {
             self.reloadInputViews();
+            self.ivars().target.reconcile_keyboard_layout();
         }
     }
 
@@ -165,7 +201,7 @@ impl GPUITextInputView {
 
     /// Whether the key repeat timer should keep firing.
     pub(super) fn can_receive_keys(&self) -> bool {
-        self.window().is_some() && self.isFirstResponder()
+        self.window().is_some() && self.ivars().target.has_key_responder()
     }
 
     pub(super) fn cancel_repeat_timer(&self) {

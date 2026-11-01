@@ -1,15 +1,16 @@
 use super::*;
 
-use state::{Change, Snapshot};
+use state::{Change, TextState};
 
 fn snapshot(
     selection: Option<std::ops::Range<usize>>,
     marked: Option<std::ops::Range<usize>>,
     len: Option<usize>,
-) -> Snapshot {
-    Snapshot {
+) -> TextState {
+    TextState {
+        context: None,
         handler: true,
-        selection,
+        selection: selection.map(|range| (range, false)),
         marked,
         len,
     }
@@ -40,7 +41,7 @@ fn edits_and_compositions_are_text_changes() {
 #[test]
 fn gaining_or_losing_the_handler_is_a_text_change() {
     let focused = snapshot(Some(0..0), None, None);
-    let unfocused = Snapshot::default();
+    let unfocused = TextState::default();
     assert_eq!(unfocused.change_since(&focused), Change::Text);
     assert_eq!(focused.change_since(&unfocused), Change::Text);
 }
@@ -51,5 +52,5 @@ fn document_length_falls_back_to_the_furthest_offset() {
     // A terminal reports only its composition.
     assert_eq!(snapshot(Some(1..1), Some(0..3), None).document_len(), 3);
     assert_eq!(snapshot(Some(4..5), Some(0..2), None).document_len(), 5);
-    assert_eq!(Snapshot::default().document_len(), 0);
+    assert_eq!(TextState::default().document_len(), 0);
 }

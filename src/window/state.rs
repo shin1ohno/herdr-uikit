@@ -13,10 +13,10 @@
 use std::cell::RefCell;
 
 use gpui::{
-    AnyWindowHandle, Bounds, Capslock, DispatchEventResult, ForegroundExecutor, Modifiers,
-    MouseButton, Pixels, PlatformInput, PlatformInputHandler, Point, RequestFrameOptions, Size,
-    WindowAppearance, WindowBackgroundAppearance, WindowControlArea, WindowInsets,
-    WindowVisibility,
+    AnyWindowHandle, Bounds, Capslock, CursorStyle, DispatchEventResult, ForegroundExecutor,
+    Modifiers, MouseButton, Pixels, PlatformInput, PlatformInputHandler, Point,
+    RequestFrameOptions, Size, WindowAppearance, WindowBackgroundAppearance, WindowControlArea,
+    WindowInsets, WindowVisibility,
 };
 use objc2::{MainThreadMarker, rc::Retained};
 use objc2_quartz_core::CALayer;
@@ -24,6 +24,8 @@ use objc2_ui_kit::{UIViewController, UIWindow, UIWindowScene};
 
 use super::{
     frame::InsetAnimation,
+    keyboard::Keyboard,
+    pointer::Pointer,
     text_input::TextInputView,
     text_state::TextState,
     touch::{TouchIds, TouchKey},
@@ -42,6 +44,7 @@ pub(super) struct Window {
     /// follow the view's.
     pub(super) metal_layer: Option<Retained<CALayer>>,
     pub(super) mtm: MainThreadMarker,
+    pub(super) pointer: Pointer,
     pub(super) renderer: RefCell<Renderer>,
     pub(super) state: RefCell<State>,
     pub(super) text_input: TextInputView,
@@ -57,6 +60,7 @@ pub(super) struct State {
     pub(super) capslock: Capslock,
     /// GPUI dropped the window; nothing may draw or dispatch any more.
     pub(super) closed: bool,
+    pub(super) cursor_style: CursorStyle,
     /// The next frame must bypass GPUI's view cache: the drawable was
     /// resized, rescaled, or may have been discarded in the background.
     pub(super) force_render: bool,
@@ -69,10 +73,8 @@ pub(super) struct State {
     pub(super) input_handler: Option<PlatformInputHandler>,
     pub(super) insets: WindowInsets,
     pub(super) is_active: bool,
+    pub(super) keyboard: Keyboard,
     pub(super) keyboard_animation: Option<InsetAnimation>,
-    /// The software keyboard was dismissed on request while the focused
-    /// element still takes text, so becoming active must not reopen it.
-    pub(super) keyboard_dismissed: bool,
     /// The focused element's text state after the last frame, or `None`
     /// while no element takes text (`frame`, `text_state`).
     pub(super) last_text_state: Option<TextState>,
@@ -101,6 +103,7 @@ impl State {
             bounds,
             capslock: Capslock::default(),
             closed: false,
+            cursor_style: CursorStyle::default(),
             force_render: true,
             frame_requested: false,
             hover_ending: false,
@@ -108,8 +111,8 @@ impl State {
             input_handler: None,
             insets: WindowInsets::default(),
             is_active: false,
+            keyboard: Keyboard::default(),
             keyboard_animation: None,
-            keyboard_dismissed: false,
             last_text_state: None,
             modifiers: Modifiers::default(),
             mouse_position: Point::default(),

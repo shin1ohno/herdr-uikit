@@ -6,6 +6,8 @@ fn caret_after(text: &str, marked: Option<usize>) -> TextState {
     let end = text.encode_utf16().count();
     TextState {
         context: Some(text.to_owned()),
+        handler: true,
+        len: Some(end),
         marked: marked.map(|length| end - length..end),
         selection: Some((end..end, false)),
     }

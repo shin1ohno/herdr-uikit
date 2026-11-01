@@ -22,13 +22,14 @@ use objc2::{
 use objc2_core_foundation::CGRect;
 use objc2_foundation::{NSNotification, NSNotificationCenter, NSObject, NSSet};
 use objc2_ui_kit::{
-    UIEvent, UIHoverGestureRecognizer, UIKeyboardWillChangeFrameNotification,
-    UIPanGestureRecognizer, UIPress, UIPressesEvent, UIResponder,
-    UISceneDidEnterBackgroundNotification, UISceneWillEnterForegroundNotification, UITouch,
-    UITraitCollection, UIView, UIWindowScene,
+    UIEvent, UIHoverGestureRecognizer, UIKeyboardDidHideNotification,
+    UIKeyboardDidShowNotification, UIKeyboardWillChangeFrameNotification,
+    UIKeyboardWillHideNotification, UIKeyboardWillShowNotification, UIPanGestureRecognizer,
+    UIPress, UIPressesEvent, UIResponder, UISceneDidEnterBackgroundNotification,
+    UISceneWillEnterForegroundNotification, UITouch, UITraitCollection, UIView, UIWindowScene,
 };
 
-use super::{state::Window, touch::TouchStage};
+use super::{keyboard::Event as KeyboardEvent, state::Window, touch::TouchStage};
 
 pub(super) struct ViewIvars {
     /// Set while a press is being handed to the text input view, so a press
@@ -186,6 +187,34 @@ define_class!(
             }
         }
 
+        #[unsafe(method(keyboardWillShow:))]
+        fn keyboard_will_show(&self, notification: &NSNotification) {
+            if let Some(window) = self.owner() {
+                window.keyboard_visibility_changed(notification, KeyboardEvent::WillShow);
+            }
+        }
+
+        #[unsafe(method(keyboardDidShow:))]
+        fn keyboard_did_show(&self, notification: &NSNotification) {
+            if let Some(window) = self.owner() {
+                window.keyboard_visibility_changed(notification, KeyboardEvent::DidShow);
+            }
+        }
+
+        #[unsafe(method(keyboardWillHide:))]
+        fn keyboard_will_hide(&self, notification: &NSNotification) {
+            if let Some(window) = self.owner() {
+                window.keyboard_visibility_changed(notification, KeyboardEvent::WillHide);
+            }
+        }
+
+        #[unsafe(method(keyboardDidHide:))]
+        fn keyboard_did_hide(&self, notification: &NSNotification) {
+            if let Some(window) = self.owner() {
+                window.keyboard_visibility_changed(notification, KeyboardEvent::DidHide);
+            }
+        }
+
         #[unsafe(method(sceneWillEnterForeground:))]
         fn scene_will_enter_foreground(&self, _notification: &NSNotification) {
             if let Some(window) = self.owner() {
@@ -232,6 +261,19 @@ impl GpuiView {
                 Some(UIKeyboardWillChangeFrameNotification),
                 None,
             );
+            for (selector, name) in [
+                (sel!(keyboardWillShow:), UIKeyboardWillShowNotification),
+                (sel!(keyboardDidShow:), UIKeyboardDidShowNotification),
+                (sel!(keyboardWillHide:), UIKeyboardWillHideNotification),
+                (sel!(keyboardDidHide:), UIKeyboardDidHideNotification),
+            ] {
+                center.addObserver_selector_name_object(
+                    self.as_observer(),
+                    selector,
+                    Some(name),
+                    None,
+                );
+            }
         }
     }
 

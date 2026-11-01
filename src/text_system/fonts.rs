@@ -12,16 +12,14 @@ use std::{borrow::Cow, collections::HashSet, sync::Arc};
 use core_foundation::{
     array::{CFArray, CFArrayRef},
     base::{CFType, TCFType},
-    number::CFNumber,
-    string::{CFString, CFStringRef},
+    string::CFString,
 };
 use core_graphics_text::{data_provider::CGDataProvider, font::CGFont};
 use core_text::{
     font::CTFont,
     font_collection::CTFontCollectionRef,
     font_descriptor::{
-        CTFontDescriptor, CTFontDescriptorCopyAttribute, CTFontTraits, kCTFontFamilyNameAttribute,
-        kCTFontSlantTrait, kCTFontSymbolicTrait, kCTFontWeightTrait, kCTFontWidthTrait,
+        CTFontDescriptor, CTFontDescriptorCopyAttribute, kCTFontFamilyNameAttribute,
     },
 };
 use font_kit::{
@@ -37,6 +35,7 @@ use super::{
     convert::is_emoji_postscript_name,
     error::Error,
     family::{FamilyQuery, FamilySource, SYSTEM_UI_FAMILY},
+    font_properties,
     open_type::apply_features_and_fallbacks,
     system_font,
 };
@@ -177,16 +176,6 @@ impl IosTextSystemState {
                 tracing::warn!(font = font.full_name(), "font has no 'm' glyph; skipping");
                 continue;
             }
-            // font-kit's `properties()` unwraps these traits as numbers, which
-            // has panicked for some fonts on macOS; drop such a font instead.
-            if !has_numeric_traits(&font.native_font()) {
-                tracing::error!(
-                    font = font.full_name(),
-                    postscript_name = font.postscript_name(),
-                    "font traits are not numbers; skipping"
-                );
-                continue;
-            }
             let Some(postscript_name) = font.postscript_name() else {
                 tracing::warn!(
                     font = font.full_name(),
@@ -212,9 +201,15 @@ impl IosTextSystemState {
                 );
                 continue;
             }
-            // Read only after the numeric-trait check above, which keeps
-            // font-kit's unwrapping accessors from panicking here.
-            let mut properties = font.properties();
+            // iOS represents zero traits as CFBoolean, which font-kit's
+            // CFNumber-only accessor would unwrap and panic on.
+            let Some(mut properties) = font_properties::read(&font.native_font()) else {
+                tracing::warn!(
+                    font = font.full_name(),
+                    "font traits are not numeric; skipping"
+                );
+                continue;
+            };
             if let Some(weight) = matching_weight {
                 properties.weight = weight;
             }
@@ -261,31 +256,6 @@ impl IosTextSystemState {
         }
         names
     }
-}
-
-/// A numeric entry of `font`'s traits, or `None` when the font lacks it or
-/// stores something else there. font-kit's own accessors unwrap both.
-pub(super) fn trait_number(font: &CTFont, key: CFStringRef) -> Option<f64> {
-    numeric_trait(&font.all_traits(), key)
-}
-
-fn numeric_trait(traits: &CTFontTraits, key: CFStringRef) -> Option<f64> {
-    traits.find(key)?.downcast::<CFNumber>()?.to_f64()
-}
-
-fn has_numeric_traits(font: &CTFont) -> bool {
-    let traits = font.all_traits();
-    // SAFETY: the keys are immutable CFString constants Core Text exports.
-    let keys = unsafe {
-        [
-            kCTFontSymbolicTrait,
-            kCTFontWidthTrait,
-            kCTFontWeightTrait,
-            kCTFontSlantTrait,
-        ]
-    };
-    keys.into_iter()
-        .all(|key| numeric_trait(&traits, key).is_some())
 }
 
 fn system_ui_fonts() -> Vec<FamilyFont> {

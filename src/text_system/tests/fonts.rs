@@ -58,7 +58,11 @@ fn every_gpui_weight_gets_its_own_system_ui_weight() -> anyhow::Result<()> {
     let state = system.0.read();
     let read_back = font_ids
         .iter()
-        .map(|font_id| state.fonts[font_id.0].properties().weight.0)
+        .map(|font_id| {
+            crate::text_system::font_properties::read(&state.fonts[font_id.0].native_font())
+                .map(|properties| properties.weight.0)
+                .unwrap_or(f32::NAN)
+        })
         .collect::<Vec<_>>();
     assert!(
         read_back.windows(2).all(|pair| pair[0] < pair[1]),
@@ -138,6 +142,9 @@ fn bold_selection_picks_a_bold_face() -> anyhow::Result<()> {
     let regular = system.font_id(&font("Menlo"))?;
     let bold = system.font_id(&bold)?;
     assert_ne!(regular, bold);
-    assert!(system.0.read().fonts[bold.0].properties().weight.0 >= 600.0);
+    assert!(
+        crate::text_system::font_properties::read(&system.0.read().fonts[bold.0].native_font())
+            .is_some_and(|properties| properties.weight.0 >= 600.0)
+    );
     Ok(())
 }

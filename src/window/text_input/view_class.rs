@@ -10,20 +10,21 @@
 )]
 
 use objc2::rc::{Retained, Weak};
-use objc2::runtime::{AnyObject, NSObject, NSObjectProtocol, ProtocolObject};
+use objc2::runtime::{AnyObject, NSObject, NSObjectProtocol, ProtocolObject, Sel};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send};
 use objc2_core_foundation::{CGPoint, CGRect};
 use objc2_foundation::{NSArray, NSComparisonResult, NSInteger, NSRange, NSSet, NSString};
 use objc2_ui_kit::{
-    UIDictationPhrase, UIKeyInput, UIPress, UIPressesEvent, UIResponder, UIReturnKeyType,
+    UIDictationPhrase, UIEvent, UIKeyInput, UIPress, UIPressesEvent, UIResponder, UIReturnKeyType,
     UITextAutocapitalizationType, UITextAutocorrectionType, UITextInlinePredictionType,
     UITextInput, UITextInputDelegate, UITextInputStringTokenizer, UITextInputTokenizer,
     UITextInputTraits, UITextLayoutDirection, UITextPosition, UITextRange, UITextSelectionRect,
     UITextSmartDashesType, UITextSmartInsertDeleteType, UITextSmartQuotesType,
-    UITextSpellCheckingType, UITextStorageDirection, UIView,
+    UITextSpellCheckingType, UITextStorageDirection, UIView, UIWindow,
 };
 
-use super::super::input_target::InputTarget;
+use super::super::{input_target::InputTarget, keyboard::ResignReason};
+use super::actions::EditAction;
 use super::positions::{self, TextPosition, TextRange};
 use super::state::{Ivars, Mode};
 use super::utf16;
@@ -42,6 +43,76 @@ define_class!(
     pub(super) struct GPUITextInputView;
 
     impl GPUITextInputView {
+        // The view has real layout bounds so accessibility can discover the
+        // first-responder text client. GPUI owns its touch hit testing.
+        #[unsafe(method(pointInside:withEvent:))]
+        fn __point_inside(&self, _: CGPoint, _: Option<&UIEvent>) -> bool {
+            false
+        }
+
+        #[unsafe(method(isAccessibilityElement))]
+        fn __is_accessibility_element(&self) -> bool {
+            self.accessibility_text_entry()
+        }
+
+        #[unsafe(method_id(accessibilityLabel))]
+        fn __accessibility_label(&self) -> Option<Retained<NSString>> {
+            self.accessibility_text_entry().then(|| self.accessibility_label())
+        }
+
+        #[unsafe(method_id(accessibilityValue))]
+        fn __accessibility_value(&self) -> Option<Retained<NSString>> {
+            // The input handler does not expose whether a field is secure.
+            // Text entry works through UITextInput without publishing its text.
+            None
+        }
+
+        #[unsafe(method(accessibilityFrame))]
+        fn __accessibility_frame(&self) -> CGRect {
+            self.accessibility_frame()
+        }
+
+        // Inherit UIKit's accessibilityTraits so its live UITextInput
+        // responder contributes editing state; cached traits from another
+        // text field would hide this responder's current keyboard focus.
+
+        // Since iOS 18.1, accessibility asks custom text elements for their
+        // backing UITextInput responder. This view is both. Implementing the
+        // public getter is harmless on iOS 17, which does not query it, and
+        // avoids calling an unavailable framework selector there.
+        #[unsafe(method_id(accessibilityTextInputResponder))]
+        fn __accessibility_text_input_responder(
+            &self,
+        ) -> Option<Retained<ProtocolObject<dyn UITextInput>>> {
+            self.accessibility_text_entry()
+                .then(|| ProtocolObject::from_retained(self.retain()))
+        }
+
+        #[unsafe(method(canPerformAction:withSender:))]
+        fn __can_perform_action(&self, action: Sel, _: Option<&AnyObject>) -> bool {
+            self.editing_enabled() && EditAction::from_selector(action).is_some()
+        }
+
+        #[unsafe(method(paste:))]
+        fn __paste(&self, _: Option<&AnyObject>) {
+            self.perform_edit_action(EditAction::Paste);
+        }
+
+        #[unsafe(method(copy:))]
+        fn __copy(&self, _: Option<&AnyObject>) {
+            self.perform_edit_action(EditAction::Copy);
+        }
+
+        #[unsafe(method(cut:))]
+        fn __cut(&self, _: Option<&AnyObject>) {
+            self.perform_edit_action(EditAction::Cut);
+        }
+
+        #[unsafe(method(selectAll:))]
+        fn __select_all(&self, _: Option<&AnyObject>) {
+            self.perform_edit_action(EditAction::SelectAll);
+        }
+
         #[unsafe(method(canBecomeFirstResponder))]
         fn __can_become_first_responder(&self) -> bool {
             true
@@ -58,12 +129,25 @@ define_class!(
         // flushes must not take it straight back.
         #[unsafe(method(resignFirstResponder))]
         fn __resign_first_responder(&self) -> bool {
+            // UIKit may post WillHide only after it has already transferred
+            // first responder, so capture ownership before the native call.
+            let context = self.ivars().target.text_input_resign_context(self.isFirstResponder());
             // SAFETY: `resignFirstResponder` takes nothing and returns a BOOL.
             let resigned: bool = unsafe { msg_send![super(self), resignFirstResponder] };
             if resigned {
-                self.did_resign_first_responder();
+                self.did_resign_first_responder(context);
             }
             resigned
+        }
+
+        #[unsafe(method(willMoveToWindow:))]
+        fn __will_move_to_window(&self, window: Option<&UIWindow>) {
+            if window.is_none() {
+                self.ivars().target.expect_keyboard_hide(ResignReason::LeavingWindow);
+            }
+            // SAFETY: the argument is UIKit's nullable UIWindow for this selector;
+            // UIView's implementation returns nothing.
+            let () = unsafe { msg_send![super(self), willMoveToWindow: window] };
         }
 
         // Becoming first responder needs a window, so a mode asked for before
@@ -72,7 +156,7 @@ define_class!(
         fn __did_move_to_window(&self) {
             // SAFETY: `didMoveToWindow` takes and returns nothing.
             let () = unsafe { msg_send![super(self), didMoveToWindow] };
-            if self.window().is_some() {
+            if self.window().is_some() && self.ivars().target.text_input_can_acquire() {
                 self.request_first_responder();
             }
         }
@@ -191,7 +275,7 @@ define_class!(
 
         #[unsafe(method_id(selectedTextRange))]
         fn __selected_text_range(&self) -> Option<Retained<UITextRange>> {
-            let selection = self.read_snapshot().selection;
+            let selection = self.read_snapshot().selection.map(|(range, _)| range);
             selection.map(|range| TextRange::text_range(self.mtm(), range))
         }
 
@@ -417,9 +501,9 @@ impl GPUITextInputView {
     pub(super) fn new(mtm: MainThreadMarker, target: InputTarget) -> Retained<Self> {
         let key_only_input_view = UIView::initWithFrame(UIView::alloc(mtm), CGRect::ZERO);
         let this = Self::alloc(mtm).set_ivars(Ivars::new(target, key_only_input_view));
-        // Zero-sized at the GPUIView's origin, so hit testing never lands on
-        // it and its coordinate space is the GPUIView's. User interaction
-        // stays enabled: UIKit drops presses for views without it.
+        // The window sizes this to its drawing view before attachment. The
+        // origins agree and pointInside:withEvent: leaves touches to GPUI.
+        // User interaction stays enabled: UIKit drops presses without it.
         // SAFETY: `initWithFrame:` is UIView's designated initializer, and the
         // ivars were set before it runs.
         unsafe { msg_send![super(this), initWithFrame: CGRect::ZERO] }

@@ -20,7 +20,7 @@
 //! | `view` | The `GpuiView` class and what it forwards |
 //! | `layout` | Size, scale, appearance, safe area, and keyboard insets |
 //! | `frame` | The display link, frames on demand, the keyboard animation |
-//! | `touch`, `pointer` | Touches and clicks; hover and scroll |
+//! | `touch`, `pointer` | Touches and clicks; hover, scroll, and UIKit pointer shapes |
 //! | `input_target`, `text_input`, `text_state` | Keyboard and text input |
 //! | `platform_window` | `gpui::PlatformWindow` over the above |
 
@@ -28,6 +28,7 @@ mod convert;
 mod error;
 mod frame;
 mod input_target;
+mod keyboard;
 mod layout;
 mod lifecycle;
 mod platform_window;
@@ -52,6 +53,7 @@ use objc2::MainThreadMarker;
 use objc2_ui_kit::UIApplication;
 
 pub(crate) use self::error::Error;
+pub(crate) use self::pointer::set_cursor_style;
 pub(crate) use self::scene::{
     active_window, scene_activation_changed, scene_connected, scene_disconnected, window_stack,
 };

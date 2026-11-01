@@ -19,7 +19,8 @@ fn frame_failure_retains_the_typed_source_and_counts() {
     assert!(matches!(
         error
             .source()
-            .and_then(|source| source.downcast_ref::<Error>()),
+            .and_then(|source| source.downcast_ref::<Box<Error>>())
+            .map(Box::as_ref),
         Some(Error::IntermediateTextureMissing)
     ));
     assert!(error.to_string().contains("1 paths, 2 shadows, 3 quads"));

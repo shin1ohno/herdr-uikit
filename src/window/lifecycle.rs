@@ -19,13 +19,16 @@ use gpui::{
     WindowVisibility,
 };
 use objc2::{MainThreadMarker, MainThreadOnly, rc::Retained, sel};
-use objc2_foundation::{NSObjectProtocol, NSString};
+use objc2_foundation::{NSNotification, NSObjectProtocol, NSString};
 use objc2_quartz_core::CALayer;
-use objc2_ui_kit::{UISceneActivationState, UIViewController, UIWindow, UIWindowScene};
+use objc2_ui_kit::{
+    UISceneActivationState, UIViewAutoresizing, UIViewController, UIWindow, UIWindowScene,
+};
 
 use super::{
     convert,
     input_target::InputTarget,
+    keyboard::{Dismissal, Event as KeyboardEvent, ResignReason, on_keyboard_event},
     pointer, scene,
     state::{Callbacks, State, Window, call},
     text_input::TextInputView,
@@ -65,13 +68,22 @@ impl Window {
                 view.layer().addSublayer(layer);
             }
             pointer::install_recognizers(&view, mtm);
+            let pointer = pointer::Pointer::new(&view, window.clone(), mtm);
             view.observe_keyboard();
 
             let controller = UIViewController::new(mtm);
             controller.setView(Some(&view));
 
             let text_input = TextInputView::new(mtm, InputTarget::new(window.clone()));
-            view.addSubview(&text_input.view());
+            let text_view = text_input.view();
+            // Accessibility omits zero-sized native views even when their
+            // accessibilityFrame is nonzero. Keep the client in the visible
+            // hierarchy; its hit-test override leaves all touches to GPUI.
+            text_view.setFrame(view.bounds());
+            text_view.setAutoresizingMask(
+                UIViewAutoresizing::FlexibleWidth | UIViewAutoresizing::FlexibleHeight,
+            );
+            view.addSubview(&text_view);
 
             Self {
                 callbacks: Callbacks::default(),
@@ -81,6 +93,7 @@ impl Window {
                 handle,
                 metal_layer,
                 mtm,
+                pointer,
                 renderer: RefCell::new(renderer),
                 state: RefCell::new(State::new(bounds, scale_factor, title)),
                 text_input,
@@ -161,6 +174,9 @@ impl Window {
             if state.closed {
                 return;
             }
+            if !active {
+                state.keyboard.expect_hide(ResignReason::Inactive);
+            }
             mem::replace(&mut state.is_active, active) != active
         };
         if changed {
@@ -174,6 +190,12 @@ impl Window {
     /// `UISceneWillEnterForegroundNotification` or
     /// `UISceneDidEnterBackgroundNotification` for the window's scene.
     pub(super) fn scene_visibility_changed(&self, visible: bool) {
+        if !visible {
+            self.state
+                .borrow_mut()
+                .keyboard
+                .expect_hide(ResignReason::Inactive);
+        }
         self.set_visibility(if visible {
             WindowVisibility::Visible
         } else {
@@ -189,10 +211,12 @@ impl Window {
         if !changed {
             return;
         }
+        self.pointer.set_visible(visibility.is_visible());
         if visibility.is_visible() {
             // The system may have discarded the drawable in the background.
             self.force_frame();
         } else {
+            self.pointer_left();
             self.stop_display_link();
         }
         call(&self.callbacks.visibility, |callback| callback(visibility));
@@ -205,6 +229,7 @@ impl Window {
         self.set_visibility(WindowVisibility::Hidden);
         let ui_window = {
             let mut state = self.state.borrow_mut();
+            state.keyboard.expect_hide(ResignReason::LeavingWindow);
             state.touches.clear();
             state.scene = None;
             state.ui_window.take()
@@ -241,11 +266,14 @@ impl Window {
             if mem::replace(&mut state.closed, true) {
                 return;
             }
+            state.keyboard.expect_hide(ResignReason::LeavingWindow);
             state.input_handler = None;
             state.keyboard_animation = None;
             state.touches.clear();
             state.ui_window.take()
         };
+        pointer::clear_window(self);
+        self.pointer.detach();
         self.stop_display_link();
         let display_link = self.display_link.borrow_mut().take();
         if let Ok(renderer) = self.renderer.try_borrow() {
@@ -330,8 +358,14 @@ impl Window {
     pub(super) fn set_text_input_focused(self: &Rc<Self>, focused: bool) {
         {
             let mut state = self.state.borrow_mut();
+            tracing::debug!(
+                previous = state.text_input_focused,
+                focused,
+                dismissal = ?state.keyboard.dismissal,
+                "set_text_input_focused"
+            );
             state.text_input_focused = focused;
-            state.keyboard_dismissed = false;
+            state.keyboard.focus_changed();
         }
         self.defer(Self::update_first_responder);
     }
@@ -339,15 +373,36 @@ impl Window {
     /// `PlatformWindow::show_soft_keyboard`: focuses the text input view
     /// again if the focused element takes text.
     pub(super) fn show_keyboard(self: &Rc<Self>) {
-        self.state.borrow_mut().keyboard_dismissed = false;
+        self.state.borrow_mut().keyboard.show();
         self.defer(Self::update_first_responder);
     }
 
     /// `PlatformWindow::hide_soft_keyboard`: dismisses the keyboard and
     /// keeps GPUI's focus where it is.
     pub(super) fn hide_keyboard(self: &Rc<Self>) {
-        self.state.borrow_mut().keyboard_dismissed = true;
+        self.state.borrow_mut().keyboard.hide();
         self.defer(Self::update_first_responder);
+    }
+
+    /// UIKit's dismiss key can resign the text responder or retain it while
+    /// minimizing. Observe visibility independently and fence stale completions.
+    pub(super) fn keyboard_visibility_changed(
+        &self,
+        notification: &NSNotification,
+        event: KeyboardEvent,
+    ) {
+        let context = self.keyboard_notification_context(notification);
+        let mut state = self.state.borrow_mut();
+        if state.closed {
+            return;
+        }
+        state.keyboard = on_keyboard_event(state.keyboard, event, context);
+        tracing::debug!(
+            ?event,
+            ?context,
+            keyboard = ?state.keyboard,
+            "keyboard visibility changed"
+        );
     }
 
     /// Makes the text input view first responder while the focused element
@@ -355,14 +410,23 @@ impl Window {
     /// when no hardware keyboard is attached; otherwise makes the drawing view
     /// first responder, so hardware key presses keep arriving.
     fn update_first_responder(&self) {
-        let (wants_text, attached) = {
+        let (wants_text, attached, reason) = {
             let state = self.state.borrow();
             if state.closed {
                 return;
             }
             (
-                state.text_input_focused && state.is_active && !state.keyboard_dismissed,
+                state.text_input_focused
+                    && state.is_active
+                    && state.keyboard.dismissal.allows_text(),
                 state.ui_window.is_some(),
+                if !state.is_active {
+                    ResignReason::Inactive
+                } else if state.keyboard.dismissal == Dismissal::Application {
+                    ResignReason::Application
+                } else {
+                    ResignReason::FocusChange
+                },
             )
         };
         if !attached {
@@ -372,7 +436,9 @@ impl Window {
             self.text_input.activate();
         } else {
             self.text_input.deactivate();
+            self.text_input.resign(reason);
             self.view.becomeFirstResponder();
+            self.reconcile_keyboard_layout();
         }
     }
 
