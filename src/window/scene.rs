@@ -1,5 +1,5 @@
-//! The bookkeeping between UIKit's scenes and GPUI's windows (docs/ios.md,
-//! "Scenes and windows"). UIKit decides when scenes connect and disconnect;
+//! The bookkeeping between UIKit's scenes and GPUI's windows (herdr-gpui's
+//! docs/ios.md, "Scenes and windows"). UIKit decides when scenes connect and disconnect;
 //! GPUI decides when windows open. A connected scene hosts at most one
 //! window. A window opened with no idle scene waits for the scene the system
 //! was asked for, and closes if the system refuses.

@@ -1,0 +1,7 @@
+[toolchain]
+# The channel herdr-gpui pins, so a path or git dependency builds with the
+# compiler its consumer uses.
+channel    = "1.96.1"
+components = ["clippy", "rustfmt"]
+profile    = "minimal"
+targets    = ["aarch64-apple-ios", "aarch64-apple-ios-sim"]

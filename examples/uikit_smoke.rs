@@ -1,12 +1,15 @@
 //! The smallest UIKit app, without GPUI or this crate's platform: it proves
 //! that bundling, installing, launching, logging, and screenshots work in the
-//! iPad simulator before anything of herdr-uikit is involved
-//! (docs/ios.md, "Running in the simulator").
+//! iPad simulator before anything of herdr-uikit is involved (herdr-gpui's
+//! docs/ios.md, "Running in the simulator").
 //!
-//! It starts the way herdr-uikit does. `scripts/ios/Info.plist` declares no
-//! scene configurations, so the application delegate supplies one whose
-//! delegate class is this example's scene delegate. That delegate fills its
-//! window with magenta and a white label, which the screenshot check finds.
+//! It starts the way herdr-uikit does. herdr-gpui's `scripts/ios/Info.plist`
+//! declares no scene configurations, so the application delegate supplies one
+//! whose delegate class is this example's scene delegate. That delegate fills
+//! its window with magenta and a white label, which the screenshot check finds.
+//!
+//! Examples run from an app bundle, which herdr-gpui's tooling builds; from a
+//! herdr-gpui checkout:
 //!
 //! ```sh
 //! just ios-sim uikit_smoke
@@ -33,7 +36,7 @@ mod smoke {
         UIViewAutoresizing, UIViewController, UIWindow, UIWindowScene, UIWindowSceneDelegate,
     };
 
-    /// Printed to stderr, which `scripts/ios/sim.sh` keeps in `stderr.log`;
+    /// Printed to stderr, which herdr-gpui's `scripts/ios/sim.sh` keeps in `stderr.log`;
     /// the example installs no tracing subscriber.
     const LOG_PREFIX: &str = "uikit_smoke:";
 

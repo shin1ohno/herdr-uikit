@@ -5,8 +5,9 @@
 //! into GPUI input.
 //!
 //! Scenes arrive on the system's schedule, not GPUI's, so this module keeps
-//! the bookkeeping between them (docs/ios.md, "Scenes and windows"): the
-//! platform's scene delegate reports each scene through [`scene_connected`],
+//! the bookkeeping between them (herdr-gpui's docs/ios.md, "Scenes and
+//! windows"): the platform's scene delegate reports each scene through
+//! [`scene_connected`],
 //! [`scene_disconnected`], and [`scene_activation_changed`]; `IosWindow::open`
 //! takes a connected scene that hosts no window yet, or asks the system for a
 //! new one and attaches when it connects. A window whose scene request the

@@ -1,5 +1,5 @@
 //! Adapted from gpui-pre-apple 0.3.6 (zed@bcf6582) build.rs, Apache-2.0; see NOTICE.md.
-//! Modified: locked registry resolution, paired ABI assertions, and iOS runtime shaders.
+//! Modified: exact-pin registry resolution, paired ABI assertions, and iOS runtime shaders.
 //! Generate a self-contained shader source on the host, only for iOS targets.
 use std::{env, fs, path::PathBuf};
 
@@ -13,36 +13,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(PathBuf::from)
         .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".cargo")))
         .ok_or("Cargo home is unavailable")?;
-    let lock =
-        PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").ok_or("manifest directory missing")?)
-            .join("../../Cargo.lock");
-    println!("cargo:rerun-if-changed={}", lock.display());
-    let contents = fs::read_to_string(&lock)?;
-    let packages: Vec<_> = contents
-        .split("[[package]]")
-        .filter(|section| {
-            section
-                .lines()
-                .any(|line| line.trim() == "name = \"gpui-pre\"")
-        })
-        .collect();
-    if packages.len() != 1 {
-        return Err("expected exactly one locked gpui-pre package".into());
-    }
-    let package = packages[0];
-    if !package
-        .lines()
-        .any(|line| line.starts_with("source = \"registry+"))
-    {
-        return Err("gpui-pre must use a locked Cargo registry source".into());
-    }
-    let version = package
-        .lines()
-        .find_map(|line| {
-            line.strip_prefix("version = \"")
-                .and_then(|value| value.strip_suffix('"'))
-        })
-        .ok_or("locked gpui-pre version missing")?;
+    // The version comes from this crate's own exact pin, not from a lockfile:
+    // `=X` leaves Cargo one candidate, so the pin is the version compiled
+    // against whichever lockfile drives the build. A path or git consumer's
+    // build never reads this repository's Cargo.lock, so a lockfile lookup
+    // could name a version other than the one being compiled.
+    let manifest_path = "Cargo.toml";
+    println!("cargo:rerun-if-changed={manifest_path}");
+    let manifest = fs::read_to_string(manifest_path)?;
+    let version = pinned_gpui_version(&manifest)?;
     let mut gpui = None;
     for registry in fs::read_dir(cargo_home.join("registry/src"))? {
         let candidate = registry?.path().join(format!("gpui-pre-{version}"));
@@ -153,4 +132,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     header.extend_from_slice(fs::read(helpers)?.as_slice());
     fs::write(output.join("stitched_shaders.metal"), header)?;
     Ok(())
+}
+
+/// The `X` of the `gpui = { package = "gpui-pre", version = "=X" }` entry. Only
+/// an exact registry pin is accepted: a range, a path, or a git source would
+/// let the compiled sources differ from the registry copy read here.
+fn pinned_gpui_version(manifest: &str) -> Result<&str, Box<dyn std::error::Error>> {
+    let mut entries = manifest.lines().filter_map(|line| {
+        let (key, value) = line.split_once('=')?;
+        (key.trim() == "gpui").then_some(value)
+    });
+    let entry = entries.next().ok_or("Cargo.toml has no gpui dependency")?;
+    if entries.next().is_some() {
+        return Err("Cargo.toml has more than one gpui dependency".into());
+    }
+    if !entry.contains("package = \"gpui-pre\"") {
+        return Err("the gpui dependency must be the gpui-pre package".into());
+    }
+    if entry.contains("path =") || entry.contains("git =") {
+        return Err("gpui-pre must come from the Cargo registry".into());
+    }
+    entry
+        .split_once("version = \"=")
+        .and_then(|(_, rest)| rest.split_once('"'))
+        .map(|(version, _)| version)
+        .ok_or_else(|| "gpui-pre must be pinned exactly, as version = \"=X\"".into())
 }

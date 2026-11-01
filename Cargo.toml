@@ -1,52 +1,67 @@
 [package]
-description            = "GPUI platform for iPadOS on UIKit: lifecycle, windows, Metal rendering, Core Text, touch and keyboard input"
-edition.workspace      = true
-license.workspace      = true
-name                   = "herdr-uikit"
-publish.workspace      = true
-rust-version.workspace = true
-version.workspace      = true
+description  = "GPUI platform for iPadOS on UIKit: lifecycle, windows, Metal rendering, Core Text, touch and keyboard input"
+edition      = "2024"
+license      = "Apache-2.0"
+name         = "herdr-uikit"
+publish      = false
+rust-version = "1.96"
+version      = "0.1.0"
 
-[lints]
-workspace = true
+# Copied from herdr-gpui's [workspace.lints]; modules that need `unsafe` allow
+# it locally, with their safety invariants beside them.
+[lints.rust]
+unsafe_code           = "deny"
+unused_qualifications = "deny"
 
-# Every dependency is iOS-only, so the crate is empty and costs nothing when the
-# workspace builds for macOS, Linux, or Windows.
+[lints.clippy]
+expect_used = "deny"
+unwrap_used = "deny"
+
+# Every dependency is iOS-only, so the crate is empty and costs nothing when a
+# workspace that depends on it builds for macOS, Linux, or Windows. Requirements
+# and features match herdr-gpui's [workspace.dependencies], so both lockfiles
+# resolve to one set of versions.
 [target.'cfg(target_os = "ios")'.dependencies]
-anyhow.workspace              = true
-block2.workspace              = true
-core-foundation.workspace     = true
-core-graphics-text.workspace  = true
-core-text.workspace           = true
-dispatch2.workspace           = true
-etagere.workspace             = true
-font-kit.workspace            = true
-foreign-types.workspace       = true
-futures.workspace             = true
-futures-channel.workspace     = true
-gpui.workspace                = true
-image.workspace               = true
-metal.workspace               = true
-objc.workspace                = true
-objc2.workspace               = true
-objc2-core-foundation         = { features = ["CFCGTypes", "CFString"], workspace = true }
-objc2-foundation              = { features = ["NSArray", "NSData", "NSDictionary", "NSEnumerator", "NSGeometry", "NSNotification", "NSObjCRuntime", "NSObject", "NSRange", "NSRunLoop", "NSSet", "NSString", "NSThread", "NSURL", "NSValue"], workspace = true }
-objc2-quartz-core             = { features = ["CAFrameRateRange"], workspace = true }
-objc2-ui-kit                  = { features = ["UIAccessibility", "UIAccessibilityConstants"], workspace = true }
-parking_lot.workspace         = true
-pathfinder_geometry.workspace = true
-raw-window-handle.workspace   = true
-smallvec.workspace            = true
-thiserror.workspace           = true
-tracing.workspace             = true
-uuid.workspace                = true
+anyhow                = "1"
+block2                = "0.6.2"
+core-foundation       = "0.10"
+core-graphics-text    = { package = "core-graphics", version = "0.24" }
+core-text             = "21"
+dispatch2             = { default-features = false, features = ["objc2", "std"], version = "0.3.1" }
+etagere               = "0.2.15"
+font-kit              = { package = "zed-font-kit", version = "=0.14.1-zed" }
+foreign-types         = "0.5"
+futures               = { default-features = false, features = ["std"], version = "0.3.34" }
+futures-channel       = "0.3.34"
+gpui                  = { package = "gpui-pre", version = "=0.3.6" }
+image                 = { default-features = false, features = ["gif", "jpeg", "png", "webp"], version = "0.25.10" }
+metal                 = "0.33"
+objc                  = "0.2"
+objc2                 = "0.6.4"
+objc2-core-foundation = { default-features = false, features = ["CFCGTypes", "CFString", "std"], version = "0.3.2" }
+objc2-foundation      = { default-features = false, features = ["NSArray", "NSBundle", "NSData", "NSDictionary", "NSEnumerator", "NSError", "NSGeometry", "NSNotification", "NSObjCRuntime", "NSObject", "NSProcessInfo", "NSRange", "NSRunLoop", "NSSet", "NSString", "NSThread", "NSURL", "NSValue", "std"], version = "0.3.2" }
+objc2-quartz-core     = { default-features = false, features = ["CADisplayLink", "CAFrameRateRange", "CALayer", "CAMetalLayer", "CATransaction", "objc2-core-foundation", "objc2-metal", "std"], version = "0.3.2" }
+objc2-ui-kit          = { default-features = false, features = ["UIAccessibility", "UIAccessibilityConstants", "UIApplication", "UIBezierPath", "UIColor", "UICommand", "UIDevice", "UIEvent", "UIGeometry", "UIGestureRecognizer", "UIHoverGestureRecognizer", "UIHoverStyle", "UIInteraction", "UIInterface", "UIKey", "UIKeyCommand", "UIKeyConstants", "UIKeyboardLayoutGuide", "UILayoutGuide", "UIOpenURLContext", "UIPanGestureRecognizer", "UIPasteboard", "UIPointerInteraction", "UIPointerRegion", "UIPointerStyle", "UIPress", "UIPressesEvent", "UIResponder", "UIScene", "UISceneConfiguration", "UISceneDefinitions", "UISceneOptions", "UISceneSession", "UISceneSessionActivationRequest", "UIScreen", "UIScreenMode", "UITextInput", "UITextInputContext", "UITextInputTraits", "UITouch", "UITraitCollection", "UIView", "UIViewController", "UIWindow", "UIWindowScene", "UIWindowSceneGeometry", "UIWindowSceneGeometryPreferences", "UIWindowSceneGeometryPreferencesIOS", "block2", "objc2-core-foundation", "objc2-quartz-core", "std"], version = "0.3.2" }
+parking_lot           = "0.12"
+pathfinder_geometry   = "0.5"
+raw-window-handle     = "0.6"
+smallvec              = { features = ["const_new", "union"], version = "1.6" }
+thiserror             = "2"
+tracing               = "0.1"
+uuid                  = { features = ["serde", "v4", "v5"], version = "1" }
 
 # Build scripts run on the host, so the script checks CARGO_CFG_TARGET_OS
 # rather than a target table, which Cargo would match against the host.
 [build-dependencies]
-cbindgen.workspace = true
+cbindgen = { default-features = false, version = "0.28.0" }
 
 # examples/uikit_smoke.rs draws a UILabel with UIKit alone; only the examples
 # and tests build with these extra features.
 [target.'cfg(target_os = "ios")'.dev-dependencies]
-objc2-ui-kit = { features = ["NSText", "UIFont", "UILabel"], workspace = true }
+objc2-ui-kit = { default-features = false, features = ["NSText", "UIFont", "UILabel", "block2", "objc2-core-foundation", "objc2-quartz-core", "std"], version = "0.3.2" }
+
+# GPUI's Windows build pulls in embed-resource, which Cargo resolves even
+# though iOS never builds it; the no-op herdr-gpui also patches in keeps the
+# lockfile offline-resolvable. Consumers ignore this table.
+[patch.crates-io]
+embed-resource = { path = "support/embed-resource" }

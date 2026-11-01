@@ -1,6 +1,8 @@
 //! A minimal GPUI app on herdr-uikit: one window with a solid background, a
 //! line of text, and a counter that a tap or click increments. It exercises the
-//! whole platform (scenes, Metal, Core Text, touch) in the iPad simulator:
+//! whole platform (scenes, Metal, Core Text, touch) in the iPad simulator,
+//! from an app bundle that herdr-gpui's tooling builds; from a herdr-gpui
+//! checkout:
 //!
 //! ```sh
 //! just ios-sim hello
@@ -56,8 +58,9 @@ mod hello {
                 cx.new(|_| Hello { taps: 0 })
             });
             if let Err(error) = opened {
-                // Printed to stderr, which scripts/ios/sim.sh keeps in
-                // stderr.log; the example installs no tracing subscriber.
+                // Printed to stderr, which herdr-gpui's scripts/ios/sim.sh
+                // keeps in stderr.log; the example installs no tracing
+                // subscriber.
                 eprintln!("hello: could not open a window: {error:#}");
                 cx.quit();
             }

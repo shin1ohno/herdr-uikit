@@ -1,0 +1,19 @@
+# Replaces crates.io's embed-resource, through [patch.crates-io] in this
+# repository's manifest, so the lockfile resolves offline; see src/lib.rs.
+[package]
+edition      = "2024"
+license      = "Apache-2.0"
+name         = "embed-resource"
+publish      = false
+rust-version = "1.96"
+# Within the `3.0` GPUI asks for, so the patch applies; the version herdr-gpui's
+# stand-in carries, so both lockfiles record the same package.
+version = "3.0.11"
+
+[lints.rust]
+unsafe_code           = "deny"
+unused_qualifications = "deny"
+
+[lints.clippy]
+expect_used = "deny"
+unwrap_used = "deny"

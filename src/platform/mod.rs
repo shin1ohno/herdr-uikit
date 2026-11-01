@@ -5,7 +5,7 @@
 //! [`gpui::Platform::run`] calls `UIApplicationMain`, which never returns. The
 //! application delegate supplies a scene configuration whose delegate class
 //! forwards scene events to `crate::window`, and GPUI's launch callback runs
-//! once, when the first window scene connects (docs/ios.md).
+//! once, when the first window scene connects (herdr-gpui's docs/ios.md).
 //!
 //! Desktop features iPadOS lacks log and do nothing, or fail where the trait
 //! returns a result; none reports success for something that did not happen.
