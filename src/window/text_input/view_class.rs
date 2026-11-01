@@ -15,11 +15,11 @@ use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_clas
 use objc2_core_foundation::{CGPoint, CGRect};
 use objc2_foundation::{NSArray, NSComparisonResult, NSInteger, NSRange, NSSet, NSString};
 use objc2_ui_kit::{
-    UIDictationPhrase, UIEvent, UIKeyInput, UIPress, UIPressesEvent, UIResponder, UIReturnKeyType,
-    UITextAutocapitalizationType, UITextAutocorrectionType, UITextInlinePredictionType,
-    UITextInput, UITextInputDelegate, UITextInputStringTokenizer, UITextInputTokenizer,
-    UITextInputTraits, UITextLayoutDirection, UITextPosition, UITextRange, UITextSelectionRect,
-    UITextSmartDashesType, UITextSmartInsertDeleteType, UITextSmartQuotesType,
+    NSWritingDirection, UIDictationPhrase, UIEvent, UIKeyInput, UIPress, UIPressesEvent,
+    UIResponder, UIReturnKeyType, UITextAutocapitalizationType, UITextAutocorrectionType,
+    UITextInlinePredictionType, UITextInput, UITextInputDelegate, UITextInputStringTokenizer,
+    UITextInputTokenizer, UITextInputTraits, UITextLayoutDirection, UITextPosition, UITextRange,
+    UITextSelectionRect, UITextSmartDashesType, UITextSmartInsertDeleteType, UITextSmartQuotesType,
     UITextSpellCheckingType, UITextStorageDirection, UIView, UIWindow,
 };
 
@@ -28,10 +28,7 @@ use super::actions::EditAction;
 use super::positions::{self, TextPosition, TextRange};
 use super::state::{Ivars, Mode};
 use super::utf16;
-
-/// `NSWritingDirectionLeftToRight`. GPUI lays out left to right and reports
-/// no direction, and the `NSText` binding is not compiled in.
-const WRITING_DIRECTION_LEFT_TO_RIGHT: NSInteger = 0;
+use crate::layout_direction;
 
 define_class!(
     // SAFETY: UIView's subclassing rules are kept: instances are created
@@ -354,6 +351,7 @@ define_class!(
             direction: UITextLayoutDirection,
             offset: NSInteger,
         ) -> Option<Retained<UITextPosition>> {
+            let direction = self.logical(direction);
             positions::offset(position)
                 .and_then(|from| self.position_in_direction(from, direction, offset))
                 .map(|offset| TextPosition::position(self.mtm(), offset))
@@ -411,6 +409,7 @@ define_class!(
             range: &UITextRange,
             direction: UITextLayoutDirection,
         ) -> Option<Retained<UITextPosition>> {
+            let direction = self.logical(direction);
             positions::range(range)
                 .map(|range| positions::farthest(range, direction))
                 .map(|offset| TextPosition::position(self.mtm(), offset))
@@ -422,23 +421,31 @@ define_class!(
             position: &UITextPosition,
             direction: UITextLayoutDirection,
         ) -> Option<Retained<UITextRange>> {
+            let direction = self.logical(direction);
             positions::offset(position)
                 .map(|offset| self.extended_range(offset, direction))
                 .map(|range| TextRange::text_range(self.mtm(), range))
         }
 
+        // GPUI reports no paragraph direction, so every position has the
+        // app's (`crate::layout_direction`).
         #[unsafe(method(baseWritingDirectionForPosition:inDirection:))]
         fn __base_writing_direction(
             &self,
             _position: &UITextPosition,
             _direction: UITextStorageDirection,
-        ) -> NSInteger {
-            WRITING_DIRECTION_LEFT_TO_RIGHT
+        ) -> NSWritingDirection {
+            layout_direction::current(self.mtm()).writing_direction()
         }
 
         // GPUI's input handler cannot change a paragraph's direction.
         #[unsafe(method(setBaseWritingDirection:forRange:))]
-        fn __set_base_writing_direction(&self, _direction: NSInteger, _range: &UITextRange) {}
+        fn __set_base_writing_direction(
+            &self,
+            _direction: NSWritingDirection,
+            _range: &UITextRange,
+        ) {
+        }
 
         #[unsafe(method(firstRectForRange:))]
         fn __first_rect(&self, range: &UITextRange) -> CGRect {
@@ -515,6 +522,12 @@ impl GPUITextInputView {
         f: impl FnOnce(&mut gpui::PlatformInputHandler) -> R,
     ) -> Option<R> {
         self.ivars().target.with_input_handler(f)
+    }
+
+    /// The logical direction (towards the start or end of the text) of a
+    /// visual one UIKit asks about, under the app's layout direction.
+    fn logical(&self, direction: UITextLayoutDirection) -> UITextLayoutDirection {
+        layout_direction::current(self.mtm()).logical(direction)
     }
 
     /// This view as UIKit's text input protocol object, for the delegate.

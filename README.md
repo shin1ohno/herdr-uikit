@@ -33,6 +33,11 @@ What it provides:
 - **Input.** Raw touches (GPUI's core turns them into clicks, scrolling, and
   drags), pointer and hover, hardware keys, and `UITextInput` for the software
   keyboard and IME composition.
+- **Menus.** GPUI's application menus in UIKit's main menu (the iPadOS menu
+  bar and the keyboard shortcut overlay), with their shortcuts as key
+  commands; see [Menus](#menus).
+- **Layout direction.** `herdr_uikit::set_layout_direction` tells UIKit which
+  way the app's text runs; see [Layout direction](#layout-direction).
 - **Everything else.** A GCD dispatcher, the pasteboard, thermal state, and
   idle-timer control.
 
@@ -50,7 +55,117 @@ depend on it by path or by git.
 
 Not supported yet: Core Video paint surfaces (GPUI exposes them only on
 macOS; they are skipped with a one-time warning), and anything GPUI's
-`Platform` trait asks of a desktop that iPadOS has no counterpart for.
+`Platform` trait asks of a desktop that iPadOS has no counterpart for. The
+menus' keyboard precedence rests on UIKit behavior still to be confirmed on a
+device ([Menus](#menus)).
+
+## Menus
+
+`Platform::set_menus` keeps GPUI's menus and asks UIKit to rebuild its main
+menu. The application delegate, a `UIResponder`, adds them in
+`buildMenuWithBuilder:`: GPUI's first menu goes into the application menu,
+menus titled File, Edit, View, Window, or Help (in English, or as UIKit
+titles its own menu) join UIKit's menu of that name, and the rest stand
+beside them. Separators become inline groups. Cut, Copy, Paste, and Select
+All items with an `OsAction` are UIKit's own Edit commands, which reach the
+text input view's `cut:`, `copy:`, `paste:`, and `selectAll:`; a second item
+with the same `OsAction` becomes an ordinary command, since UIKit refuses two
+identical commands. Every other item is one command whose selector,
+`herdrMenuAction:`, the focused window's drawing view performs, or the
+application delegate when no window has focus. `validateCommand:` asks GPUI
+whether the action is available and shows `checked` items with a check mark;
+with no GPUI callback registered a command is disabled, as on macOS, and
+while GPUI itself is running (its app is borrowed) a command keeps what it
+showed last instead of asking.
+
+UIKit's own application menu items (About, Settings, Services, Hide, Quit, as
+iPadOS provides them) stay, since the system performs them. GPUI's Undo and
+Redo replace UIKit's when GPUI's menus have them. An app should leave out of
+its iOS menus any item whose platform call does nothing on iPadOS (`quit`,
+`hide`, `hide_other_apps`): it would look usable and do nothing. Herdr UI
+already does so for Hide; its Quit item still needs the same `cfg`.
+
+Shortcuts come from the keymap as macOS GPUI chooses them: the first
+single-keystroke binding whose context matches an editor in a pane in a
+workspace, else the first. Only shortcuts with command or control become key
+commands, and none that UIKit's own menus already use; the others show no
+shortcut and their keys behave exactly as without menus.
+
+A key press keeps going through GPUI's keymap, so context-specific bindings
+and keys the daemon defines are never bypassed by a menu item's action. When
+a key command's press performs the command, the window hands the shortcut's
+keystroke to GPUI as the press would have reported it (enter, tab, and space
+with their character, `cmd-shift-/` as `cmd-?`), and runs the item's action
+only if GPUI declines it, as AppKit's key equivalents do on macOS. A command
+chosen with the pointer, by touch, or with the keys of an open menu runs the
+action.
+
+Which of the two happened is read from the event UIKit is delivering: the
+application class (`HerdrApplication`, passed to `UIApplicationMain`)
+records it around `sendEvent:`. A key event whose modifiers match the
+shortcut's is the press; any other event is a pick from the menu. With no
+event being delivered the keystroke goes to GPUI, which is harmless for a
+pick and keeps the keymap in charge otherwise. No modifier state a view kept
+is consulted, so a modifier held down before the app had focus, or a release
+lost while it was away, cannot turn a key press into a menu pick.
+
+This relies on UIKit behavior that is not documented and has to be checked on
+an iPad with a hardware keyboard:
+
+1. UIKit matches a main-menu key command before it calls the first
+   responder's `pressesBegan:withEvent:`. If it delivers the press first
+   instead, nothing is offered twice: a key command for a press GPUI already
+   handled in the same key event does nothing more, and one for a press GPUI
+   declined runs the action without offering the keystroke again.
+2. UIKit performs a key command synchronously inside `sendEvent:` for its
+   key event, and a pick from the menu during a touch or pointer event or on
+   its own schedule. Check it with the modifiers held down before switching
+   to the app (Cmd-Tab into it with Cmd still held, then press Cmd-W): the
+   press must still reach GPUI's keymap. Holding the modifiers while tapping
+   a menu item runs the action.
+3. A key command that `validateCommand:` marked disabled lets its press go on
+   to the responder chain instead of swallowing it, so a binding for the same
+   keystroke in a context where the menu's action is unavailable still reaches
+   GPUI. If UIKit swallows it, commands have to stay enabled for key matching
+   and be disabled only for display.
+4. Whether UIKit repeats a held key command, and whether it sends
+   `pressesEnded:` for a press its key command took. The view sends a repeat
+   to GPUI as a held key and runs no repeat timer of its own, so a lost
+   release cannot repeat forever; GPUI hears a key's release only if UIKit
+   sends it.
+5. UIKit validates commands from its event loop or from inside a call GPUI
+   makes; the latter is detected and skipped. Check it by changing focus with
+   a shortcut while the menu bar is visible.
+6. Which application menu items iPadOS shows by default (Hide, Quit), and
+   that they work.
+
+iPadOS reports nothing when a menu opens, so GPUI's `on_will_open_app_menu`
+callback is kept but never called (`validateCommand:` also runs while UIKit
+matches key commands, where clearing GPUI's pending keystrokes would break
+multi-keystroke bindings). iPadOS has no Dock menu.
+
+## Layout direction
+
+GPUI lays out every pixel itself, so UIKit cannot tell which way the app's
+text runs. On the main thread, call
+`herdr_uikit::set_layout_direction(LayoutDirection::RightToLeft)` (or
+`LeftToRight`, the default) when the app's language changes; it fails with
+`Error::NotMainThread` elsewhere. UIKit then reports that base writing
+direction to the keyboard and IME, lays out its own UI around the windows
+(`semanticContentAttribute`), and the text input maps visual left and right
+onto the text's logical order. The main menu is rebuilt, which refreshes its
+commands; the menu bar's own direction follows the app's localization.
+Terminal rendering and text shaping are unaffected.
+
+The left/right mapping assumes the focused text is drawn in the app's
+direction. Latin text or a terminal in a right-to-left app is still drawn
+left to right, so there a caret UIKit moves left goes towards the end, not
+visually left, and every position reports a right-to-left base direction:
+GPUI's input handler reports no per-range direction to do better with. To
+check on a device in a right-to-left app: move the caret with the space-bar
+trackpad and through an IME over Latin text and over right-to-left text, and
+note which way it goes, including whether UIKit's string tokenizer swaps left
+and right a second time.
 
 ## Building
 

@@ -23,9 +23,11 @@
 //! | `frame` | The display link, frames on demand, the keyboard animation |
 //! | `touch`, `pointer` | Touches and clicks; hover, scroll, and UIKit pointer shapes |
 //! | `input_target`, `text_input`, `text_state` | Keyboard and text input |
+//! | `direction` | The app's layout direction on the views UIKit sees |
 //! | `platform_window` | `gpui::PlatformWindow` over the above |
 
 mod convert;
+mod direction;
 mod error;
 mod frame;
 mod input_target;
@@ -53,12 +55,14 @@ use gpui::{
 use objc2::MainThreadMarker;
 use objc2_ui_kit::UIApplication;
 
+pub(crate) use self::direction::layout_direction_changed;
 pub(crate) use self::error::Error;
 pub(crate) use self::pointer::set_cursor_style;
 pub(crate) use self::scene::{
     active_window, scene_activation_changed, scene_connected, scene_disconnected, window_stack,
 };
 use self::state::Window;
+pub(crate) use self::text_input::{named_key_char, us_shifted};
 use crate::renderer;
 
 /// A GPUI window on iPadOS. Dropping it closes the window, and its scene.

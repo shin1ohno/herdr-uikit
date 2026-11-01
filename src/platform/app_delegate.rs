@@ -2,34 +2,87 @@
 //! cycle it only chooses each scene's configuration and hears process-wide
 //! events, memory warnings and termination; everything about a window goes
 //! through the scene delegate.
+//!
+//! It is a `UIResponder`, the last one in every responder chain, so it also
+//! builds the main menu (`buildMenuWithBuilder:`) and performs GPUI's menu
+//! commands when no window's drawing view took them first (`menus`).
 
 #![allow(
     unsafe_code,
     reason = "defines an Objective-C class with objc2's define_class!"
 )]
 
+use std::ptr;
+
 use objc2::{
-    ClassType, MainThreadMarker, MainThreadOnly, define_class,
+    ClassType, MainThreadMarker, MainThreadOnly, define_class, msg_send,
     rc::Retained,
-    runtime::{AnyObject, NSObject},
+    runtime::{AnyObject, NSObject, ProtocolObject, Sel},
 };
 use objc2_foundation::{NSDictionary, NSObjectProtocol, NSString};
 use objc2_ui_kit::{
-    UIApplication, UIApplicationDelegate, UIApplicationLaunchOptionsKey, UISceneConfiguration,
-    UISceneConnectionOptions, UISceneSession, UIWindowScene, UIWindowSceneSessionRoleApplication,
+    UIApplication, UIApplicationDelegate, UIApplicationLaunchOptionsKey, UICommand, UIMenuBuilder,
+    UIMenuSystem, UIResponder, UISceneConfiguration, UISceneConnectionOptions, UISceneSession,
+    UIWindowScene, UIWindowSceneSessionRoleApplication,
 };
 
-use super::{scene_delegate::SceneDelegate, shared};
+use super::{
+    menus::{self, Performed},
+    scene_delegate::SceneDelegate,
+    shared,
+};
 
 define_class!(
-    // SAFETY: NSObject has no subclassing requirements, and AppDelegate does
-    // not implement Drop.
-    #[unsafe(super(NSObject))]
+    // SAFETY: UIResponder asks subclasses only to keep its `init`, which
+    // `UIApplicationMain` calls, and AppDelegate does not implement Drop.
+    // Every override keeps the superclass signature.
+    #[unsafe(super(UIResponder, NSObject))]
     #[thread_kind = MainThreadOnly]
     // A fixed name, like the scene delegate's, so an `Info.plist` can name
     // the class and the name does not change with the crate version.
     #[name = "HerdrAppDelegate"]
     pub(super) struct AppDelegate;
+
+    impl AppDelegate {
+        #[unsafe(method(buildMenuWithBuilder:))]
+        fn build_menu(&self, builder: &ProtocolObject<dyn UIMenuBuilder>) {
+            // SAFETY: the argument is the builder UIKit passed for this
+            // selector; UIResponder's implementation returns nothing.
+            let () = unsafe { msg_send![super(self), buildMenuWithBuilder: builder] };
+            let mtm = self.mtm();
+            // Context menus are built through this method too; GPUI's menus
+            // belong in the main menu only.
+            if ptr::eq(&*builder.system(), &*UIMenuSystem::mainSystem(mtm)) {
+                menus::build(builder, mtm);
+            }
+        }
+
+        // Reached when no window's drawing view is in the responder chain,
+        // so the command can only dispatch its action.
+        #[unsafe(method(herdrMenuAction:))]
+        fn menu_action(&self, sender: Option<&AnyObject>) {
+            if let Some(performed) = Performed::new(sender) {
+                performed.dispatch_action();
+            }
+        }
+
+        #[unsafe(method(validateCommand:))]
+        fn validate_command(&self, command: &UICommand) {
+            // SAFETY: as in `buildMenuWithBuilder:`, for the command.
+            let () = unsafe { msg_send![super(self), validateCommand: command] };
+            menus::validate(command);
+        }
+
+        #[unsafe(method(canPerformAction:withSender:))]
+        fn can_perform_action(&self, action: Sel, sender: Option<&AnyObject>) -> bool {
+            // define_class! converts the returned value, so this is one
+            // expression rather than an early `return`.
+            action == menus::action_selector()
+                // SAFETY: the arguments are the ones UIKit passed;
+                // UIResponder's implementation returns a BOOL.
+                || unsafe { msg_send![super(self), canPerformAction: action, withSender: sender] }
+        }
+    }
 
     // SAFETY: NSObjectProtocol asks nothing more of an NSObject subclass.
     unsafe impl NSObjectProtocol for AppDelegate {}

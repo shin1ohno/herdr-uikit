@@ -1,6 +1,7 @@
-//! `gpui::Platform` for iPadOS: `UIApplicationMain`, the application and
-//! scene delegates, the pasteboard, keyboard layout, URL opening, and the app
-//! lifecycle and memory-warning callbacks GPUI's core already models.
+//! `gpui::Platform` for iPadOS: `UIApplicationMain` with its application
+//! class (`application`), the application and scene delegates, the
+//! pasteboard, keyboard layout, URL opening, and the app lifecycle and
+//! memory-warning callbacks GPUI's core already models.
 //!
 //! [`gpui::Platform::run`] calls `UIApplicationMain`, which never returns. The
 //! application delegate supplies a scene configuration whose delegate class
@@ -11,10 +12,12 @@
 //! returns a result; none reports success for something that did not happen.
 
 mod app_delegate;
+pub(crate) mod application;
 mod error;
 mod idle;
 mod keyboard;
 mod lifecycle;
+pub(crate) mod menus;
 mod pasteboard;
 mod scene_delegate;
 mod shared;
@@ -33,7 +36,7 @@ use anyhow::Result;
 use futures_channel::oneshot;
 use gpui::{
     Action, ActivityGuard, AnyWindowHandle, AppLifecyclePhase, BackgroundExecutor, ClipboardItem,
-    CursorStyle, DummyKeyboardMapper, ForegroundExecutor, Keymap, Menu, MenuItem,
+    CursorStyle, DummyKeyboardMapper, ForegroundExecutor, Keymap, Menu, MenuItem, OwnedMenu,
     PathPromptOptions, Platform, PlatformDispatcher, PlatformDisplay, PlatformKeyboardLayout,
     PlatformKeyboardMapper, PlatformTextSystem, PlatformWindow, Task, ThermalState,
     WindowAppearance, WindowKind, WindowParams, popup::PopupNotSupportedError,
@@ -115,7 +118,11 @@ impl Platform for IosPlatform {
         // UIKit may restore saved scene sessions before it asks the
         // application delegate for any configuration.
         scene_delegate::register();
-        UIApplication::main(None, Some(&app_delegate::class_name()), mtm)
+        UIApplication::main(
+            Some(&application::class_name()),
+            Some(&app_delegate::class_name()),
+            mtm,
+        )
     }
 
     /// iPadOS apps do not end themselves: the system ends the process, and
@@ -260,20 +267,35 @@ impl Platform for IosPlatform {
         self.shared.memory_warning.set(callback);
     }
 
-    /// The iPadOS menu bar (`UIMenuBuilder`) is not wired to GPUI's menus.
-    fn set_menus(&self, _menus: Vec<Menu>, _keymap: &Keymap) {}
+    /// Keeps the menus and their shortcuts, which only `keymap` gives, and
+    /// asks UIKit to rebuild its main menu (`menus`), which it does after
+    /// this returns.
+    fn set_menus(&self, menus: Vec<Menu>, keymap: &Keymap) {
+        self.shared.menus.borrow_mut().set(menus, keymap);
+        match MainThreadMarker::new() {
+            Some(mtm) => menus::request_rebuild(mtm),
+            None => tracing::error!(error = %Error::NotMainThread, "not rebuilding the menus"),
+        }
+    }
+
+    fn get_menus(&self) -> Option<Vec<OwnedMenu>> {
+        self.shared.menus.borrow().owned()
+    }
 
     /// iPadOS has no Dock menu.
     fn set_dock_menu(&self, _menu: Vec<MenuItem>, _keymap: &Keymap) {}
 
-    /// No menu is shown (`set_menus`), so no menu action arrives.
-    fn on_app_menu_action(&self, _callback: Box<dyn FnMut(&dyn Action)>) {}
+    fn on_app_menu_action(&self, callback: Box<dyn FnMut(&dyn Action)>) {
+        self.shared.app_menu_action.set(callback);
+    }
 
-    /// No menu is shown, so none opens.
-    fn on_will_open_app_menu(&self, _callback: Box<dyn FnMut()>) {}
+    fn on_will_open_app_menu(&self, callback: Box<dyn FnMut()>) {
+        self.shared.will_open_app_menu.set(callback);
+    }
 
-    /// No menu is shown, so no command is validated.
-    fn on_validate_app_menu_command(&self, _callback: Box<dyn FnMut(&dyn Action) -> bool>) {}
+    fn on_validate_app_menu_command(&self, callback: Box<dyn FnMut(&dyn Action) -> bool>) {
+        self.shared.validate_app_menu_command.set(callback);
+    }
 
     fn thermal_state(&self) -> ThermalState {
         thermal::thermal_state()

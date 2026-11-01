@@ -11,6 +11,9 @@ pub enum Error {
     /// asking the system for one was refused.
     #[error("no window scene is available for a new window")]
     NoScene,
+    /// UIKit state was changed from a thread other than the main thread.
+    #[error("the iPadOS platform was used off the main thread")]
+    NotMainThread,
     #[error(transparent)]
     Renderer(#[from] crate::renderer::Error),
 }

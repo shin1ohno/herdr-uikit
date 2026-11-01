@@ -34,7 +34,7 @@ use super::{
     text_input::TextInputView,
     view::GpuiView,
 };
-use crate::renderer::Renderer;
+use crate::{layout_direction, renderer::Renderer};
 
 /// The scale to assume before the window is on a screen: every iPad that runs
 /// iPadOS 17 has a 2x display.
@@ -153,6 +153,7 @@ impl Window {
             scene.setTitle(Some(&NSString::from_str(&title)));
         }
         self.view.observe_scene(&scene);
+        self.apply_layout_direction(layout_direction::current(self.mtm));
         ui_window.makeKeyAndVisible();
 
         let activation = scene.activationState();

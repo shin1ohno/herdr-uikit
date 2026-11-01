@@ -47,3 +47,32 @@ fn a_reentrant_call_finds_the_slot_empty_instead_of_panicking() {
 
     assert_eq!(slot.call(|callback| callback()), Some(None));
 }
+
+#[test]
+fn try_call_tells_a_missing_callback_from_a_running_one() {
+    let slot = Rc::new(Slot::<dyn FnMut() -> Called<u32>>::default());
+    assert_eq!(slot.try_call(|callback| callback()), Called::Unregistered);
+
+    let inner = Rc::clone(&slot);
+    slot.set(Box::new(move || {
+        match inner.try_call(|callback| callback()) {
+            Called::Done(_) => Called::Done(1),
+            Called::Unregistered => Called::Unregistered,
+            Called::Running => Called::Running,
+        }
+    }));
+
+    assert_eq!(
+        slot.try_call(|callback| callback()),
+        Called::Done(Called::Running)
+    );
+}
+
+#[test]
+fn gpui_counts_as_running_during_a_callback() {
+    let slot = Slot::<dyn FnMut() -> bool>::default();
+    slot.set(Box::new(crate::gpui_call::is_running));
+
+    assert_eq!(slot.call(|callback| callback()), Some(true));
+    assert!(!crate::gpui_call::is_running());
+}

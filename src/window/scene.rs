@@ -173,6 +173,18 @@ pub(crate) fn window_stack(_mtm: MainThreadMarker) -> Vec<AnyWindowHandle> {
     })
 }
 
+/// The windows in connected scenes. The registry is released before the
+/// caller touches them, as their views may call back here.
+pub(super) fn live_windows(_mtm: MainThreadMarker) -> Vec<Rc<Window>> {
+    REGISTRY.with_borrow(|registry| {
+        registry
+            .scenes
+            .iter()
+            .filter_map(SceneEntry::live_window)
+            .collect()
+    })
+}
+
 /// Whether a connected scene hosts no window, so a new window can open now.
 pub(super) fn has_idle_scene(_mtm: MainThreadMarker) -> bool {
     REGISTRY.with_borrow(|registry| registry.scenes.iter().any(SceneEntry::is_idle))

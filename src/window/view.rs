@@ -3,6 +3,7 @@
 //! safe-area changes, touches, pointer recognizers, and keyboard and scene
 //! notifications to its `Window`, and stands in as first responder while no
 //! text field is focused, passing hardware key presses to the text input view.
+//! It also performs GPUI's menu commands for its window (`crate::menu`).
 
 #![allow(
     unsafe_code,
@@ -22,7 +23,7 @@ use objc2::{
 use objc2_core_foundation::CGRect;
 use objc2_foundation::{NSNotification, NSNotificationCenter, NSObject, NSSet};
 use objc2_ui_kit::{
-    UIEvent, UIHoverGestureRecognizer, UIKeyboardDidHideNotification,
+    UICommand, UIEvent, UIHoverGestureRecognizer, UIKeyboardDidHideNotification,
     UIKeyboardDidShowNotification, UIKeyboardWillChangeFrameNotification,
     UIKeyboardWillHideNotification, UIKeyboardWillShowNotification, UIPanGestureRecognizer,
     UIPress, UIPressesEvent, UIResponder, UISceneDidEnterBackgroundNotification,
@@ -30,6 +31,7 @@ use objc2_ui_kit::{
 };
 
 use super::{keyboard::Event as KeyboardEvent, state::Window, touch::TouchStage};
+use crate::platform::menus::{self, Performed};
 
 pub(super) struct ViewIvars {
     /// Set while a press is being handed to the text input view, so a press
@@ -164,6 +166,30 @@ define_class!(
                     let () = unsafe { msg_send![super(self), pressesCancelled: presses, withEvent: event] };
                 }
             }
+        }
+
+        // The focused window's command, whatever its first responder: the
+        // text input view does not perform it, so it reaches this view.
+        #[unsafe(method(herdrMenuAction:))]
+        fn menu_action(&self, sender: Option<&AnyObject>) {
+            let Some(performed) = Performed::new(sender) else {
+                return;
+            };
+            let handled = performed.shortcut().is_some_and(|shortcut| {
+                self.owner()
+                    .is_some_and(|window| window.text_input.menu_shortcut(shortcut))
+            });
+            if !handled {
+                performed.dispatch_action();
+            }
+        }
+
+        #[unsafe(method(validateCommand:))]
+        fn validate_command(&self, command: &UICommand) {
+            // SAFETY: the argument is the command UIKit passed; UIResponder's
+            // implementation returns nothing.
+            let () = unsafe { msg_send![super(self), validateCommand: command] };
+            menus::validate(command);
         }
 
         #[unsafe(method(handleHover:))]

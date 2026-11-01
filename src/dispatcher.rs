@@ -98,6 +98,9 @@ fn delay_nanos(duration: Duration) -> i64 {
 fn run(runnable: RunnableVariant) {
     let metadata = runnable.metadata();
     gpui::profiler::update_running_task(metadata.spawned, metadata.location);
-    runnable.run();
+    {
+        let _in_gpui = crate::gpui_call::InGpui::enter();
+        runnable.run();
+    }
     gpui::profiler::save_task_timing();
 }

@@ -24,26 +24,22 @@ use smallvec::SmallVec;
 
 use super::keymap::{self, HeldModifiers, KeyEvent};
 use super::view_class::GPUITextInputView;
+use crate::menu::{self, EventSource, Route, Shortcut, Trigger};
+use crate::platform::application;
 
 /// Seconds before a held key starts repeating, and between repeats, close to
 /// iPadOS's defaults for hardware keyboards (which apps cannot read).
 const REPEAT_DELAY: f64 = 0.5;
 const REPEAT_INTERVAL: f64 = 0.033;
 
-/// Who received a key's press, so its release goes to the same place.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Route {
-    /// GPUI handled the press; UIKit never saw it.
-    Gpui,
-    /// The press went on to UIKit's text system.
-    Forwarded,
-}
-
 #[derive(Debug)]
 struct Press {
     usage: isize,
     route: Route,
     key: String,
+    /// The serial of the key event that delivered the press, 0 when none
+    /// was being delivered.
+    event: u64,
 }
 
 #[derive(Debug)]
@@ -61,6 +57,10 @@ pub(super) struct KeyState {
     reported: (Modifiers, bool),
     presses: SmallVec<[Press; 4]>,
     repeat: Option<Repeat>,
+    /// The keystroke a menu key command last handed to GPUI, until a key is
+    /// released or the modifiers change, so UIKit repeating the command
+    /// reaches GPUI as a held key.
+    menu_press: Option<Keystroke>,
 }
 
 impl KeyState {
@@ -72,13 +72,35 @@ impl KeyState {
             .any(|press| press.route == Route::Forwarded && press.key == key)
     }
 
+    /// The route of a press of `key` that the key event being delivered
+    /// brought, so a key command for that same press is not offered to GPUI
+    /// again. A press from an earlier key event is a different press of the
+    /// key, or one whose release was lost, so it does not count. With no
+    /// event being delivered any press still held counts.
+    fn prior(&self, key: &str, source: EventSource) -> Option<Route> {
+        let current = match source {
+            EventSource::Keys { serial, .. } => Some(serial),
+            EventSource::Unknown => None,
+            EventSource::Other => return None,
+        };
+        self.presses
+            .iter()
+            .find(|press| press.key == key && current.is_none_or(|serial| press.event == serial))
+            .map(|press| press.route)
+    }
+
     pub(super) fn stop_repeat(&mut self) {
         self.repeat = None;
     }
 
-    fn began(&mut self, usage: isize, route: Route, key: String) {
+    fn began(&mut self, usage: isize, route: Route, key: String, event: u64) {
         self.presses.retain(|press| press.usage != usage);
-        self.presses.push(Press { usage, route, key });
+        self.presses.push(Press {
+            usage,
+            route,
+            key,
+            event,
+        });
     }
 
     fn ended(&mut self, usage: isize) -> Option<Route> {
@@ -150,7 +172,8 @@ impl GPUITextInputView {
                 self.forward(&press, event, Phase::Began);
                 continue;
             }
-            self.sync_modifiers(&facts);
+            self.ivars().keys.borrow_mut().menu_press = None;
+            self.sync_flags(facts.flags);
             let Some(keystroke) = facts.keystroke else {
                 self.forward(&press, event, Phase::Began);
                 continue;
@@ -162,10 +185,14 @@ impl GPUITextInputView {
             } else {
                 Route::Forwarded
             };
+            let serial = match application::event_source() {
+                EventSource::Keys { serial, .. } => serial,
+                EventSource::Unknown | EventSource::Other => 0,
+            };
             self.ivars()
                 .keys
                 .borrow_mut()
-                .began(facts.usage, route, keystroke.key.clone());
+                .began(facts.usage, route, keystroke.key.clone(), serial);
             match route {
                 Route::Gpui => self.start_repeat(facts.usage, keystroke),
                 Route::Forwarded => {
@@ -201,7 +228,11 @@ impl GPUITextInputView {
                 self.forward(&press, event, phase);
                 continue;
             }
-            let route = self.ivars().keys.borrow_mut().ended(facts.usage);
+            let route = {
+                let mut keys = self.ivars().keys.borrow_mut();
+                keys.menu_press = None;
+                keys.ended(facts.usage)
+            };
             let repeating = self
                 .ivars()
                 .keys
@@ -253,6 +284,40 @@ impl GPUITextInputView {
                 .unwrap_or(false)
     }
 
+    /// A menu command with `shortcut` was performed. When its key press
+    /// triggered it, the keystroke goes to GPUI as the press would have
+    /// (`crate::menu`, "Keyboard precedence"). Returns whether that press
+    /// was GPUI's, now or earlier in the same key event; otherwise the caller
+    /// dispatches the item's action.
+    ///
+    /// No repeat timer starts here, unlike for a press GPUI keeps: were
+    /// UIKit to send no `pressesEnded:` for a press its key command took,
+    /// the timer would never stop. A repeat UIKit performs reaches GPUI as a
+    /// held key instead.
+    pub(super) fn menu_shortcut(&self, shortcut: &Shortcut) -> bool {
+        let source = application::event_source();
+        let keystroke = &shortcut.keystroke;
+        let prior = self.ivars().keys.borrow().prior(&keystroke.key, source);
+        match menu::trigger(shortcut.flags, source, prior) {
+            Trigger::Handled => true,
+            Trigger::Declined | Trigger::Pointer => false,
+            Trigger::Keyboard => {
+                // The press itself never reached this view, so its modifiers
+                // are adopted from the event, as for a press.
+                if let EventSource::Keys { flags, .. } = source {
+                    self.sync_flags(flags);
+                }
+                let held = {
+                    let mut keys = self.ivars().keys.borrow_mut();
+                    let held = keys.menu_press.as_ref() == Some(keystroke);
+                    keys.menu_press = Some(keystroke.clone());
+                    held
+                };
+                self.key_down(keystroke.clone(), held)
+            }
+        }
+    }
+
     fn key_down(&self, keystroke: Keystroke, is_held: bool) -> bool {
         self.ivars()
             .target
@@ -269,6 +334,7 @@ impl GPUITextInputView {
             if let Some(bit) = facts.modifier_bit {
                 keys.held.set(bit, pressed);
             }
+            keys.menu_press = None;
             keys.capslock = keymap::capslock(facts.flags);
             keys.modifiers_change()
         };
@@ -281,11 +347,11 @@ impl GPUITextInputView {
 
     /// Adopts the modifiers a key reports when they disagree with the presses
     /// seen, such as a modifier held down before this view took focus.
-    fn sync_modifiers(&self, facts: &KeyFacts) {
+    fn sync_flags(&self, flags: objc2_ui_kit::UIKeyModifierFlags) {
         let change = {
             let mut keys = self.ivars().keys.borrow_mut();
-            keys.held.sync(keymap::modifiers(facts.flags));
-            keys.capslock = keymap::capslock(facts.flags);
+            keys.held.sync(keymap::modifiers(flags));
+            keys.capslock = keymap::capslock(flags);
             keys.modifiers_change()
         };
         if let Some(change) = change {

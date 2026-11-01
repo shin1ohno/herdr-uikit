@@ -11,16 +11,23 @@ use std::{
 };
 
 use dispatch2::DispatchQueue;
-use gpui::AppLifecyclePhase;
+use gpui::{Action, AppLifecyclePhase};
 use objc2::{MainThreadMarker, rc::Retained};
 use objc2_ui_kit::UIScene;
 
 use super::{
     lifecycle::{Delivery, LifecycleTracker, SceneState},
+    menus::Menus,
     slot::Slot,
     thermal::ThermalObserver,
 };
 use crate::{BackgroundTask, window};
+
+/// GPUI's callback for a menu command's action.
+pub(super) type MenuActionCallback = dyn FnMut(&dyn Action);
+
+/// GPUI's callback answering whether a menu command's action is available.
+pub(super) type MenuValidateCallback = dyn FnMut(&dyn Action) -> bool;
 
 thread_local! {
     static CURRENT: OnceCell<Rc<Shared>> = const { OnceCell::new() };
@@ -30,9 +37,11 @@ thread_local! {
 #[derive(Default)]
 pub(super) struct Shared {
     pub(super) app_lifecycle: Slot<dyn FnMut(AppLifecyclePhase)>,
+    pub(super) app_menu_action: Slot<MenuActionCallback>,
     finish_launching: RefCell<Option<Box<dyn FnOnce()>>>,
     launched: Cell<bool>,
     pub(super) memory_warning: Slot<dyn FnMut()>,
+    pub(super) menus: RefCell<Menus>,
     pub(super) open_urls: Slot<dyn FnMut(Vec<String>)>,
     pub(super) quit: Slot<dyn FnMut() -> bool>,
     pub(super) reopen: Slot<dyn FnMut()>,
@@ -41,6 +50,12 @@ pub(super) struct Shared {
     /// observers.
     pub(super) thermal_observer: OnceCell<Retained<ThermalObserver>>,
     pub(super) thermal_state_change: Slot<dyn FnMut()>,
+    pub(super) validate_app_menu_command: Slot<MenuValidateCallback>,
+    /// iPadOS tells apps nothing when a menu opens, so this is kept but not
+    /// called: `validateCommand:` also runs while UIKit matches key commands,
+    /// where clearing GPUI's pending keystrokes would break multi-keystroke
+    /// bindings.
+    pub(super) will_open_app_menu: Slot<dyn FnMut()>,
 }
 
 /// Makes `shared` the state the delegates reach. Returns `false`, leaving the

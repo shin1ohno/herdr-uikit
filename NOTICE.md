@@ -12,6 +12,14 @@ Apache License, Version 2.0. Changes from upstream replace AppKit with UIKit,
 `CVDisplayLink` with `CADisplayLink`, and adapt the code to this repository's
 error-handling, file-size, and `unsafe` rules.
 
+The application menu (`src/menu`, `src/platform/menus.rs`) follows
+`gpui-pre-macos`'s `set_menus` and `create_menu_item`: the default key
+context a binding is shown for, the choice of the earliest matching binding,
+the standard editing selectors for `OsAction` items, and the index each
+command carries back to its action. The iOS version builds `UICommand`s in
+`buildMenuWithBuilder:` instead of an `NSMenu`, and gives key presses to
+GPUI's keymap before an item's action.
+
 The iOS renderer omits Core Video surfaces: the pinned GPUI exposes the
 `PaintSurface` image buffer only on macOS. Unsupported surfaces are skipped
 with a one-time warning.

@@ -145,7 +145,9 @@ impl TextRange {
 }
 
 /// The end of `range` furthest in `direction`: the start leftward or upward,
-/// the end otherwise (GPUI lays text out left to right).
+/// the end otherwise. `direction` is logical, left meaning towards the start;
+/// the view maps UIKit's visual directions first
+/// (`LayoutDirection::logical`), so right to left text swaps the ends.
 pub(super) fn farthest(range: Range<usize>, direction: UITextLayoutDirection) -> usize {
     match direction {
         UITextLayoutDirection::Left | UITextLayoutDirection::Up => range.start,

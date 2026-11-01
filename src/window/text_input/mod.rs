@@ -45,7 +45,9 @@ use gpui::{Bounds, Pixels, TextInputConfiguration};
 use objc2::{DefinedClass, MainThreadMarker, rc::Retained};
 use objc2_ui_kit::UIView;
 
+pub(crate) use self::keymap::{named_key_char, us_shifted};
 use super::{input_target::InputTarget, keyboard::ResignReason};
+use crate::menu::Shortcut;
 use state::Mode;
 use traits::Traits;
 use view_class::GPUITextInputView;
@@ -97,6 +99,13 @@ impl TextInputView {
             self.view.ivars().target.expect_keyboard_hide(reason);
             self.view.resignFirstResponder();
         }
+    }
+
+    /// A menu command with `shortcut` was performed; see
+    /// `GPUITextInputView::menu_shortcut`. Returns whether the key press
+    /// was GPUI's to handle, so the command's action must not run.
+    pub(crate) fn menu_shortcut(&self, shortcut: &Shortcut) -> bool {
+        self.view.menu_shortcut(shortcut)
     }
 
     /// GPUI replaced or changed the input handler. The flush re-reads the

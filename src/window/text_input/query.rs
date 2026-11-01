@@ -1,5 +1,10 @@
 //! What UIKit reads from the text input: text, caret movement, and geometry,
 //! answered from GPUI's input handler.
+//!
+//! Directions here are logical: left steps towards the start of the text and
+//! right towards its end. The view maps the visual directions UIKit passes
+//! under the app's layout direction (`LayoutDirection::logical`) before
+//! calling in, so in right to left text a visual left moves forward.
 
 use std::ops::Range;
 

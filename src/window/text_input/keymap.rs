@@ -27,32 +27,40 @@ pub(super) struct KeyEvent<'a> {
     pub(super) flags: UIKeyModifierFlags,
 }
 
-/// Keys GPUI names rather than spells: the key name and, for the keys that
-/// type something, the text macOS reports as their `key_char`.
-fn named_key(usage: UIKeyboardHIDUsage) -> Option<(&'static str, Option<&'static str>)> {
+/// Keys GPUI names rather than spells.
+fn named_key(usage: UIKeyboardHIDUsage) -> Option<&'static str> {
     let named = match usage {
-        UIKeyboardHIDUsage::KeyboardReturnOrEnter | UIKeyboardHIDUsage::KeypadEnter => {
-            ("enter", Some("\n"))
-        }
-        UIKeyboardHIDUsage::KeyboardTab => ("tab", Some("\t")),
-        UIKeyboardHIDUsage::KeyboardSpacebar => ("space", Some(" ")),
-        UIKeyboardHIDUsage::KeyboardEscape => ("escape", None),
-        UIKeyboardHIDUsage::KeyboardDeleteOrBackspace => ("backspace", None),
-        UIKeyboardHIDUsage::KeyboardDeleteForward => ("delete", None),
+        UIKeyboardHIDUsage::KeyboardReturnOrEnter | UIKeyboardHIDUsage::KeypadEnter => "enter",
+        UIKeyboardHIDUsage::KeyboardTab => "tab",
+        UIKeyboardHIDUsage::KeyboardSpacebar => "space",
+        UIKeyboardHIDUsage::KeyboardEscape => "escape",
+        UIKeyboardHIDUsage::KeyboardDeleteOrBackspace => "backspace",
+        UIKeyboardHIDUsage::KeyboardDeleteForward => "delete",
         // Apple keyboards label the Insert position "help", and macOS GPUI
         // reports it as insert as well.
-        UIKeyboardHIDUsage::KeyboardInsert | UIKeyboardHIDUsage::KeyboardHelp => ("insert", None),
-        UIKeyboardHIDUsage::KeyboardHome => ("home", None),
-        UIKeyboardHIDUsage::KeyboardEnd => ("end", None),
-        UIKeyboardHIDUsage::KeyboardPageUp => ("pageup", None),
-        UIKeyboardHIDUsage::KeyboardPageDown => ("pagedown", None),
-        UIKeyboardHIDUsage::KeyboardUpArrow => ("up", None),
-        UIKeyboardHIDUsage::KeyboardDownArrow => ("down", None),
-        UIKeyboardHIDUsage::KeyboardLeftArrow => ("left", None),
-        UIKeyboardHIDUsage::KeyboardRightArrow => ("right", None),
-        _ => return function_key(usage).map(|name| (name, None)),
+        UIKeyboardHIDUsage::KeyboardInsert | UIKeyboardHIDUsage::KeyboardHelp => "insert",
+        UIKeyboardHIDUsage::KeyboardHome => "home",
+        UIKeyboardHIDUsage::KeyboardEnd => "end",
+        UIKeyboardHIDUsage::KeyboardPageUp => "pageup",
+        UIKeyboardHIDUsage::KeyboardPageDown => "pagedown",
+        UIKeyboardHIDUsage::KeyboardUpArrow => "up",
+        UIKeyboardHIDUsage::KeyboardDownArrow => "down",
+        UIKeyboardHIDUsage::KeyboardLeftArrow => "left",
+        UIKeyboardHIDUsage::KeyboardRightArrow => "right",
+        _ => return function_key(usage),
     };
     Some(named)
+}
+
+/// The text macOS reports as the `key_char` of a named key that types
+/// something, whatever modifiers are held: enter, tab, and space.
+pub(crate) fn named_key_char(name: &str) -> Option<&'static str> {
+    match name {
+        "enter" => Some("\n"),
+        "tab" => Some("\t"),
+        "space" => Some(" "),
+        _ => None,
+    }
 }
 
 const FUNCTION_KEYS: [&str; 24] = [
@@ -77,53 +85,69 @@ fn function_key(usage: UIKeyboardHIDUsage) -> Option<&'static str> {
         .copied()
 }
 
+/// The main block's keys other than letters, with their unshifted and
+/// shifted characters on the US layout.
+const US_SYMBOLS: [(UIKeyboardHIDUsage, char, char); 21] = [
+    (UIKeyboardHIDUsage::Keyboard1, '1', '!'),
+    (UIKeyboardHIDUsage::Keyboard2, '2', '@'),
+    (UIKeyboardHIDUsage::Keyboard3, '3', '#'),
+    (UIKeyboardHIDUsage::Keyboard4, '4', '$'),
+    (UIKeyboardHIDUsage::Keyboard5, '5', '%'),
+    (UIKeyboardHIDUsage::Keyboard6, '6', '^'),
+    (UIKeyboardHIDUsage::Keyboard7, '7', '&'),
+    (UIKeyboardHIDUsage::Keyboard8, '8', '*'),
+    (UIKeyboardHIDUsage::Keyboard9, '9', '('),
+    (UIKeyboardHIDUsage::Keyboard0, '0', ')'),
+    (UIKeyboardHIDUsage::KeyboardHyphen, '-', '_'),
+    (UIKeyboardHIDUsage::KeyboardEqualSign, '=', '+'),
+    (UIKeyboardHIDUsage::KeyboardOpenBracket, '[', '{'),
+    (UIKeyboardHIDUsage::KeyboardCloseBracket, ']', '}'),
+    (UIKeyboardHIDUsage::KeyboardBackslash, '\\', '|'),
+    (UIKeyboardHIDUsage::KeyboardSemicolon, ';', ':'),
+    (UIKeyboardHIDUsage::KeyboardQuote, '\'', '"'),
+    (UIKeyboardHIDUsage::KeyboardGraveAccentAndTilde, '`', '~'),
+    (UIKeyboardHIDUsage::KeyboardComma, ',', '<'),
+    (UIKeyboardHIDUsage::KeyboardPeriod, '.', '>'),
+    (UIKeyboardHIDUsage::KeyboardSlash, '/', '?'),
+];
+
 /// The unshifted and shifted characters of a key on the US layout, the
 /// fallback when the reported characters cannot name the key.
 pub(super) fn us_layout(usage: UIKeyboardHIDUsage) -> Option<(char, char)> {
-    const DIGITS_SHIFTED: [char; 9] = ['!', '@', '#', '$', '%', '^', '&', '*', '('];
     let code = usage.0;
     let letters = UIKeyboardHIDUsage::KeyboardA.0..=UIKeyboardHIDUsage::KeyboardZ.0;
-    let digits = UIKeyboardHIDUsage::Keyboard1.0..=UIKeyboardHIDUsage::Keyboard9.0;
     let keypad_digits = UIKeyboardHIDUsage::Keypad1.0..=UIKeyboardHIDUsage::Keypad9.0;
     if letters.contains(&code) {
         let lower = ascii_offset(b'a', code - letters.start())?;
         return Some((lower, lower.to_ascii_uppercase()));
     }
-    if digits.contains(&code) {
-        let offset = code - digits.start();
-        let digit = ascii_offset(b'1', offset)?;
-        let shifted = usize::try_from(offset)
-            .ok()
-            .and_then(|index| DIGITS_SHIFTED.get(index))?;
-        return Some((digit, *shifted));
+    if let Some((_, lower, upper)) = US_SYMBOLS.iter().find(|(key, ..)| *key == usage) {
+        return Some((*lower, *upper));
     }
     if keypad_digits.contains(&code) {
         let digit = ascii_offset(b'1', code - keypad_digits.start())?;
         return Some((digit, digit));
     }
-    let pair = match usage {
-        UIKeyboardHIDUsage::Keyboard0 => ('0', ')'),
-        UIKeyboardHIDUsage::KeyboardHyphen => ('-', '_'),
-        UIKeyboardHIDUsage::KeyboardEqualSign => ('=', '+'),
-        UIKeyboardHIDUsage::KeyboardOpenBracket => ('[', '{'),
-        UIKeyboardHIDUsage::KeyboardCloseBracket => (']', '}'),
-        UIKeyboardHIDUsage::KeyboardBackslash => ('\\', '|'),
-        UIKeyboardHIDUsage::KeyboardSemicolon => (';', ':'),
-        UIKeyboardHIDUsage::KeyboardQuote => ('\'', '"'),
-        UIKeyboardHIDUsage::KeyboardGraveAccentAndTilde => ('`', '~'),
-        UIKeyboardHIDUsage::KeyboardComma => (',', '<'),
-        UIKeyboardHIDUsage::KeyboardPeriod => ('.', '>'),
-        UIKeyboardHIDUsage::KeyboardSlash => ('/', '?'),
-        UIKeyboardHIDUsage::Keypad0 => ('0', '0'),
-        UIKeyboardHIDUsage::KeypadPeriod => ('.', '.'),
-        UIKeyboardHIDUsage::KeypadSlash => ('/', '/'),
-        UIKeyboardHIDUsage::KeypadAsterisk => ('*', '*'),
-        UIKeyboardHIDUsage::KeypadHyphen => ('-', '-'),
-        UIKeyboardHIDUsage::KeypadPlus => ('+', '+'),
-        UIKeyboardHIDUsage::KeypadEqualSign => ('=', '='),
+    let keypad = match usage {
+        UIKeyboardHIDUsage::Keypad0 => '0',
+        UIKeyboardHIDUsage::KeypadPeriod => '.',
+        UIKeyboardHIDUsage::KeypadSlash => '/',
+        UIKeyboardHIDUsage::KeypadAsterisk => '*',
+        UIKeyboardHIDUsage::KeypadHyphen => '-',
+        UIKeyboardHIDUsage::KeypadPlus => '+',
+        UIKeyboardHIDUsage::KeypadEqualSign => '=',
         _ => return None,
     };
-    Some(pair)
+    Some((keypad, keypad))
+}
+
+/// What shift turns a non-letter main-block character into on the US
+/// layout (`/` into `?`), the key GPUI names a shifted press by.
+pub(crate) fn us_shifted(base: char) -> Option<char> {
+    US_SYMBOLS
+        .iter()
+        .find(|(_, lower, _)| *lower == base)
+        .map(|(_, _, upper)| *upper)
 }
 
 fn ascii_offset(base: u8, offset: isize) -> Option<char> {
@@ -226,11 +250,11 @@ impl HeldModifiers {
 /// GPUI could bind (a dead key on a layout without an ASCII equivalent).
 pub(super) fn keystroke(event: &KeyEvent<'_>) -> Option<Keystroke> {
     let mut modifiers = modifiers(event.flags);
-    if let Some((name, key_char)) = named_key(event.usage) {
+    if let Some(name) = named_key(event.usage) {
         return Some(Keystroke {
             modifiers,
             key: name.to_owned(),
-            key_char: key_char.map(str::to_owned),
+            key_char: named_key_char(name).map(str::to_owned),
         });
     }
 

@@ -7,6 +7,8 @@ mod first_responder;
 mod geometry_rects;
 mod key_names;
 mod keystrokes;
+mod layout_directions;
+mod menu_keystrokes;
 mod modifier_keys;
 mod responder_modes;
 mod text_state;

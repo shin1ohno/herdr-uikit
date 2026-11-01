@@ -23,6 +23,9 @@ mod dispatcher;
 mod display;
 mod display_link;
 mod error;
+mod gpui_call;
+mod layout_direction;
+mod menu;
 mod platform;
 mod renderer;
 mod text_system;
@@ -30,6 +33,7 @@ mod window;
 
 pub use background_task::BackgroundTask;
 pub use error::{Error, Result};
+pub use layout_direction::{LayoutDirection, layout_direction, set_layout_direction};
 pub use platform::IosPlatform;
 
 /// The GPUI application on iPadOS, the counterpart of
