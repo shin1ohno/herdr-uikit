@@ -16,11 +16,11 @@ use objc2::{MainThreadMarker, rc::Retained};
 use objc2_ui_kit::UIScene;
 
 use super::{
-    lifecycle::{LifecycleTracker, SceneState},
+    lifecycle::{Delivery, LifecycleTracker, SceneState},
     slot::Slot,
     thermal::ThermalObserver,
 };
-use crate::window;
+use crate::{BackgroundTask, window};
 
 thread_local! {
     static CURRENT: OnceCell<Rc<Shared>> = const { OnceCell::new() };
@@ -98,16 +98,23 @@ impl Shared {
     }
 
     /// Records a scene's new state, `None` once it disconnected, and reports
-    /// any change of the app's phase to GPUI.
+    /// any change of the app's phase to GPUI. Reaching the background holds a
+    /// background task until GPUI's callback for it returned, so work the app
+    /// starts there begins before UIKit can suspend it (`Delivery`).
     pub(super) fn scene_changed(&self, scene: usize, state: Option<SceneState>) {
         let phases = self.scenes.borrow_mut().update(scene, state);
         if phases.is_empty() {
             return;
         }
+        let delivery = Delivery::new(phases, || {
+            BackgroundTask::begin("Reporting the background to the app")
+        });
+        // A delivery dropped unreported, when the platform is gone, still
+        // ends its task.
         later(move |shared| {
-            for phase in phases {
+            delivery.report(|phase| {
                 shared.app_lifecycle.call(|callback| callback(phase));
-            }
+            });
         });
     }
 

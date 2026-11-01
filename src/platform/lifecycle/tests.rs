@@ -2,6 +2,8 @@ use gpui::AppLifecyclePhase::{Active, Background, Foreground, Inactive};
 
 use super::*;
 
+mod delivery;
+
 const FIRST: usize = 0x1000;
 const SECOND: usize = 0x2000;
 

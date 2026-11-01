@@ -18,6 +18,7 @@
 //! `// SAFETY:` comment.
 #![cfg(target_os = "ios")]
 
+mod background_task;
 mod dispatcher;
 mod display;
 mod display_link;
@@ -27,6 +28,7 @@ mod renderer;
 mod text_system;
 mod window;
 
+pub use background_task::BackgroundTask;
 pub use error::{Error, Result};
 pub use platform::IosPlatform;
 

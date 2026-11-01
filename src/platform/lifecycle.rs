@@ -51,6 +51,36 @@ impl LifecycleTracker {
     }
 }
 
+/// Phases on their way to GPUI, and what keeps the app running until GPUI
+/// heard them. UIKit may suspend the app as soon as the delegate method that
+/// moved its last scene to the background returns, which is before the queued
+/// report reaches GPUI, so a background report holds a background task from
+/// that delegate call until GPUI's callback for it returned.
+pub(super) struct Delivery<H> {
+    hold: Option<H>,
+    phases: Phases,
+}
+
+impl<H> Delivery<H> {
+    /// Calls `begin` now when `phases` take the app to the background.
+    pub(super) fn new(phases: Phases, begin: impl FnOnce() -> Option<H>) -> Self {
+        let hold = phases
+            .contains(&AppLifecyclePhase::Background)
+            .then(begin)
+            .flatten();
+        Self { hold, phases }
+    }
+
+    /// Reports each phase in order, then lets the hold go.
+    pub(super) fn report(self, mut report: impl FnMut(AppLifecyclePhase)) {
+        let Self { hold, phases } = self;
+        for phase in phases {
+            report(phase);
+        }
+        drop(hold);
+    }
+}
+
 /// The phases between two app states. Becoming visible from the background
 /// is `Foreground`; losing input while still visible is `Inactive`.
 fn transition(from: SceneState, to: SceneState) -> Phases {
