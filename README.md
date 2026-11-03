@@ -38,6 +38,8 @@ What it provides:
   commands; see [Menus](#menus).
 - **Layout direction.** `herdr_uikit::set_layout_direction` tells UIKit which
   way the app's text runs; see [Layout direction](#layout-direction).
+- **Window controls.** Per-window insets for iPadOS 26's window controls;
+  see [Window controls](#window-controls).
 - **Everything else.** A GCD dispatcher, the pasteboard, thermal state, and
   idle-timer control.
 
@@ -166,6 +168,24 @@ check on a device in a right-to-left app: move the caret with the space-bar
 trackpad and through an IME over Latin text and over right-to-left text, and
 note which way it goes, including whether UIKit's string tokenizer swaps left
 and right a second time.
+
+## Window controls
+
+On the main thread, call
+`herdr_uikit::window_control_insets(window.window_handle())` to read how far
+iPadOS 26's window controls extend into that window past its plain safe area.
+It returns `gpui::Edges<gpui::Pixels>` in points, using UIKit's physical edges:
+the drawing view's safe area with horizontal corner adaptation, less
+`safeAreaInsets`, clamped to zero per edge.
+
+With the controls showing, the value covers them: on the iPadOS 26.5
+simulator a narrow windowed window reports 66 pt on the left and 9.5 pt on
+the right. Without them UIKit still reports the window's corner allowance,
+5.5-9.5 pt, so the value is not zero on iOS 26 even when no controls show. It
+is zero on iOS 17-25, for a window in no live scene, and off the main thread.
+UIKit layout callbacks sample and cache it; GPUI redraws the window when it
+changes. Herdr UI should use it to pad only top-bar content so its leading
+button stays clear of the controls.
 
 ## Building
 

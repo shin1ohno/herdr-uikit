@@ -13,7 +13,7 @@
 use std::cell::RefCell;
 
 use gpui::{
-    AnyWindowHandle, Bounds, Capslock, CursorStyle, DispatchEventResult, ForegroundExecutor,
+    AnyWindowHandle, Bounds, Capslock, CursorStyle, DispatchEventResult, Edges, ForegroundExecutor,
     Modifiers, MouseButton, Pixels, PlatformInput, PlatformInputHandler, Point,
     RequestFrameOptions, Size, WindowAppearance, WindowBackgroundAppearance, WindowControlArea,
     WindowInsets, WindowVisibility,
@@ -93,6 +93,7 @@ pub(super) struct State {
     pub(super) touches: TouchIds<TouchKey>,
     pub(super) ui_window: Option<Retained<UIWindow>>,
     pub(super) visibility: WindowVisibility,
+    pub(super) window_controls: Edges<Pixels>,
 }
 
 impl State {
@@ -125,6 +126,7 @@ impl State {
             touches: TouchIds::default(),
             ui_window: None,
             visibility: WindowVisibility::Hidden,
+            window_controls: Edges::default(),
         }
     }
 

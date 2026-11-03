@@ -14,7 +14,7 @@ use objc2::{ClassType, MainThreadOnly, define_class, msg_send, rc::Retained, run
 use objc2_foundation::{NSObjectProtocol, NSSet};
 use objc2_ui_kit::{
     UIOpenURLContext, UIResponder, UIScene, UISceneConnectionOptions, UISceneDelegate,
-    UISceneSession, UIWindowScene, UIWindowSceneDelegate,
+    UISceneSession, UIWindowScene, UIWindowSceneDelegate, UIWindowSceneGeometry,
 };
 
 use super::{
@@ -115,10 +115,18 @@ define_class!(
         }
     }
 
-    // SAFETY: Every method of the protocol is optional, and SceneDelegate
-    // implements none: `crate::window` creates each scene's `UIWindow`
-    // itself, so the delegate's `window` property is not needed.
-    unsafe impl UIWindowSceneDelegate for SceneDelegate {}
+    // SAFETY: Every method of the protocol is optional, and the method below
+    // has the signature objc2-ui-kit declares for its selector.
+    unsafe impl UIWindowSceneDelegate for SceneDelegate {
+        #[unsafe(method(windowScene:didUpdateEffectiveGeometry:))]
+        fn did_update_effective_geometry(
+            &self,
+            scene: &UIWindowScene,
+            _previous: &UIWindowSceneGeometry,
+        ) {
+            window::scene_geometry_changed(scene, self.mtm());
+        }
+    }
 );
 
 /// Registers the class with the Objective-C runtime. A restored scene session
