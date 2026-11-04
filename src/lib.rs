@@ -24,6 +24,7 @@ mod display;
 mod display_link;
 mod error;
 mod gpui_call;
+mod key_routing;
 mod layout_direction;
 mod menu;
 mod platform;

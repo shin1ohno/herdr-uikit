@@ -36,21 +36,17 @@ impl GPUITextInputView {
     /// after GPUI declined it is not dispatched a second time, and an
     /// unhandled key types nothing, as on macOS.
     fn insert_control(&self, text: &str) {
-        let composing = self
-            .with_handler(|handler| handler.marked_text_range())
-            .flatten()
-            .is_some();
-        if composing {
-            self.with_handler(PlatformInputHandler::unmark_text);
-            self.refresh_snapshot();
-        }
         let Some(keystroke) = keymap::control_keystroke(text) else {
             return;
         };
-        if self.ivars().keys.borrow().is_forwarded(&keystroke.key) {
-            return;
+        let forwarded = self.ivars().keys.borrow().is_forwarded(&keystroke.key);
+        let dispatch = self
+            .with_handler(|handler| control_input(handler, &keystroke, forwarded))
+            .unwrap_or(!forwarded);
+        self.refresh_snapshot();
+        if dispatch {
+            self.tap_key(keystroke);
         }
-        self.tap_key(keystroke);
     }
 
     /// `deleteBackward`. Marked text and a selection are the handler's to
@@ -117,7 +113,7 @@ impl GPUITextInputView {
     }
 
     pub(super) fn unmark_text(&self) {
-        self.with_handler(PlatformInputHandler::unmark_text);
+        self.with_handler(unmark_text);
         self.refresh_snapshot();
     }
 
@@ -183,4 +179,49 @@ fn delete_in_marked(
         Some(_) => handler.replace_text_in_range(Some(marked), ""),
         None => handler.replace_text_in_range(Some(deleted), ""),
     }
+}
+
+/// UIKit confirms a composition by unmarking it, without necessarily calling
+/// insertText. GPUI terminals keep marked text outside their document and discard
+/// it in unmark_text, so commit through the replacement path first. An earlier
+/// insertText or an emptied/cancelled composition leaves no marked range.
+pub(super) fn unmark_text(handler: &mut PlatformInputHandler) {
+    let Some(marked) = handler.marked_text_range() else {
+        return;
+    };
+    let mut adjusted = None;
+    if let Some(text) = handler.text_for_range(marked.clone(), &mut adjusted) {
+        let selection = handler.selected_text_range(false);
+        handler.replace_text_in_range(Some(adjusted.unwrap_or(marked)), &text);
+        // Unmarking ends composition without moving an ordinary document's
+        // caret or selection. Terminal handlers may ignore this setter.
+        if let Some(selection) = selection {
+            handler.set_selected_text_range(selection.range);
+        }
+    }
+}
+
+/// Resolves a UIKit control insertion before deciding whether its key still
+/// needs dispatching. A forwarded physical key and a composition are separate.
+pub(super) fn control_input(
+    handler: &mut PlatformInputHandler,
+    keystroke: &Keystroke,
+    forwarded: bool,
+) -> bool {
+    if let Some(marked) = handler.marked_text_range() {
+        match keystroke.key.as_str() {
+            "enter" => {
+                // Confirm the composition, not the program's input line. This
+                // must happen even when UIKit is acknowledging a forwarded key.
+                unmark_text(handler);
+                return false;
+            }
+            "escape" => {
+                handler.replace_text_in_range(Some(marked), "");
+                return false;
+            }
+            _ => handler.unmark_text(),
+        }
+    }
+    !forwarded
 }

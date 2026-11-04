@@ -76,7 +76,7 @@ fn keys_that_send_characters_use_them() {
     );
     assert_eq!(input("cmd-enter"), Some(KeyInput::Text("\r".to_owned())));
     assert_eq!(input("ctrl-tab"), Some(KeyInput::Text("\t".to_owned())));
-    assert_eq!(input("ctrl-space"), Some(KeyInput::Text(" ".to_owned())));
+    assert_eq!(input("ctrl-space"), None);
     assert_eq!(input("cmd-insert"), None);
 }
 

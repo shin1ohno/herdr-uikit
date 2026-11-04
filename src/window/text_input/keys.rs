@@ -243,7 +243,9 @@ impl GPUITextInputView {
             if repeating || cancelled {
                 self.stop_repeat();
             }
-            if let Some(keystroke) = facts.keystroke {
+            if let Some(keystroke) = facts.keystroke
+                && !crate::key_routing::is_input_source_switch(&keystroke)
+            {
                 self.ivars()
                     .target
                     .dispatch(PlatformInput::KeyUp(KeyUpEvent { keystroke }));
@@ -258,30 +260,24 @@ impl GPUITextInputView {
 
     /// While an IME composes, or when the focused element wants printable
     /// keys to reach a composing input mode first, UIKit gets the key first.
-    /// Command and control shortcuts still go to GPUI.
+    /// Input-source switching is always UIKit's. Other command and control shortcuts go to GPUI.
     fn uikit_first(&self, keystroke: &Keystroke) -> bool {
-        if keystroke.modifiers.platform || keystroke.modifiers.control {
-            return false;
-        }
-        let composing = self
-            .with_handler(|handler| handler.marked_text_range())
-            .flatten()
-            .is_some();
-        if composing {
-            return true;
-        }
-        let printable = keystroke
-            .key_char
-            .as_deref()
-            .is_some_and(|text| !text.chars().any(char::is_control));
-        printable
-            && self
-                .textInputMode()
-                .and_then(|mode| mode.primaryLanguage())
-                .is_some_and(|language| keymap::is_composition_language(&language.to_string()))
-            && self
-                .with_handler(|handler| handler.query_prefers_ime_for_printable_keys())
-                .unwrap_or(false)
+        crate::key_routing::uikit_first(
+            keystroke,
+            || {
+                self.with_handler(|handler| handler.marked_text_range())
+                    .flatten()
+                    .is_some()
+            },
+            || {
+                self.textInputMode()
+                    .and_then(|mode| mode.primaryLanguage())
+                    .is_some_and(|language| keymap::is_composition_language(&language.to_string()))
+                    && self
+                        .with_handler(|handler| handler.query_prefers_ime_for_printable_keys())
+                        .unwrap_or(false)
+            },
+        )
     }
 
     /// A menu command with `shortcut` was performed. When its key press

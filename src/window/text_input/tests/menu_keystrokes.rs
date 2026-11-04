@@ -37,13 +37,6 @@ fn a_shortcut_reports_the_keystroke_of_its_press() {
             control,
         ),
         (
-            "ctrl-space",
-            UIKeyboardHIDUsage::KeyboardSpacebar,
-            " ",
-            " ",
-            control,
-        ),
-        (
             "cmd-shift-enter",
             UIKeyboardHIDUsage::KeyboardReturnOrEnter,
             "\r",
