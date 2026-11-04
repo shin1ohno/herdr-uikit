@@ -23,6 +23,7 @@ mod dispatcher;
 mod display;
 mod display_link;
 mod error;
+pub mod font_picker;
 mod gpui_call;
 mod key_routing;
 mod layout_direction;

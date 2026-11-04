@@ -2,6 +2,7 @@ mod hover;
 mod menu_commands;
 mod scene_requests;
 mod text_state;
+mod window_chrome;
 mod window_kind;
 
 use std::time::{Duration, Instant};
