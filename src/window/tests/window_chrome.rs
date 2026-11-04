@@ -1,39 +1,46 @@
-use super::super::layout::clear_window_controls;
-use gpui::{Edges, px};
+use crate::window_controls::geometry;
+use gpui::px;
+use objc2_ui_kit::UIEdgeInsets;
 
 #[test]
-fn interactive_content_clears_window_controls_and_retains_other_safe_edges() {
-    let safe = Edges {
-        top: px(0.),
-        left: px(4.),
-        bottom: px(20.),
-        right: px(8.),
+fn corner_controls_reserve_horizontal_room_without_lowering_content() {
+    let safe = UIEdgeInsets {
+        top: 0.,
+        left: 4.,
+        bottom: 20.,
+        right: 8.,
     };
-    let corner = Edges {
-        top: px(42.),
-        left: px(0.),
-        bottom: px(0.),
-        right: px(0.),
+    let corner = UIEdgeInsets {
+        top: 42.,
+        left: 100.,
+        bottom: 0.,
+        right: 0.,
     };
-    assert_eq!(
-        clear_window_controls(safe, Some(corner)),
-        Edges {
-            top: px(42.),
-            left: px(4.),
-            bottom: px(20.),
-            right: px(8.)
-        }
-    );
+    let (content, leading) = geometry(safe, Some(corner));
+    assert_eq!(content, safe);
+    assert_eq!(leading, px(96.));
 }
 
 #[test]
-fn older_systems_and_corners_smaller_than_the_safe_area_keep_existing_geometry() {
-    let safe = Edges {
-        top: px(24.),
-        left: px(0.),
-        bottom: px(20.),
-        right: px(0.),
+fn ordinary_safe_area_is_not_counted_twice_and_old_systems_add_no_clearance() {
+    let safe = UIEdgeInsets {
+        top: 24.,
+        left: 20.,
+        bottom: 20.,
+        right: 0.,
     };
-    assert_eq!(clear_window_controls(safe, None), safe);
-    assert_eq!(clear_window_controls(safe, Some(Edges::default())), safe);
+    assert_eq!(geometry(safe, None), (safe, px(0.)));
+    assert_eq!(
+        geometry(
+            safe,
+            Some(UIEdgeInsets {
+                top: 0.,
+                left: 0.,
+                bottom: 0.,
+                right: 0.
+            })
+        ),
+        (safe, px(0.))
+    );
+    assert_eq!(geometry(safe, Some(safe)), (safe, px(0.)));
 }

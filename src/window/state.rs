@@ -60,6 +60,7 @@ pub(super) struct State {
     pub(super) capslock: Capslock,
     /// GPUI dropped the window; nothing may draw or dispatch any more.
     pub(super) closed: bool,
+    pub(super) controls_inset: Pixels,
     pub(super) cursor_style: CursorStyle,
     /// The next frame must bypass GPUI's view cache: the drawable was
     /// resized, rescaled, or may have been discarded in the background.
@@ -103,6 +104,7 @@ impl State {
             bounds,
             capslock: Capslock::default(),
             closed: false,
+            controls_inset: gpui::px(0.),
             cursor_style: CursorStyle::default(),
             force_render: true,
             frame_requested: false,

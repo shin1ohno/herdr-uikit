@@ -137,12 +137,16 @@ impl Window {
     }
 
     pub(super) fn safe_area_changed(&self) {
-        let safe_area = convert::edges(content_safe_area(&self.view));
+        let (safe_area, controls_inset) = crate::window_controls::layout(&self.view);
+        let safe_area = convert::edges(safe_area);
         let insets = {
             let mut state = self.state.borrow_mut();
-            if state.closed || state.insets.safe_area == safe_area {
+            if state.closed
+                || (state.insets.safe_area == safe_area && state.controls_inset == controls_inset)
+            {
                 return;
             }
+            state.controls_inset = controls_inset;
             state.insets.safe_area = safe_area;
             state.insets.clone()
         };
@@ -392,41 +396,4 @@ fn double_value(info: &NSDictionary, key: &NSString) -> Option<f64> {
 fn bool_value(info: &NSDictionary, key: &NSString) -> Option<bool> {
     let number: Retained<NSNumber> = info.objectForKey(key)?.downcast().ok()?;
     Some(number.boolValue())
-}
-
-/// Insets for interactive content, including scene-owned corner controls.
-/// A rectangular GPUI viewport cannot wrap a corner: move content below it
-/// instead of reserving an entire left column or guessing a button width.
-pub(super) fn content_safe_area(view: &objc2_ui_kit::UIView) -> objc2_ui_kit::UIEdgeInsets {
-    let safe = convert::edges(view.safeAreaInsets());
-    let corner = if objc2::available!(ios = 26.0) {
-        let region = objc2_ui_kit::UIViewLayoutRegion::safeAreaLayoutRegionWithCornerAdaptation(
-            objc2_ui_kit::UIViewLayoutRegionAdaptivityAxis::Vertical,
-        );
-        Some(convert::edges(view.edgeInsetsForLayoutRegion(&region)))
-    } else {
-        None
-    };
-    let insets = clear_window_controls(safe, corner);
-    objc2_ui_kit::UIEdgeInsets {
-        top: f32::from(insets.top) as f64,
-        left: f32::from(insets.left) as f64,
-        bottom: f32::from(insets.bottom) as f64,
-        right: f32::from(insets.right) as f64,
-    }
-}
-
-pub(super) fn clear_window_controls(
-    safe: gpui::Edges<gpui::Pixels>,
-    corner: Option<gpui::Edges<gpui::Pixels>>,
-) -> gpui::Edges<gpui::Pixels> {
-    let Some(corner) = corner else {
-        return safe;
-    };
-    gpui::Edges {
-        top: safe.top.max(corner.top),
-        right: safe.right.max(corner.right),
-        bottom: safe.bottom.max(corner.bottom),
-        left: safe.left.max(corner.left),
-    }
 }

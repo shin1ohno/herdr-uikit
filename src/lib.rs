@@ -32,6 +32,7 @@ mod platform;
 mod renderer;
 mod text_system;
 mod window;
+pub mod window_controls;
 
 pub use background_task::BackgroundTask;
 pub use error::{Error, Result};
