@@ -178,6 +178,9 @@ impl GPUITextInputView {
                 self.forward(&press, event, Phase::Began);
                 continue;
             };
+            if keystroke.key == "escape" {
+                self.trace_escape("native-press");
+            }
             let route = if self.uikit_first(&keystroke) {
                 Route::Forwarded
             } else if self.key_down(keystroke.clone(), false) {
@@ -185,6 +188,12 @@ impl GPUITextInputView {
             } else {
                 Route::Forwarded
             };
+            if keystroke.key == "escape" {
+                self.trace_escape(match route {
+                    Route::Gpui => "press-handled-by-gpui",
+                    Route::Forwarded => "press-forwarded-to-uikit",
+                });
+            }
             let serial = match application::event_source() {
                 EventSource::Keys { serial, .. } => serial,
                 EventSource::Unknown | EventSource::Other => 0,
@@ -243,7 +252,9 @@ impl GPUITextInputView {
             if repeating || cancelled {
                 self.stop_repeat();
             }
-            if let Some(keystroke) = facts.keystroke {
+            if let Some(keystroke) = facts.keystroke
+                && !crate::key_routing::is_input_source_switch(&keystroke)
+            {
                 self.ivars()
                     .target
                     .dispatch(PlatformInput::KeyUp(KeyUpEvent { keystroke }));
@@ -258,30 +269,24 @@ impl GPUITextInputView {
 
     /// While an IME composes, or when the focused element wants printable
     /// keys to reach a composing input mode first, UIKit gets the key first.
-    /// Command and control shortcuts still go to GPUI.
+    /// Input-source switching is always UIKit's. Other command and control shortcuts go to GPUI.
     fn uikit_first(&self, keystroke: &Keystroke) -> bool {
-        if keystroke.modifiers.platform || keystroke.modifiers.control {
-            return false;
-        }
-        let composing = self
-            .with_handler(|handler| handler.marked_text_range())
-            .flatten()
-            .is_some();
-        if composing {
-            return true;
-        }
-        let printable = keystroke
-            .key_char
-            .as_deref()
-            .is_some_and(|text| !text.chars().any(char::is_control));
-        printable
-            && self
-                .textInputMode()
-                .and_then(|mode| mode.primaryLanguage())
-                .is_some_and(|language| keymap::is_composition_language(&language.to_string()))
-            && self
-                .with_handler(|handler| handler.query_prefers_ime_for_printable_keys())
-                .unwrap_or(false)
+        crate::key_routing::uikit_first(
+            keystroke,
+            || {
+                self.with_handler(|handler| handler.marked_text_range())
+                    .flatten()
+                    .is_some()
+            },
+            || {
+                self.textInputMode()
+                    .and_then(|mode| mode.primaryLanguage())
+                    .is_some_and(|language| keymap::is_composition_language(&language.to_string()))
+                    && self
+                        .with_handler(|handler| handler.query_prefers_ime_for_printable_keys())
+                        .unwrap_or(false)
+            },
+        )
     }
 
     /// A menu command with `shortcut` was performed. When its key press
@@ -297,6 +302,9 @@ impl GPUITextInputView {
     pub(super) fn menu_shortcut(&self, shortcut: &Shortcut) -> bool {
         let source = application::event_source();
         let keystroke = &shortcut.keystroke;
+        if keystroke.key == "escape" {
+            self.trace_escape("menu-command");
+        }
         let prior = self.ivars().keys.borrow().prior(&keystroke.key, source);
         match menu::trigger(shortcut.flags, source, prior) {
             Trigger::Handled => true,
@@ -319,6 +327,9 @@ impl GPUITextInputView {
     }
 
     fn key_down(&self, keystroke: Keystroke, is_held: bool) -> bool {
+        if keystroke.key == "escape" {
+            self.trace_escape("gpui-keydown-dispatch");
+        }
         self.ivars()
             .target
             .dispatch(PlatformInput::KeyDown(KeyDownEvent {
@@ -326,6 +337,22 @@ impl GPUITextInputView {
                 is_held,
                 prefer_character_input: false,
             }))
+    }
+
+    /// Opt-in routing evidence for a single known control, never text or
+    /// arbitrary keystrokes. Normal input does not enable this diagnostic.
+    pub(super) fn trace_escape(&self, stage: &'static str) {
+        if std::env::var_os("HERDR_IOS_ESCAPE_DIAGNOSTICS").is_none() {
+            return;
+        }
+        let composing = self.with_handler(|handler| handler.marked_text_range().is_some());
+        tracing::debug!(
+            stage,
+            handler_available = composing.is_some(),
+            composing = composing == Some(true),
+            first_responder = self.isFirstResponder(),
+            "Escape routing diagnostic"
+        );
     }
 
     fn modifier_changed(&self, facts: &KeyFacts, pressed: bool) {

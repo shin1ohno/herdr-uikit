@@ -4,12 +4,11 @@
 //! assumed to match a main-menu key command before the press reaches the
 //! first responder's `pressesBegan:withEvent:` (to be verified on a device,
 //! see `crate::menu`), so a key command takes the press ahead of the text system
-//! and an IME composition. Command and control keystrokes are exactly the
-//! ones the text input view already gives to GPUI ahead of UIKit
-//! (`keys::uikit_first`), so for them a key command changes nothing about who
-//! sees the press first. Plain keys such as escape, return, or the arrows
-//! stay with the text system and the IME, and their menu items show no
-//! shortcut.
+//! and an IME composition. Command and control shortcuts normally reach GPUI
+//! before UIKit (`keys::uikit_first`). Control-Space is the exception: input
+//! source switching always belongs to UIKit, so it gets no menu key command.
+//! Plain keys such as escape, return, or the arrows stay with the text system
+//! and the IME, and their menu items show no shortcut.
 
 use gpui::Keystroke;
 use objc2_ui_kit::UIKeyModifierFlags;
@@ -102,7 +101,10 @@ impl Shortcut {
     /// command can.
     pub(crate) fn new(keystroke: &Keystroke) -> Option<Self> {
         let modifiers = keystroke.modifiers;
-        if !(modifiers.platform || modifiers.control) || modifiers.function {
+        if !(modifiers.platform || modifiers.control)
+            || modifiers.function
+            || crate::key_routing::is_input_source_switch(keystroke)
+        {
             return None;
         }
         let input = KeyInput::from_key(&keystroke.key)?;

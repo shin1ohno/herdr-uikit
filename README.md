@@ -212,14 +212,15 @@ than the ones it reads.
 
 ## Testing
 
-The tests run inside the iPad simulator. `scripts/sim-runner.sh` is a Cargo
+The tests run inside the iPad simulator. `--all-features` enables the
+`test-support` feature, including GPUI input-handler composition regressions. `scripts/sim-runner.sh` is a Cargo
 runner that boots the simulator when it is not running, never shuts it down,
 and runs each test binary there with `xcrun simctl spawn`:
 
 ```sh
 export IPHONEOS_DEPLOYMENT_TARGET=17.0
 CARGO_TARGET_AARCH64_APPLE_IOS_SIM_RUNNER=scripts/sim-runner.sh \
-  cargo test --locked --target aarch64-apple-ios-sim
+  cargo test --locked --all-features --target aarch64-apple-ios-sim
 ```
 
 `HERDR_IOS_SIMULATOR` picks the simulator by UDID or device name; the default

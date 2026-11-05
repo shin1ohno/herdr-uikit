@@ -1,6 +1,8 @@
 use super::*;
 
 mod classes;
+#[cfg(feature = "test-support")]
+mod composition_commit;
 mod configuration;
 mod external_edits;
 mod first_responder;
@@ -39,3 +41,6 @@ fn expected(key: &str, key_char: Option<&str>, modifiers: Modifiers) -> Option<K
         key_char: key_char.map(str::to_owned),
     })
 }
+
+#[cfg(feature = "test-support")]
+mod composition_selection;

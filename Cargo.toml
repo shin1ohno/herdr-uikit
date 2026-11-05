@@ -7,6 +7,10 @@ publish      = false
 rust-version = "1.96"
 version      = "0.1.0"
 
+[features]
+# GPUI input-handler regression tests, run inside the simulator.
+test-support = ["gpui/test-support"]
+
 # Copied from herdr-gpui's [workspace.lints]; modules that need `unsafe` allow
 # it locally, with their safety invariants beside them.
 [lints.rust]
