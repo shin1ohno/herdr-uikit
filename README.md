@@ -38,6 +38,8 @@ What it provides:
   commands; see [Menus](#menus).
 - **Layout direction.** `herdr_uikit::set_layout_direction` tells UIKit which
   way the app's text runs; see [Layout direction](#layout-direction).
+- **Window controls.** Per-window insets for iPadOS 26's window controls;
+  see [Window controls](#window-controls).
 - **Everything else.** A GCD dispatcher, the pasteboard, thermal state, and
   idle-timer control.
 
@@ -167,6 +169,24 @@ trackpad and through an IME over Latin text and over right-to-left text, and
 note which way it goes, including whether UIKit's string tokenizer swaps left
 and right a second time.
 
+## Window controls
+
+On the main thread, call
+`herdr_uikit::window_control_insets(window.window_handle())` to read how far
+iPadOS 26's window controls extend into that window past its plain safe area.
+It returns `gpui::Edges<gpui::Pixels>` in points, using UIKit's physical edges:
+the drawing view's safe area with horizontal corner adaptation, less
+`safeAreaInsets`, clamped to zero per edge.
+
+With the controls showing, the value covers them: on the iPadOS 26.5
+simulator a narrow windowed window reports 66 pt on the left and 9.5 pt on
+the right. Without them UIKit still reports the window's corner allowance,
+5.5-9.5 pt, so the value is not zero on iOS 26 even when no controls show. It
+is zero on iOS 17-25, for a window in no live scene, and off the main thread.
+UIKit layout callbacks sample and cache it; GPUI redraws the window when it
+changes. Herdr UI should use it to pad only top-bar content so its leading
+button stays clear of the controls.
+
 ## Building
 
 Requires macOS with Xcode and the iOS simulator runtime. `rust-toolchain.toml`
@@ -192,14 +212,15 @@ than the ones it reads.
 
 ## Testing
 
-The tests run inside the iPad simulator. `scripts/sim-runner.sh` is a Cargo
+The tests run inside the iPad simulator. `--all-features` enables the
+`test-support` feature, including GPUI input-handler composition regressions. `scripts/sim-runner.sh` is a Cargo
 runner that boots the simulator when it is not running, never shuts it down,
 and runs each test binary there with `xcrun simctl spawn`:
 
 ```sh
 export IPHONEOS_DEPLOYMENT_TARGET=17.0
 CARGO_TARGET_AARCH64_APPLE_IOS_SIM_RUNNER=scripts/sim-runner.sh \
-  cargo test --locked --target aarch64-apple-ios-sim
+  cargo test --locked --all-features --target aarch64-apple-ios-sim
 ```
 
 `HERDR_IOS_SIMULATOR` picks the simulator by UDID or device name; the default

@@ -16,7 +16,7 @@ use std::{
 
 use block2::RcBlock;
 use dispatch2::{DispatchQueue, MainThreadBound};
-use gpui::AnyWindowHandle;
+use gpui::{AnyWindowHandle, Edges, Pixels};
 use objc2::{MainThreadMarker, Message, rc::Retained};
 use objc2_foundation::NSError;
 use objc2_ui_kit::{UIApplication, UISceneSessionActivationRequest, UIWindowScene};
@@ -141,6 +141,20 @@ pub(crate) fn scene_activation_changed(
     }
 }
 
+/// The scene's effective geometry changed, including its window controls.
+pub(crate) fn scene_geometry_changed(scene: &UIWindowScene, _mtm: MainThreadMarker) {
+    let window = REGISTRY.with_borrow(|registry| {
+        registry
+            .scenes
+            .iter()
+            .find(|entry| ptr::eq(&*entry.scene, scene))?
+            .live_window()
+    });
+    if let Some(window) = window {
+        window.view.setNeedsLayout();
+    }
+}
+
 /// The window in the active scene, if any. Side by side, several scenes can
 /// be active at once; the one activated last is GPUI's active window.
 pub(crate) fn active_window(_mtm: MainThreadMarker) -> Option<AnyWindowHandle> {
@@ -153,6 +167,22 @@ pub(crate) fn active_window(_mtm: MainThreadMarker) -> Option<AnyWindowHandle> {
             .max_by_key(|(activation, _)| *activation)
             .map(|(_, window)| window.handle)
     })
+}
+
+/// The cached window-control insets for a window in a connected scene.
+pub(crate) fn window_control_insets(
+    handle: AnyWindowHandle,
+    _mtm: MainThreadMarker,
+) -> Option<Edges<Pixels>> {
+    let window = REGISTRY.with_borrow(|registry| {
+        registry
+            .scenes
+            .iter()
+            .filter_map(SceneEntry::live_window)
+            .find(|window| window.handle == handle)
+    })?;
+    let state = window.state.borrow();
+    (!state.closed).then_some(state.window_controls)
 }
 
 /// Windows front to back, as best UIKit reports scene order: UIKit has no

@@ -19,7 +19,7 @@
 //! | `lifecycle` | Building, attaching, activating, focusing, and closing |
 //! | `scene`, `requests` | Which scene hosts which window; scene requests to the system |
 //! | `view` | The `GpuiView` class and what it forwards |
-//! | `layout` | Size, scale, appearance, safe area, and keyboard insets |
+//! | `layout` | Size, scale, appearance, safe area, window controls, and keyboard insets |
 //! | `frame` | The display link, frames on demand, the keyboard animation |
 //! | `touch`, `pointer` | Touches and clicks; hover, scroll, and UIKit pointer shapes |
 //! | `input_target`, `text_input`, `text_state` | Keyboard and text input |
@@ -59,7 +59,8 @@ pub(crate) use self::direction::layout_direction_changed;
 pub(crate) use self::error::Error;
 pub(crate) use self::pointer::set_cursor_style;
 pub(crate) use self::scene::{
-    active_window, scene_activation_changed, scene_connected, scene_disconnected, window_stack,
+    active_window, scene_activation_changed, scene_connected, scene_disconnected,
+    scene_geometry_changed, window_control_insets, window_stack,
 };
 use self::state::Window;
 pub(crate) use self::text_input::{named_key_char, us_shifted};

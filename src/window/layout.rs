@@ -33,6 +33,7 @@ use super::{
     state::{Window, call},
 };
 
+mod corner_region;
 mod keyboard_geometry;
 
 impl Window {
@@ -89,6 +90,9 @@ impl Window {
             state.scale_factor = scale_factor;
             (resized, rescaled, moved)
         };
+        // The synchronous resize frame must see this layout's safe area and
+        // window controls, even when only the controls changed.
+        self.safe_area_changed();
         if resized || rescaled {
             call(&self.callbacks.resize, |callback| {
                 callback(content_size, scale_factor)
@@ -109,7 +113,6 @@ impl Window {
         // On iPadOS 18 and later, reading traits during layout also makes
         // UIKit lay the view out again when they change.
         self.traits_changed();
-        self.safe_area_changed();
         self.sample_keyboard_layout();
     }
 
@@ -137,15 +140,23 @@ impl Window {
     }
 
     pub(super) fn safe_area_changed(&self) {
-        let safe_area = convert::edges(self.view.safeAreaInsets());
-        let insets = {
+        let raw = self.view.safeAreaInsets();
+        let safe_area = convert::edges(raw);
+        let controls = convert::edges(corner_region::sample(&self.view, raw));
+        let (insets, controls_changed) = {
             let mut state = self.state.borrow_mut();
-            if state.closed || state.insets.safe_area == safe_area {
+            let stored = (&state.insets.safe_area, &state.window_controls);
+            if state.closed || !corner_region::needs_update(stored, (&safe_area, &controls)) {
                 return;
             }
+            let controls_changed = state.window_controls != controls;
             state.insets.safe_area = safe_area;
-            state.insets.clone()
+            state.window_controls = controls;
+            (state.insets.clone(), controls_changed)
         };
+        if controls_changed {
+            tracing::debug!(?controls, "window controls inset changed");
+        }
         call(&self.callbacks.insets_changed, |callback| callback(insets));
         self.force_frame();
     }

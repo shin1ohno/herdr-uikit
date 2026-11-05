@@ -198,6 +198,17 @@ pub(super) fn on_keyboard_event(
             }
         }
         Event::WillShow | Event::DidShow => {
+            // Input-mode changes can hide and show the same native client.
+            // Once our text responder is showing again, that hide no longer
+            // represents a user's request to keep it dismissed. Otherwise a
+            // later focus reconciliation demotes the live client to key-only.
+            if event == Event::DidShow
+                && context.first_responder
+                && context.text_requested
+                && keyboard.dismissal == Dismissal::User
+            {
+                keyboard.dismissal = Dismissal::None;
+            }
             keyboard.minimized = false;
             keyboard.pending_hide = None;
             keyboard.acquired();

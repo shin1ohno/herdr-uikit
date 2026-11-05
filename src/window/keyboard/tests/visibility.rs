@@ -8,7 +8,7 @@ fn a_never_shown_keyboard_has_no_minimize_evidence() {
 }
 
 #[test]
-fn minimizing_requires_positive_evidence_and_a_new_show_clears_only_that_evidence() {
+fn minimizing_requires_positive_evidence_and_our_native_show_releases_the_dismissal() {
     let keyboard = on_keyboard_event(visible(), Event::WillHide, text_client());
     assert_eq!(keyboard.dismissal, Dismissal::User);
     assert!(keyboard.minimized);
@@ -19,7 +19,14 @@ fn minimizing_requires_positive_evidence_and_a_new_show_clears_only_that_evidenc
     for event in [Event::WillShow, Event::DidShow] {
         let shown = on_keyboard_event(keyboard, event, text_client());
         assert!(!shown.minimized);
-        assert_eq!(shown.dismissal, Dismissal::User);
+        assert_eq!(
+            shown.dismissal,
+            if event == Event::DidShow {
+                Dismissal::None
+            } else {
+                Dismissal::User
+            }
+        );
     }
 }
 

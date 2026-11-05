@@ -1,6 +1,7 @@
 use super::*;
 
 mod dismissal;
+mod input_mode;
 mod notifications;
 mod visibility;
 
