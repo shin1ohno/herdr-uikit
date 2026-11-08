@@ -188,11 +188,11 @@ impl Submenu {
 /// The context macOS GPUI evaluates menu bindings in: an editor in a pane in
 /// a workspace, so a binding scoped to any of them is shown.
 fn default_contexts() -> Vec<KeyContext> {
-    let mut workspace = KeyContext::new_with_defaults();
+    let mut workspace = KeyContext::new_with_defaults(gpui::OperatingSystem::Ios);
     workspace.add("Workspace");
-    let mut pane = KeyContext::new_with_defaults();
+    let mut pane = KeyContext::new_with_defaults(gpui::OperatingSystem::Ios);
     pane.add("Pane");
-    let mut editor = KeyContext::new_with_defaults();
+    let mut editor = KeyContext::new_with_defaults(gpui::OperatingSystem::Ios);
     editor.add("Editor");
     pane.extend(&editor);
     workspace.extend(&pane);

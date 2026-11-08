@@ -10,7 +10,7 @@
 //! view synchronously. So no `RefCell` here is borrowed across a callback or
 //! such a UIKit call: callers copy what they need out of a short borrow.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use gpui::{
     AnyWindowHandle, Bounds, Capslock, CursorStyle, DispatchEventResult, Edges, ForegroundExecutor,
@@ -143,6 +143,8 @@ type Slot<F> = RefCell<Option<Box<F>>>;
 /// runs, so a callback that re-enters the window cannot alias itself.
 #[derive(Default)]
 pub(super) struct Callbacks {
+    pub(super) display_id: Cell<Option<gpui::DisplayId>>,
+    pub(super) display_changed: Slot<dyn FnMut()>,
     pub(super) active_status: Slot<dyn FnMut(bool)>,
     pub(super) appearance_changed: Slot<dyn FnMut()>,
     pub(super) close: Slot<dyn FnOnce()>,

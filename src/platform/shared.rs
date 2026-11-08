@@ -36,6 +36,7 @@ thread_local! {
 /// Callbacks GPUI registered and the launch and scene state they depend on.
 #[derive(Default)]
 pub(super) struct Shared {
+    pub(super) displays_changed: Slot<dyn FnMut()>,
     pub(super) app_lifecycle: Slot<dyn FnMut(AppLifecyclePhase)>,
     pub(super) app_menu_action: Slot<MenuActionCallback>,
     finish_launching: RefCell<Option<Box<dyn FnOnce()>>>,

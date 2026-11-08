@@ -97,6 +97,11 @@ impl IosDisplay {
 }
 
 impl PlatformDisplay for IosDisplay {
+    fn refresh_interval(&self) -> Option<std::time::Duration> {
+        let fps = self.screen.maximumFramesPerSecond();
+        (fps > 0).then(|| std::time::Duration::from_secs_f64(1.0 / fps as f64))
+    }
+
     fn id(&self) -> DisplayId {
         self.id
     }

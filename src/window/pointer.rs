@@ -12,7 +12,7 @@ pub(super) use cursor::{Pointer, clear_window};
 use std::{mem, rc::Rc};
 
 use gpui::{
-    CursorStyle, MouseExitEvent, MouseMoveEvent, PlatformInput, ScrollDelta, ScrollWheelEvent,
+    CursorStyle, MouseExitEvent, MouseMoveEvent, PlatformInput, ScrollDelta, ScrollEvent,
     TouchPhase, point, px,
 };
 use objc2::{MainThreadMarker, MainThreadOnly, runtime::AnyObject, sel};
@@ -174,11 +174,12 @@ impl Window {
             state.modifiers = modifiers;
             state.capslock = convert::capslock(flags);
         }
-        self.dispatch(PlatformInput::ScrollWheel(ScrollWheelEvent {
+        self.dispatch(PlatformInput::Scroll(ScrollEvent {
             position,
             delta: ScrollDelta::Pixels(point(px(translation.x as f32), px(translation.y as f32))),
             modifiers,
             touch_phase,
+            source: gpui::ScrollSource::Pointer,
         }));
     }
 }

@@ -342,24 +342,23 @@ impl Renderer {
         // disjoint, so we can copy each path's bounds individually. If this
         // batch combines different draw orders, we perform a single copy
         // for a minimal spanning rect.
-        let sprites;
-        if paths
+        let sprites = if paths
             .last()
             .is_some_and(|path| path.order == first_path.order)
         {
-            sprites = paths
+            paths
                 .iter()
                 .map(|path| PathSprite {
                     bounds: path.clipped_bounds(),
                 })
-                .collect();
+                .collect()
         } else {
             let mut bounds = first_path.clipped_bounds();
             for path in paths.iter().skip(1) {
                 bounds = bounds.union(&path.clipped_bounds());
             }
-            sprites = vec![PathSprite { bounds }];
-        }
+            vec![PathSprite { bounds }]
+        };
 
         let sprite_instance_bindings = writer.write(&sprites)?;
         command_encoder.set_vertex_buffer(

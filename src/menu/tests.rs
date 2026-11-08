@@ -9,7 +9,7 @@ mod triggers;
 use gpui::Keystroke;
 
 fn keystroke(source: &str) -> Keystroke {
-    match Keystroke::parse(source) {
+    match Keystroke::parse_with_os(source, gpui::OperatingSystem::Ios) {
         Ok(keystroke) => keystroke,
         Err(error) => panic!("{source} is not a keystroke: {error}"),
     }
