@@ -50,7 +50,7 @@ unconditionally.
 ## Status
 
 Experimental. It runs Herdr UI's iPadOS build in the simulator and on an iPad,
-and pins `gpui-pre` (GPUI as published from Zed) to exactly `0.3.6`: the
+and pins `gpui-pre` (GPUI as published from Zed) to exactly `0.3.10`: the
 renderer's shader ABI is generated from that snapshot's sources (`build.rs`),
 so another GPUI version needs the port re-checked. The crate is not published;
 depend on it by path or by git.

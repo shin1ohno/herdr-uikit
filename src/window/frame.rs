@@ -111,6 +111,7 @@ impl Window {
                 Some(RequestFrameOptions {
                     require_presentation: false,
                     force_render: mem::take(&mut state.force_render),
+                    ..RequestFrameOptions::default()
                 })
             } else {
                 None

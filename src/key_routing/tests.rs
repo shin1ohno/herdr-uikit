@@ -2,7 +2,8 @@ use super::*;
 use crate::menu::Shortcut;
 
 fn key(source: &str) -> Keystroke {
-    Keystroke::parse(source).unwrap_or_else(|error| panic!("{source}: {error}"))
+    Keystroke::parse_with_os(source, gpui::OperatingSystem::Ios)
+        .unwrap_or_else(|error| panic!("{source}: {error}"))
 }
 
 #[test]

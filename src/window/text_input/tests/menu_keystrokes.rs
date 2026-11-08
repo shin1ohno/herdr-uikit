@@ -8,7 +8,7 @@ use super::*;
 use crate::menu::Shortcut;
 
 fn shortcut(binding: &str) -> Option<Keystroke> {
-    let keystroke = match Keystroke::parse(binding) {
+    let keystroke = match Keystroke::parse_with_os(binding, gpui::OperatingSystem::Ios) {
         Ok(keystroke) => keystroke,
         Err(error) => panic!("{binding} is not a keystroke: {error}"),
     };

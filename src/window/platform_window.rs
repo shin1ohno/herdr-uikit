@@ -25,6 +25,14 @@ use super::{IosWindow, state::register};
 use crate::display::IosDisplay;
 
 impl PlatformWindow for IosWindow {
+    fn on_display_changed(&self, callback: Box<dyn FnMut()>) {
+        self.window
+            .callbacks
+            .display_id
+            .set(self.display().map(|display| display.id()));
+        register(&self.window.callbacks.display_changed, callback);
+    }
+
     fn bounds(&self) -> Bounds<Pixels> {
         self.window.state.borrow().bounds
     }

@@ -53,6 +53,9 @@ define_class!(
             let mtm = self.mtm();
             window::scene_connected(window_scene, mtm);
             shared.scene_connected(shared::scene_key(scene), mtm);
+            shared::later(|shared| {
+                shared.displays_changed.call(|callback| callback());
+            });
             // A cold launch from a link carries the URLs here instead of in
             // `scene:openURLContexts:`; GPUI has launched by now. The header
             // declares the set nonnull, but UIKit returns nil when the launch
@@ -73,6 +76,9 @@ define_class!(
             };
             window::scene_disconnected(window_scene, self.mtm());
             shared.scene_changed(shared::scene_key(scene), None);
+            shared::later(|shared| {
+                shared.displays_changed.call(|callback| callback());
+            });
         }
 
         #[unsafe(method(sceneWillEnterForeground:))]
@@ -125,6 +131,9 @@ define_class!(
             _previous: &UIWindowSceneGeometry,
         ) {
             window::scene_geometry_changed(scene, self.mtm());
+            shared::later(|shared| {
+                shared.displays_changed.call(|callback| callback());
+            });
         }
     }
 );

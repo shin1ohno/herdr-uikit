@@ -91,6 +91,17 @@ impl Default for IosPlatform {
 }
 
 impl Platform for IosPlatform {
+    fn platform_info(&self) -> gpui::PlatformInfo {
+        gpui::PlatformInfo {
+            os: gpui::OperatingSystem::Ios,
+            target: gpui::PlatformTarget::Native,
+        }
+    }
+
+    fn on_displays_changed(&self, callback: Box<dyn FnMut()>) {
+        self.shared.displays_changed.set(callback);
+    }
+
     fn background_executor(&self) -> BackgroundExecutor {
         self.background_executor.clone()
     }

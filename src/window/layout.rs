@@ -15,7 +15,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use gpui::{Bounds, px, size};
+use gpui::{Bounds, PlatformDisplay, px, size};
 use objc2::{msg_send, rc::Retained};
 use objc2_core_foundation::{CGFloat, CGRect};
 use objc2_foundation::{NSDictionary, NSNotification, NSNumber, NSString, NSValue};
@@ -55,7 +55,13 @@ impl Window {
         };
         // A scene moved to another screen lays out again; frames then follow
         // that screen's refresh rate.
-        self.follow_screen(&ui_window.screen());
+        let screen = ui_window.screen();
+        self.follow_screen(&screen);
+        let display_id = crate::display::IosDisplay::for_screen(screen, self.mtm).id();
+        let previous_display = self.callbacks.display_id.replace(Some(display_id));
+        if previous_display.is_some_and(|previous| previous != display_id) {
+            call(&self.callbacks.display_changed, |callback| callback());
+        }
         let view_bounds = self.view.bounds();
         let scale_factor = self.sample_scale_factor();
         let content_size = size(

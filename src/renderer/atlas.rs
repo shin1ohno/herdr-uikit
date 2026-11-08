@@ -161,19 +161,16 @@ impl MetalAtlasTextures {
         let texture_descriptor = metal::TextureDescriptor::new();
         texture_descriptor.set_width(size.width.into());
         texture_descriptor.set_height(size.height.into());
-        let pixel_format;
-        let usage;
-        match kind {
+        let (pixel_format, usage) = match kind {
             AtlasTextureKind::Monochrome => {
-                pixel_format = MTLPixelFormat::A8Unorm;
-                usage = metal::MTLTextureUsage::ShaderRead;
+                (MTLPixelFormat::A8Unorm, metal::MTLTextureUsage::ShaderRead)
             }
-            AtlasTextureKind::Polychrome => {
-                pixel_format = MTLPixelFormat::BGRA8Unorm;
-                usage = metal::MTLTextureUsage::ShaderRead;
-            }
+            AtlasTextureKind::Polychrome => (
+                MTLPixelFormat::BGRA8Unorm,
+                metal::MTLTextureUsage::ShaderRead,
+            ),
             AtlasTextureKind::Subpixel => return Err(Error::SubpixelUnsupported),
-        }
+        };
         texture_descriptor.set_pixel_format(pixel_format);
         texture_descriptor.set_usage(usage);
         texture_descriptor.set_storage_mode(metal::MTLStorageMode::Shared);
