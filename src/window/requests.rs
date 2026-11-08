@@ -21,6 +21,16 @@ pub(super) enum Answer<W> {
     Unwanted,
 }
 
+impl<W> Answer<W> {
+    /// Leaves launch/reopen scenes available, but closes unsolicited extras.
+    pub(super) fn with_existing_windows(self, has_windows: bool) -> Self {
+        match self {
+            Self::Unrequested if has_windows => Self::Unwanted,
+            answer => answer,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(super) struct Requests<W> {
     next: u64,
