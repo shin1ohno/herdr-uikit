@@ -75,8 +75,9 @@ impl Registry {
 
 /// A scene connected. It hosts the window of the oldest request for a scene,
 /// is closed if that window closed meanwhile, or, when nothing asked for it,
-/// waits for the next `IosWindow::open`.
+/// waits for launch/reopen to open a window, or closes if one already exists.
 pub(crate) fn scene_connected(scene: &UIWindowScene, mtm: MainThreadMarker) {
+    let has_windows = !window_stack(mtm).is_empty();
     let answer = REGISTRY.with_borrow_mut(|registry| {
         if registry.entry_mut(scene).is_some() {
             tracing::debug!("a window scene reported connecting twice");
@@ -84,7 +85,7 @@ pub(crate) fn scene_connected(scene: &UIWindowScene, mtm: MainThreadMarker) {
         }
         let answer = match registry.requests.answer() {
             Answer::Window(window) => window.upgrade().map_or(Answer::Unwanted, Answer::Window),
-            Answer::Unrequested => Answer::Unrequested,
+            Answer::Unrequested => Answer::Unrequested.with_existing_windows(has_windows),
             Answer::Unwanted => Answer::Unwanted,
         };
         registry.scenes.push(SceneEntry {
@@ -292,7 +293,7 @@ pub(super) fn destroy(scene: &UIWindowScene, mtm: MainThreadMarker) {
     );
 }
 
-/// Closes a scene that answered a request whose window closed. The scene is
+/// Closes a scene that is no longer wanted. The scene is
 /// still connecting, so it is asked to go on the next main-queue turn.
 fn destroy_unwanted(scene: &UIWindowScene, mtm: MainThreadMarker) {
     let scene = MainThreadBound::new(scene.retain(), mtm);
