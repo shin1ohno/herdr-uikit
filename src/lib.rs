@@ -18,6 +18,7 @@
 //! `// SAFETY:` comment.
 #![cfg(target_os = "ios")]
 
+mod application;
 mod background_task;
 mod dispatcher;
 mod display;
@@ -29,6 +30,7 @@ mod layout_direction;
 mod menu;
 mod platform;
 mod renderer;
+mod scene_fallback;
 mod text_system;
 mod window;
 mod window_controls;
