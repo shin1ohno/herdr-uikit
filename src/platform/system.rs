@@ -18,13 +18,14 @@ use objc2_ui_kit::{UIApplication, UIUserInterfaceStyle, UIWindowScene};
 /// is system-wide, so any window scene answers; before one connects there is
 /// nothing to read, and the app is light.
 pub(super) fn window_appearance(mtm: MainThreadMarker) -> WindowAppearance {
-    let style = UIApplication::sharedApplication(mtm)
-        .connectedScenes()
-        .iter()
-        .find_map(|scene| scene.downcast::<UIWindowScene>().ok())
-        // SAFETY: The trait collection is read on the main thread, which the
-        // marker proves, and UIKit only changes it there.
-        .map(|scene| unsafe { scene.traitCollection().userInterfaceStyle() });
+    let style = crate::scene_fallback::scenes_or_empty(crate::application::shared(mtm), |app| {
+        app.connectedScenes().to_vec()
+    })
+    .into_iter()
+    .find_map(|scene| scene.downcast::<UIWindowScene>().ok())
+    // SAFETY: The trait collection is read on the main thread, which the
+    // marker proves, and UIKit only changes it there.
+    .map(|scene| unsafe { scene.traitCollection().userInterfaceStyle() });
     if style == Some(UIUserInterfaceStyle::Dark) {
         WindowAppearance::Dark
     } else {

@@ -9,8 +9,8 @@
 //!
 //! UIKit is main-thread only, so every query takes a `MainThreadMarker`, and
 //! an `IosDisplay` holds its `UIScreen`, which keeps the display on the main
-//! thread and its bounds current through rotation. The queries need a running
-//! application (after `UIApplicationMain`), as every GPUI platform call does.
+//! thread and its bounds current through rotation. Before `UIApplicationMain`,
+//! queries return only the built-in screen.
 
 #[cfg(test)]
 mod tests;
@@ -23,7 +23,7 @@ use objc2::{
     rc::{Retained, Weak},
 };
 use objc2_core_foundation::{CGRect, CGSize};
-use objc2_ui_kit::{UIApplication, UISceneActivationState, UIScreen, UIWindowScene};
+use objc2_ui_kit::{UISceneActivationState, UIScreen, UIWindowScene};
 use uuid::Uuid;
 
 /// Namespace of the display uuids (a fixed random v4 uuid), so they cannot
@@ -196,20 +196,20 @@ fn screen_id(screen: &Retained<UIScreen>) -> DisplayId {
 /// [`ScreenOrder`]. `connectedScenes` is an unordered set, so nothing here
 /// depends on the order it lists scenes in.
 fn scene_screens(builtin: &UIScreen, mtm: MainThreadMarker) -> Vec<Retained<UIScreen>> {
-    let scenes = UIApplication::sharedApplication(mtm)
-        .connectedScenes()
-        .to_vec()
-        .into_iter()
-        .filter_map(|scene| scene.downcast::<UIWindowScene>().ok())
-        .map(|scene| {
-            let screen = scene.screen();
-            let order = ScreenOrder {
-                rank: activation_rank(scene.activationState()),
-                external: !same_screen(&screen, builtin),
-                id: u64::from(screen_id(&screen)),
-            };
-            (order, screen)
-        });
+    let scenes = crate::scene_fallback::scenes_or_empty(crate::application::shared(mtm), |app| {
+        app.connectedScenes().to_vec()
+    })
+    .into_iter()
+    .filter_map(|scene| scene.downcast::<UIWindowScene>().ok())
+    .map(|scene| {
+        let screen = scene.screen();
+        let order = ScreenOrder {
+            rank: activation_rank(scene.activationState()),
+            external: !same_screen(&screen, builtin),
+            id: u64::from(screen_id(&screen)),
+        };
+        (order, screen)
+    });
     order_screens(scenes, |a, b| same_screen(a, b))
 }
 
