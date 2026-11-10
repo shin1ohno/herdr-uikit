@@ -37,7 +37,7 @@ font-kit              = { package = "zed-font-kit", version = "=0.14.1-zed" }
 foreign-types         = "0.5"
 futures               = { default-features = false, features = ["std"], version = "0.3.34" }
 futures-channel       = "0.3.34"
-gpui                  = { package = "gpui-pre", version = "=0.3.10" }
+gpui                  = { package = "gpui-pre", version = "=0.3.12" }
 image                 = { default-features = false, features = ["gif", "jpeg", "png", "webp"], version = "0.25.10" }
 metal                 = "0.33"
 objc                  = "0.2"
