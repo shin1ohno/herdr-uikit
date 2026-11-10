@@ -11,7 +11,7 @@
 
 use objc2::rc::{Retained, Weak};
 use objc2::runtime::{AnyObject, NSObject, NSObjectProtocol, ProtocolObject, Sel};
-use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send};
+use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send, sel};
 use objc2_core_foundation::{CGPoint, CGRect};
 use objc2_foundation::{NSArray, NSComparisonResult, NSInteger, NSRange, NSSet, NSString};
 use objc2_ui_kit::{
@@ -92,22 +92,22 @@ define_class!(
 
         #[unsafe(method(paste:))]
         fn __paste(&self, _: Option<&AnyObject>) {
-            self.perform_edit_action(EditAction::Paste);
+            self.perform_edit_action(sel!(paste:));
         }
 
         #[unsafe(method(copy:))]
         fn __copy(&self, _: Option<&AnyObject>) {
-            self.perform_edit_action(EditAction::Copy);
+            self.perform_edit_action(sel!(copy:));
         }
 
         #[unsafe(method(cut:))]
         fn __cut(&self, _: Option<&AnyObject>) {
-            self.perform_edit_action(EditAction::Cut);
+            self.perform_edit_action(sel!(cut:));
         }
 
         #[unsafe(method(selectAll:))]
         fn __select_all(&self, _: Option<&AnyObject>) {
-            self.perform_edit_action(EditAction::SelectAll);
+            self.perform_edit_action(sel!(selectAll:));
         }
 
         #[unsafe(method(canBecomeFirstResponder))]

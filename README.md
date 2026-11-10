@@ -146,6 +146,22 @@ callback is kept but never called (`validateCommand:` also runs while UIKit
 matches key commands, where clearing GPUI's pending keystrokes would break
 multi-keystroke bindings). iPadOS has no Dock menu.
 
+## Native edit actions
+
+UIKit's `copy:`, `cut:`, `paste:`, and `selectAll:` still dispatch the same
+Command-key down/up events. Inside your synchronous GPUI input callback,
+`herdr_uikit::native_edit_action()` returns `Some(NativeEditAction::Copy)`,
+`Cut`, `Paste`, or `SelectAll` for those commands, and `None` for ordinary
+physical key events, including an identical hardware Command-V. A terminal
+can use `Some(NativeEditAction::Paste)` to choose its clipboard path while
+keeping its hardware Command-to-Control mapping.
+
+The thread-local origin covers only the synthesized key-down and key-up;
+it restores the previous value on return or panic unwinding, including
+nested commands. Read it in the callback, not in a deferred task. Modifier
+restoration and the unhandled-paste fallback run with the previous origin.
+Consumers that do not read it keep their existing behavior.
+
 ## Layout direction
 
 GPUI lays out every pixel itself, so UIKit cannot tell which way the app's

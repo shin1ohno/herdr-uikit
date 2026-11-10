@@ -13,6 +13,13 @@
 //! draw in; later windows ask the system for another scene. Every UIKit call
 //! happens on the main thread, which `objc2::MainThreadMarker` proves.
 //!
+//! Native editing commands synthesize the usual GPUI Command-key events.
+//! Consumers can read [`native_edit_action()`] in their synchronous input
+//! callback to distinguish [`NativeEditAction::Paste`] (and Copy, Cut, SelectAll)
+//! from an otherwise identical physical key. The origin is scoped to key-down
+//! and key-up, restores on unwinding, and does not change event handling or the
+//! unhandled-paste fallback.
+//!
 //! The crate is empty on every other target. FFI modules allow `unsafe_code`
 //! for themselves only, and every `unsafe` block states its invariants in a
 //! `// SAFETY:` comment.
@@ -28,6 +35,7 @@ mod gpui_call;
 mod key_routing;
 mod layout_direction;
 mod menu;
+mod native_edit_action;
 mod platform;
 mod renderer;
 mod scene_fallback;
@@ -38,6 +46,7 @@ mod window_controls;
 pub use background_task::BackgroundTask;
 pub use error::{Error, Result};
 pub use layout_direction::{LayoutDirection, layout_direction, set_layout_direction};
+pub use native_edit_action::{NativeEditAction, native_edit_action};
 pub use platform::IosPlatform;
 pub use window_controls::window_control_insets;
 

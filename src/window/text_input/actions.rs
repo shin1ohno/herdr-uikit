@@ -15,13 +15,8 @@ use objc2_ui_kit::UIPasteboard;
 use super::state::Mode;
 use super::view_class::GPUITextInputView;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum EditAction {
-    Copy,
-    Cut,
-    Paste,
-    SelectAll,
-}
+pub(super) use crate::NativeEditAction as EditAction;
+use crate::native_edit_action::NativeEditActionGuard;
 
 impl EditAction {
     pub(super) fn from_selector(selector: Sel) -> Option<Self> {
@@ -61,12 +56,12 @@ impl GPUITextInputView {
         self.ivars().mode.get() == Some(Mode::Text) && self.ivars().target.text_input_focused()
     }
 
-    pub(super) fn perform_edit_action(&self, action: EditAction) {
+    pub(super) fn perform_edit_action(&self, selector: Sel) {
         if !self.editing_enabled() {
             return;
         }
-        dispatch_edit_action(
-            action,
+        dispatch_edit_selector(
+            selector,
             self.ivars().target.modifiers(),
             |input| self.ivars().target.dispatch(input),
             || {
@@ -88,6 +83,18 @@ impl GPUITextInputView {
     }
 }
 
+// Shared by the actual responder selectors and the dispatch regression tests.
+fn dispatch_edit_selector(
+    selector: Sel,
+    original: (Modifiers, Capslock),
+    dispatch: impl FnMut(PlatformInput) -> bool,
+    paste: impl FnOnce(),
+) {
+    if let Some(action) = EditAction::from_selector(selector) {
+        dispatch_edit_action(action, original, dispatch, paste);
+    }
+}
+
 fn dispatch_edit_action(
     action: EditAction,
     original: (Modifiers, Capslock),
@@ -95,12 +102,14 @@ fn dispatch_edit_action(
     paste: impl FnOnce(),
 ) {
     let keystroke = action.keystroke();
+    let origin = NativeEditActionGuard::enter(Some(action));
     let handled = dispatch(PlatformInput::KeyDown(KeyDownEvent {
         keystroke: keystroke.clone(),
         is_held: false,
         prefer_character_input: false,
     }));
     dispatch(PlatformInput::KeyUp(KeyUpEvent { keystroke }));
+    drop(origin);
     dispatch(PlatformInput::ModifiersChanged(ModifiersChangedEvent {
         modifiers: original.0,
         capslock: original.1,

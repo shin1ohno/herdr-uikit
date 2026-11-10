@@ -91,3 +91,172 @@ fn only_an_unhandled_paste_reads_and_inserts_clipboard_text() {
         assert_eq!(inserted.get(), action == EditAction::Paste);
     }
 }
+
+use crate::{NativeEditAction, native_edit_action};
+use std::panic::{AssertUnwindSafe, catch_unwind};
+
+fn check_native_origin(selector: Sel, action: NativeEditAction) {
+    assert_eq!(native_edit_action(), None);
+    // Repeat to expose a scope that leaks into the next selector invocation.
+    for _ in 0..2 {
+        let mut origins = Vec::new();
+        dispatch_edit_selector(
+            selector,
+            (Modifiers::default(), Capslock::default()),
+            |input| {
+                origins.push((input, native_edit_action()));
+                false
+            },
+            || assert_eq!(native_edit_action(), None, "fallback has no native origin"),
+        );
+        assert_eq!(origins.len(), 3);
+        assert!(matches!(origins[0].0, PlatformInput::KeyDown(_)));
+        assert!(matches!(origins[1].0, PlatformInput::KeyUp(_)));
+        assert_eq!(origins[0].1, Some(action), "key-down origin");
+        assert_eq!(origins[1].1, Some(action), "key-up origin");
+        assert_eq!(origins[2].1, None, "modifier restoration is outside scope");
+        assert_eq!(native_edit_action(), None);
+    }
+}
+
+#[test]
+fn native_origin_copy_selector() {
+    check_native_origin(sel!(copy:), NativeEditAction::Copy);
+}
+
+#[test]
+fn native_origin_cut_selector() {
+    check_native_origin(sel!(cut:), NativeEditAction::Cut);
+}
+
+#[test]
+fn native_origin_paste_selector() {
+    check_native_origin(sel!(paste:), NativeEditAction::Paste);
+}
+
+#[test]
+fn native_origin_select_all_selector() {
+    check_native_origin(sel!(selectAll:), NativeEditAction::SelectAll);
+}
+
+#[test]
+fn native_origin_physical_command_v_has_identical_stroke_but_no_origin() {
+    use super::super::keymap::{KeyEvent, keystroke};
+    use objc2_ui_kit::{UIKeyModifierFlags, UIKeyboardHIDUsage};
+
+    let physical = keystroke(&KeyEvent {
+        usage: UIKeyboardHIDUsage::KeyboardV,
+        characters: "v",
+        unmodified: "v",
+        flags: UIKeyModifierFlags::Command,
+    });
+    let mut native = None;
+    dispatch_edit_selector(
+        sel!(paste:),
+        (Modifiers::default(), Capslock::default()),
+        |input| {
+            if let PlatformInput::KeyDown(event) = input {
+                native = Some(event.keystroke);
+                assert_eq!(native_edit_action(), Some(NativeEditAction::Paste));
+            }
+            true
+        },
+        || panic!("handled paste must not fall back"),
+    );
+    assert_eq!(physical, native);
+    let Some(physical) = physical else {
+        panic!("Command-V must translate to a keystroke");
+    };
+    super::super::keys::dispatch_key_down(physical.clone(), false, |input| {
+        assert!(matches!(input, PlatformInput::KeyDown(_)));
+        assert_eq!(native_edit_action(), None);
+        true
+    });
+    super::super::keys::dispatch_key_up(physical, |input| {
+        assert!(matches!(input, PlatformInput::KeyUp(_)));
+        assert_eq!(native_edit_action(), None);
+        true
+    });
+    assert_eq!(native_edit_action(), None);
+}
+
+#[test]
+fn native_origin_restores_after_consumer_panics_on_down_or_up() {
+    for panic_on_down in [true, false] {
+        let mut seen = Vec::new();
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            dispatch_edit_selector(
+                sel!(paste:),
+                (Modifiers::default(), Capslock::default()),
+                |input| {
+                    seen.push(native_edit_action());
+                    if matches!(input, PlatformInput::KeyDown(_)) == panic_on_down {
+                        panic!("consumer panic");
+                    }
+                    true
+                },
+                || panic!("fallback must not run"),
+            );
+        }));
+        assert!(result.is_err());
+        assert_eq!(
+            seen,
+            vec![Some(NativeEditAction::Paste); if panic_on_down { 1 } else { 2 }]
+        );
+        assert_eq!(native_edit_action(), None, "unwind must clear origin");
+        check_native_origin(sel!(copy:), NativeEditAction::Copy);
+    }
+}
+
+#[test]
+fn native_origin_nested_dispatch_restores_outer_even_after_unwind() {
+    dispatch_edit_selector(
+        sel!(copy:),
+        (Modifiers::default(), Capslock::default()),
+        |input| {
+            if !matches!(input, PlatformInput::KeyDown(_) | PlatformInput::KeyUp(_)) {
+                assert_eq!(native_edit_action(), None);
+                return true;
+            }
+            assert_eq!(native_edit_action(), Some(NativeEditAction::Copy));
+            let physical = EditAction::Paste.keystroke();
+            super::super::keys::dispatch_key_down(physical.clone(), false, |_| {
+                assert_eq!(native_edit_action(), None, "reentrant physical down");
+                true
+            });
+            super::super::keys::dispatch_key_up(physical, |_| {
+                assert_eq!(native_edit_action(), None, "reentrant physical up");
+                true
+            });
+            assert_eq!(native_edit_action(), Some(NativeEditAction::Copy));
+            for unwind in [false, true] {
+                let mut inner_seen = None;
+                let result = catch_unwind(AssertUnwindSafe(|| {
+                    dispatch_edit_selector(
+                        sel!(cut:),
+                        (Modifiers::default(), Capslock::default()),
+                        |input| {
+                            if matches!(input, PlatformInput::KeyDown(_) | PlatformInput::KeyUp(_))
+                            {
+                                inner_seen = native_edit_action();
+                                if unwind {
+                                    panic!("nested consumer panic");
+                                }
+                            } else {
+                                assert_eq!(native_edit_action(), Some(NativeEditAction::Copy));
+                            }
+                            true
+                        },
+                        || panic!("Cut has no paste fallback"),
+                    );
+                }));
+                assert_eq!(result.is_err(), unwind);
+                assert_eq!(inner_seen, Some(NativeEditAction::Cut));
+                assert_eq!(native_edit_action(), Some(NativeEditAction::Copy));
+            }
+            true
+        },
+        || panic!("Copy has no paste fallback"),
+    );
+    assert_eq!(native_edit_action(), None);
+}
