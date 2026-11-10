@@ -25,6 +25,7 @@ use smallvec::SmallVec;
 use super::keymap::{self, HeldModifiers, KeyEvent};
 use super::view_class::GPUITextInputView;
 use crate::menu::{self, EventSource, Route, Shortcut, Trigger};
+use crate::native_edit_action::NativeEditActionGuard;
 use crate::platform::application;
 
 /// Seconds before a held key starts repeating, and between repeats, close to
@@ -255,9 +256,7 @@ impl GPUITextInputView {
             if let Some(keystroke) = facts.keystroke
                 && !crate::key_routing::is_input_source_switch(&keystroke)
             {
-                self.ivars()
-                    .target
-                    .dispatch(PlatformInput::KeyUp(KeyUpEvent { keystroke }));
+                dispatch_key_up(keystroke, |input| self.ivars().target.dispatch(input));
             }
             // A press that began before this view was first responder has no
             // route; UIKit is the one that may have seen it.
@@ -330,13 +329,9 @@ impl GPUITextInputView {
         if keystroke.key == "escape" {
             self.trace_escape("gpui-keydown-dispatch");
         }
-        self.ivars()
-            .target
-            .dispatch(PlatformInput::KeyDown(KeyDownEvent {
-                keystroke,
-                is_held,
-                prefer_character_input: false,
-            }))
+        dispatch_key_down(keystroke, is_held, |input| {
+            self.ivars().target.dispatch(input)
+        })
     }
 
     /// Opt-in routing evidence for a single known control, never text or
@@ -442,4 +437,28 @@ enum Phase {
     Began,
     Ended,
     Cancelled,
+}
+
+/// The physical-key delivery path, shared by hardware presses and repeats.
+pub(super) fn dispatch_key_down(
+    keystroke: Keystroke,
+    is_held: bool,
+    dispatch: impl FnOnce(PlatformInput) -> bool,
+) -> bool {
+    // A reentrant physical press must not inherit a native command's scope.
+    let _origin = NativeEditActionGuard::enter(None);
+    dispatch(PlatformInput::KeyDown(KeyDownEvent {
+        keystroke,
+        is_held,
+        prefer_character_input: false,
+    }))
+}
+
+/// The physical release path, including cancelled presses.
+pub(super) fn dispatch_key_up(
+    keystroke: Keystroke,
+    dispatch: impl FnOnce(PlatformInput) -> bool,
+) -> bool {
+    let _origin = NativeEditActionGuard::enter(None);
+    dispatch(PlatformInput::KeyUp(KeyUpEvent { keystroke }))
 }
