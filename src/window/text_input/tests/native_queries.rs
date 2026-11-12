@@ -6,11 +6,13 @@
 )]
 #![allow(clippy::expect_used)]
 
+mod current;
 mod host;
 mod selectors;
 
 use std::{
     ops::Range,
+    rc::Rc,
     sync::atomic::{AtomicU8, Ordering},
 };
 
@@ -24,6 +26,16 @@ use super::super::{
 use crate::window::input_target::InputTarget;
 use host::Document;
 use selectors::{NilGetter, Override, setters};
+
+// Only a source-removal mutant calls this; the baseline helper never looks up
+// current. The fixture registers the actual TextInputView, not expected values.
+#[allow(
+    dead_code,
+    reason = "entry for the frozen Q05 current-recapture source mutant"
+)]
+pub(in crate::window::text_input) fn q05_current_capture(fallback: &NativeClient) -> NativeClient {
+    current::capture(fallback)
+}
 
 static RESULT: AtomicU8 = AtomicU8::new(0);
 #[used]
@@ -98,7 +110,11 @@ fn exercise(mtm: MainThreadMarker) {
             Box::new(ElementInputHandler::new(Bounds::default(), entity.clone())),
         )
     });
-    let input = TextInputView::new(mtm, InputTarget::with_test_handler(handler));
+    let input = Rc::new(TextInputView::new(
+        mtm,
+        InputTarget::with_test_handler(handler),
+    ));
+    let _current = current::Registration::new(input.clone());
     let client = NativeClient::new(&input);
     let original_id = client.identity();
 
@@ -238,6 +254,26 @@ fn exercise(mtm: MainThreadMarker) {
     input.finish_retirement(old, next, &receipt);
     let current = NativeClient::new(&input);
     assert_ne!(current.identity(), original_id);
+    assert_eq!(
+        value(&current, current.document_length_utf16()),
+        Some(6),
+        "Q05 live current positive control"
+    );
+    let retained_sample = client.document_length_utf16();
+    eprintln!(
+        "P13 Q05 old={} current={} retained_sample={:?}",
+        original_id,
+        current.identity(),
+        retained_sample
+    );
+    assert_eq!(
+        retained_sample,
+        Ok(NativeQuery {
+            client: original_id,
+            value: Some(0)
+        }),
+        "p13-q05-retained-client-not-current"
+    );
     let count = setters();
     assert_eq!(client.identity(), original_id);
     assert_eq!(selection(&client), None);

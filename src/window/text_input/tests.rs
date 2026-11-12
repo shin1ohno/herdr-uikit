@@ -49,4 +49,4 @@ mod composition_selection;
 mod retirement;
 
 #[cfg(feature = "test-support")]
-mod native_queries;
+pub(super) mod native_queries;

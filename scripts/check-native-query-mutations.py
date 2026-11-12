@@ -47,7 +47,29 @@ def main():
                'aarch64-apple-ios-sim', TEST, '--', '--nocapture']
     anchor = '    pub fn document_length_utf16(&self) -> Result<NativeQuery<Option<usize>>, NativeQueryError> {\n        self.observe(|| {\n'
     reversed_check = '            if range.start > range.end {\n                return Err(NativeQueryError::ReversedRange);\n            }\n'
+    document_before = anchor + '''            let Some(begin) = self.beginning() else {
+                return Ok(None);
+            };
+            // SAFETY: standard position getter on the same main-thread receiver.
+            let end: Option<Retained<UITextPosition>> =
+                unsafe { msg_send![&*self.0, endOfDocument] };
+            end.map(|end| self.offset(&begin, &end)).transpose()
+        })
+    }
+'''
+    # One method replacement: both identity and real native selectors now use
+    # the registered TextInputView's current endpoint instead of retained self.
+    # Non-test library compilation keeps the same endpoint; the actual lib-test
+    # initializer exercises the defect after installing its real second client.
+    document_after = document_before.replace('        self.observe(|| {', '''        #[cfg(test)]
+        let sampled = super::super::tests::native_queries::q05_current_capture(self);
+        #[cfg(not(test))]
+        let sampled = self.clone();
+        sampled.observe(|| {''').replace('self.beginning()', 'sampled.beginning()').replace(
+            '&*self.0', '&*sampled.0').replace('self.offset(', 'sampled.offset(')
     mutations = [
+        ('q05-recapture-current', document_before, document_after,
+         'p13-q05-retained-client-not-current'),
         ('query-repairs-selection', anchor, anchor +
          '            self.0.setSelectedTextRange(self.0.selectedTextRange().as_deref());\n',
          'p13-query-does-not-set-selection'),
