@@ -127,12 +127,13 @@ keyboard/IME behavior not reproduced by Simulator stays an owner device gate.
 
 ## Independent SDK menu change
 
-This branch starts at SDK main `b2fa7811fa9fad9592f47b06d851fc0c33facb16`.
-SDK PR #8 is independent and is not included. Both edit `InputTarget`, native
-view code and exports; integrate with review of those overlaps. Any new Edit
-availability accessor added there must honor the captured client's live gate.
-Its per-window availability state must remain shared by the replacement, not
-copied from an old native view. Re-run both suites after combining the branches.
+The original standalone prototype started at SDK main
+`b2fa7811fa9fad9592f47b06d851fc0c33facb16` and did not include SDK PR #8.
+The combined branch now includes PR #8 source at the exact head below, while
+both GitHub PRs remain unmerged. Their overlapping InputTarget, native-view
+and export changes are integrated here. Edit availability uses the captured
+client's live gate and remains shared per-window, not copied from an old
+native view. Both suites must run on the combined head.
 
 
 ## Combined SDK8 correction and public API probe
@@ -175,3 +176,13 @@ an executed weak-update failure when the launch guard is removed and a sentinel
 failure when the callback slot is restored too late. Each restoration must pass.
 The selector mutation suite remains separately required. Do not infer pass
 from build success, process launch, or a missing failure line.
+
+
+The public probe also requires `Replaced { first_responder: true,
+responder_requested: true }` immediately after the focused swap, and separately
+reads the captured replacement object's actual first-responder state before
+any injected input or subsequent focus operation. The acquisition-disabled
+mutation suppresses only the replacement's acquisition intent before its
+synchronous flush; it must fail `replacement-responder-acquired-before-input`
+and pass after restoration. This is a local responder-transfer oracle, not
+an OS queued-input cancellation acknowledgement.

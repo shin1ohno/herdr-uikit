@@ -293,11 +293,20 @@ mod probe {
                     .receipt
                     .as_ref()
                     .map(TextInputRetirement::status),
-                Some(TextInputRetirementStatus::Replaced { .. })
+                Some(TextInputRetirementStatus::Replaced {
+                    first_responder: true,
+                    responder_requested: true,
+                })
             ),
-            "public-slot-receipt-replaced",
+            "replacement-responder-acquired-before-input",
         );
         let new = capture(handle);
+        // Observe the actual object too, before injected input or another focus
+        // operation can hide a failed transfer. A receipt alone is not enough.
+        check(
+            new.first_responder(),
+            "replacement-actual-first-responder-before-input",
+        );
         check(
             new.identity() != old.identity(),
             "immutable-new-native-origin",

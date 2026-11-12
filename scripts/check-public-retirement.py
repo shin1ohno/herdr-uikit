@@ -104,6 +104,10 @@ mutations = [
      '    let _in_gpui = crate::gpui_call::InGpui::enter();\n    let result = f(&mut callback);\n    slot.borrow_mut().get_or_insert(callback);',
      '    let in_gpui = crate::gpui_call::InGpui::enter();\n    let result = f(&mut callback);\n    drop(in_gpui);\n    slot.borrow_mut().get_or_insert(callback);',
      'public-api-callback-slot-restored'),
+    ('replacement-acquisition-disabled', 'src/window/text_input/retirement.rs',
+     '        view.flush();\n        old.removeFromSuperview();',
+     '        view.ivars().acquire.set(Acquire::Settled);\n        view.flush();\n        old.removeFromSuperview();',
+     'replacement-responder-acquired-before-input'),
 ]
 for label, relative, before, after, assertion in mutations:
     path = ROOT / relative
