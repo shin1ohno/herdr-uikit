@@ -232,9 +232,6 @@ impl GPUITextInputView {
         } else {
             Phase::Ended
         };
-        if !self.ivars().target.client.live() {
-            return;
-        }
         let mtm = self.mtm();
         for press in presses.iter() {
             let Some(key) = press.key(mtm) else {

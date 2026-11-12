@@ -66,13 +66,17 @@ fn exercise(mtm: MainThreadMarker) {
     // Same old text is rejected both before and after new client activation.
     old.insertText(&NSString::from_str("same"));
     old.unmarkText();
-    assert!(entity.read_with(cx, |v, _| v.commits.is_empty()));
+    assert!(
+        entity.read_with(cx, |v, _| v.commits.is_empty()),
+        "retired-origin-delivered-text"
+    );
     cx.update(|_, cx| entity.update(cx, |v, _| v.marked.clear()));
     input.finish_retirement(retained_old, next, &receipt);
     let new = input.current();
     assert_ne!(
         old.ivars().target.client.identity,
-        new.ivars().target.client.identity
+        new.ivars().target.client.identity,
+        "replacement-reused-native-origin"
     );
     assert!(old.superview().is_none());
     assert!(!old.ivars().flush_scheduled.get());

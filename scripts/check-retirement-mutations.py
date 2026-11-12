@@ -28,12 +28,12 @@ if not os.environ.get('CARGO_TARGET_AARCH64_APPLE_IOS_SIM_RUNNER'):
 command = ['cargo', 'test', '--locked', '--all-features', '--target',
            'aarch64-apple-ios-sim', TEST, '--', '--nocapture']
 
-def test(label, expect_failure=False):
+def test(label, expected_assertion=None):
     guard()
     result = run(*command)
     print(label, result.stdout, flush=True)
-    if expect_failure:
-        if result.returncode != 101 or TEST not in result.stdout or 'panicked at' not in result.stdout or 'test result: FAILED' not in result.stdout:
+    if expected_assertion:
+        if result.returncode != 101 or TEST not in result.stdout or 'panicked at' not in result.stdout or 'test result: FAILED' not in result.stdout or expected_assertion not in result.stdout:
             sys.exit(f'{label}: not the required executed assertion failure')
     elif result.returncode != 0 or '1 passed' not in result.stdout:
         sys.exit(f'{label}: native adapter regression did not pass')
@@ -42,16 +42,17 @@ test('baseline')
 path = ROOT / 'src/window/text_input/retirement.rs'
 original = path.read_text()
 mutations = [
-    ('remove-old-fence', 'target.client.retire();', '// retirement removed by negative control'),
+    ('remove-old-fence', 'target.client.retire();', '// retirement removed by negative control', 'retired-origin-delivered-text'),
     ('reuse-old-native-origin', 'GPUITextInputView::new(old.mtm(), next)',
-     'GPUITextInputView::new(old.mtm(), { let _ = next; old.ivars().target.clone() })'),
+     'GPUITextInputView::new(old.mtm(), { let _ = next; old.ivars().target.clone() })',
+     'replacement-reused-native-origin'),
 ]
-for label, before, after in mutations:
+for label, before, after, expected_assertion in mutations:
     if original.count(before) != 1:
         sys.exit(f'{label}: unique mutation anchor missing')
     try:
         path.write_text(original.replace(before, after))
-        test(label, expect_failure=True)
+        test(label, expected_assertion=expected_assertion)
     finally:
         path.write_text(original)
     test(label + '-restored')

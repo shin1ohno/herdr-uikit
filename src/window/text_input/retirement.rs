@@ -87,8 +87,8 @@ impl TextInputView {
             Acquire::Settled
         });
         view.flush();
-        let first_responder = view.isFirstResponder();
         old.removeFromSuperview();
+        let first_responder = view.isFirstResponder();
         receipt.status.set(TextInputRetirementStatus::Replaced {
             first_responder,
             responder_requested: requested,
