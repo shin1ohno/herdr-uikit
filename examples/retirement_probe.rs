@@ -340,18 +340,24 @@ mod probe {
             "enter-key-only-mode",
         );
         let next = app.clone();
-        frame(app, move || key_only(handle, next, record));
+        frame(app, move || key_only(handle, next, record, 0));
     }
     fn key_only(
         handle: WindowHandle<Probe>,
         mut app: AsyncWindowContext,
         record: Rc<RefCell<Record>>,
+        tries: usize,
     ) {
         let client = capture(handle);
-        check(
-            !client.first_responder(),
-            "key-only-text-responder-resigned",
-        );
+        // Focus changes enqueue the platform's responder update. A frame
+        // callback is not an acknowledgement that this native work ran.
+        if client.first_responder() {
+            check(tries < 30, "key-only-responder-resigned-within-30-frames");
+            let next = app.clone();
+            frame(app, move || key_only(handle, next, record, tries + 1));
+            return;
+        }
+        check(true, "key-only-text-responder-resigned");
         check(
             set_native_edit_availability(handle.into(), None),
             "restore-default-availability",
