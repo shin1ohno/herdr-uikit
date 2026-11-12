@@ -446,6 +446,8 @@ pub(super) fn dispatch_key_down(
     dispatch: impl FnOnce(PlatformInput) -> bool,
 ) -> bool {
     // A reentrant physical press must not inherit a native command's scope.
+    #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+    let _observation = crate::native_edit_observer::KeyScope::enter(None);
     let _origin = NativeEditActionGuard::enter(None);
     dispatch(PlatformInput::KeyDown(KeyDownEvent {
         keystroke,
@@ -459,6 +461,8 @@ pub(super) fn dispatch_key_up(
     keystroke: Keystroke,
     dispatch: impl FnOnce(PlatformInput) -> bool,
 ) -> bool {
+    #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+    let _observation = crate::native_edit_observer::KeyScope::enter(None);
     let _origin = NativeEditActionGuard::enter(None);
     dispatch(PlatformInput::KeyUp(KeyUpEvent { keystroke }))
 }

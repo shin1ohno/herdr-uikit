@@ -1,0 +1,3 @@
+# Deferred validation
+
+- Native edit observer (admitted plan SHA 0461ca658933341948bc47aa09fe5b1015fe6e1bb3d1be2f85a6f8623c6bf4d9): exact-head device/Simulator compile, clippy and SDK tests; actual native entry off/on and intended-reason negative mutants; receiving/privacy receipts; independent source review. Reason: Mac/SSH/Simulator execution requires the controller's exclusive lease, currently not granted. First step: controller freezes the SDK/consumer heads and grants a lease; run the existing target checks and the native probe contract in `docs/native-edit-observer.md`. Close only after every listed target/native/privacy gate has primary evidence and independent review is accepted; remove this entry in the resolving commit.

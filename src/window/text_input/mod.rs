@@ -77,7 +77,14 @@ impl TextInputView {
     }
 
     pub(super) fn perform_edit_action(&self, selector: Sel) {
+        #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+        let _origin = crate::native_edit_observer::DrawingScope::enter();
         self.view.perform_edit_action(selector);
+    }
+
+    #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+    pub(crate) fn observation_registration(&self) -> &crate::native_edit_observer::Registration {
+        &self.view.ivars().observation
     }
 
     pub(super) fn validate_edit_command(&self, command: &objc2_ui_kit::UICommand) {

@@ -29,6 +29,13 @@ impl InputTarget {
     /// Sends `input` through the window's event callback. Returns whether
     /// GPUI handled it (`DispatchEventResult::propagate == false`).
     pub(crate) fn dispatch(&self, input: PlatformInput) -> bool {
+        #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+        let _observation = if matches!(&input, PlatformInput::KeyDown(_) | PlatformInput::KeyUp(_))
+        {
+            None
+        } else {
+            Some(crate::native_edit_observer::KeyScope::enter(None))
+        };
         self.window
             .upgrade()
             .is_some_and(|window| window.dispatch(input))
