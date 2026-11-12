@@ -35,10 +35,10 @@ base dc2511fe695935cdce60ba6bb3cfb4288a425778. Consumer must pin the exact revie
 SDK commit before merging; SDK8/9 and other writers' branches are not included.
 
 `post_notification_when(notification, current, callback)` additionally checks a
-nonblocking consumer predicate after authorization, before add, after OS completion, at willPresent, and before response dispatch on the main queue. Use
+nonblocking consumer predicate after authorization, before add, after OS completion, and at willPresent. Response dispatch on the main queue uses issued-tag ownership instead of this short display predicate. Use
 it for connection-bound effects: invalidate the consumer generation immediately
 on disconnect and reject aged events. Native callbacks never infer that an old
-mailbox remains current. Each retained ticket has an atomic invalidation guard. The registry holds at most 64 tickets; duplicate/live tags and capacity exhaustion return Busy. Callers remove tags on eviction and drop. No consumer code runs under the registry mutex; the mutex protects only bounded bookkeeping. Native responses consume a ticket once. Use fresh tags, never reuse an identifier across outstanding OS callbacks.
+mailbox remains current. Each retained ticket has an atomic invalidation guard. The registry holds at most 64 tickets; duplicate/live tags and capacity exhaustion return Busy. Callers remove tags on eviction and drop. No consumer code runs under the registry mutex; the mutex protects only bounded bookkeeping. Native responses invalidate display tickets; the consumer consumes its actionable record once. Duplicate issued-tag callbacks also reach that guard for a refusal status. Use fresh tags, never reuse an identifier across outstanding OS callbacks.
 
 Resolution-only check: Cargo 1.99.1 `cargo update --package herdr-uikit` added only
 objc2-user-notifications 0.3.2; no existing package version changed. Native
@@ -61,3 +61,28 @@ observed with the real center; until then the connected-only native gate is open
 OS permission revocation is enforced by the OS, not inferred from the earlier
 query snapshot. The permission query test remains distinct from a real grant or
 from a user seeing a notification. No worker answers a dialog.
+
+
+## D5 response lifetime
+
+A tag receives an issuance receipt immediately before authorized native add,
+not at registration or permission query. Native add failure revokes its receipt.
+Up to 64 recent issued tags are retained for 600 seconds from issuance, with
+lazy expiry on issue/response lookup and FIFO eviction. Taps never extend this
+window. Receipts hold weak ticket references, not consumer predicates or payloads.
+Display removal/drop releases predicates immediately; receipts let removed,
+expired-action and duplicate taps reach the consumer's bounded refusal status.
+Unissued, evicted or receipt-expired tags fail closed with a typed SDK warning
+without logging the tag. They never invoke a consumer action. This receipt
+window is not an action grant: yebisu retains its original 300-second limit.
+Fresh opaque tags must never be reused, including after display removal.
+
+The test-support-only NotificationResponseFixture calls the same response::dispatch
+used inside the delegate's main-queue closure, and the same complete_presentation
+as willPresent. It uses isolated registries/injected time, not a fake OS success.
+Four SDK response tests cover six seconds, removed/expired/duplicate tags,
+denied/unissued/dismissal/action handling, 64 receipts, 600-second lazy expiry,
+native-error revocation and release of captured consumer state. Six consumer
+integration tests use this boundary with real Smoke validation and a private
+wire peer/FIFO barrier. No production public API or default policy is added.
+All Rust/native executions and actual delegate/center/banner/sound remain UNRUN.

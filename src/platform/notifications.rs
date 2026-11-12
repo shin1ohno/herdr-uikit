@@ -43,6 +43,12 @@ pub type NotificationResult = Result<(), NotificationError>;
 static POSTING: AtomicBool = AtomicBool::new(false);
 mod presentation;
 static PRESENTATIONS: presentation::Registry = presentation::Registry::new();
+mod response;
+static RESPONSES: response::Registry = response::Registry::new();
+#[cfg(any(test, feature = "test-support"))]
+mod response_fixture;
+#[cfg(feature = "test-support")]
+pub use response_fixture::NotificationResponseFixture;
 
 fn require_authorization(provider: impl FnOnce() -> Authorization) -> NotificationResult {
     match provider() {
@@ -101,7 +107,8 @@ pub fn post_notification(
 }
 
 /// Rechecks a nonblocking consumer validity predicate after asynchronous OS work.
-/// A false predicate cancels instead of delivering stale or queued content.
+/// A false predicate cancels presentation, not the response lifecycle. Consumers
+/// must validate context and single-use ownership again when handling a response.
 pub fn post_notification_when(
     notification: SystemNotification,
     current: impl Fn() -> bool + Send + Sync + 'static,
@@ -117,6 +124,11 @@ pub fn post_notification_when(
         return;
     }
     if POSTING.swap(true, Ordering::AcqRel) {
+        callback(Err(NotificationError::Busy));
+        return;
+    }
+    if RESPONSES.owns(&notification.tag, std::time::Instant::now()) {
+        POSTING.store(false, Ordering::Release);
         callback(Err(NotificationError::Busy));
         return;
     }
@@ -162,6 +174,9 @@ pub fn post_notification_when(
                 None,
             );
             let callback = callback.clone();
+            // Only an authorized request actually submitted to the center owns
+            // a response. Record before add: response may precede completion.
+            RESPONSES.issue(&notification.tag, &ticket, std::time::Instant::now());
             UNUserNotificationCenter::currentNotificationCenter()
                 .addNotificationRequest_withCompletionHandler(
                     &request,
@@ -172,6 +187,9 @@ pub fn post_notification_when(
                         let tag = notification.tag.to_string();
                         let ticket = ticket.clone();
                         dispatch2::DispatchQueue::main().exec_async(move || {
+                            if failed {
+                                RESPONSES.forget(&tag, &ticket);
+                            }
                             if !ticket.current() {
                                 PRESENTATIONS.finish(&tag, &ticket);
                                 remove_identifiers(&[tag]);
@@ -254,28 +272,18 @@ define_class!(
         ) {
             let tag = response.notification().request().identifier().to_string();
             let action = response.actionIdentifier().to_string();
-            // Dismissals are not activation; unknown actions are forwarded, never guessed.
-            if tag.len() <= 128
-                && action.len() <= 128
-                && action != "com.apple.UNNotificationDismissActionIdentifier"
-            {
-                let action_id = (action != "com.apple.UNNotificationDefaultActionIdentifier")
-                    .then(|| action.into());
-                let ticket = PRESENTATIONS.get(&tag);
+            if tag.len() <= 128 && action.len() <= 128 {
                 shared::later(move |shared| {
-                    let Some(ticket) = ticket else { return };
-                    if !ticket.current() {
-                        PRESENTATIONS.finish(&tag, &ticket);
-                        return;
-                    }
-                    // Consume before dispatch, so duplicate responses cannot activate twice.
-                    PRESENTATIONS.finish(&tag, &ticket);
-                    shared.notification_response.call(|f| {
-                        f(SystemNotificationResponse {
-                            tag: tag.into(),
-                            action_id,
-                        })
-                    });
+                    response::dispatch(
+                        &PRESENTATIONS,
+                        &RESPONSES,
+                        &tag,
+                        &action,
+                        std::time::Instant::now(),
+                        |response| {
+                            shared.notification_response.call(|f| f(response));
+                        },
+                    );
                 });
             }
             completion.call(());
@@ -292,5 +300,7 @@ impl NotificationDelegate {
     }
 }
 
+#[cfg(test)]
+mod response_tests;
 #[cfg(test)]
 mod tests;
