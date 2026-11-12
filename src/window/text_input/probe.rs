@@ -43,6 +43,18 @@ impl NativeClient {
     pub fn first_responder(&self) -> bool {
         self.0.isFirstResponder()
     }
+    /// Observed preconditions: this native object is first responder, its
+    /// window is active with a key responder, and GPUI has text focus.
+    /// Reading these values never requests focus or retries acquisition.
+    pub fn text_readiness(&self) -> (bool, bool, bool) {
+        let target = &self.0.ivars().target;
+        (
+            self.0.isFirstResponder(),
+            target.edit_window_active(),
+            target.text_input_focused(),
+        )
+    }
+
     pub fn attached(&self) -> bool {
         self.0.superview().is_some()
     }

@@ -242,8 +242,16 @@ mod probe {
         record: Rc<RefCell<Record>>,
         tries: usize,
     ) {
-        if !capture(handle).first_responder() {
-            check(tries < 30, "native-responder-ready-within-30-frames");
+        let readiness = capture(handle).text_readiness();
+        eprintln!(
+            "RETIREMENT_PROBE_OLD_PRECONDITION frame={tries} first_responder={} active_key_window={} text_focused={}",
+            readiness.0, readiness.1, readiness.2,
+        );
+        if readiness != (true, true, true) {
+            check(
+                tries < 30,
+                "old-active-text-responder-ready-within-30-frames",
+            );
             let next = app.clone();
             frame(app, move || ready(handle, next, record, tries + 1));
             return;
@@ -284,6 +292,10 @@ mod probe {
         old.mark("same");
         native::key(handle.into(), "f8", true);
         check(record.borrow().busy == 1, "native-busy-path-reached");
+        check(
+            old.text_readiness() == (true, true, true),
+            "old-active-text-first-responder-before-retire",
+        );
         native::key(handle.into(), "f6", false);
         check(record.borrow().slot == 1, "public-slot-callback-once");
         check(
