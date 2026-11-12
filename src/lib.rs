@@ -48,6 +48,10 @@ pub use error::{Error, Result};
 pub use layout_direction::{LayoutDirection, layout_direction, set_layout_direction};
 pub use native_edit_action::{NativeEditAction, native_edit_action};
 pub use platform::IosPlatform;
+pub use platform::notifications::{
+    Authorization, NotificationError, NotificationResult, notification_authorization,
+    post_notification, remove_notifications, request_notification_authorization,
+};
 pub use window_controls::window_control_insets;
 
 /// The GPUI application on iPadOS, the counterpart of
