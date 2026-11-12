@@ -29,16 +29,21 @@ impl InputTarget {
     /// Sends `input` through the window's event callback. Returns whether
     /// GPUI handled it (`DispatchEventResult::propagate == false`).
     pub(crate) fn dispatch(&self, input: PlatformInput) -> bool {
-        #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
-        let _observation = if matches!(&input, PlatformInput::KeyDown(_) | PlatformInput::KeyUp(_))
-        {
-            None
-        } else {
-            Some(crate::native_edit_observer::KeyScope::enter(None))
-        };
         self.window
             .upgrade()
             .is_some_and(|window| window.dispatch(input))
+    }
+
+    /// Only the canonical native edit producer supplies an observation key.
+    #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+    pub(crate) fn dispatch_native_edit(
+        &self,
+        input: PlatformInput,
+        key: Option<crate::native_edit_observer::ObservationKey>,
+    ) -> bool {
+        self.window
+            .upgrade()
+            .is_some_and(|window| window.dispatch_native_edit(input, key))
     }
 
     /// Runs `f` with the focused element's input handler, if GPUI has
@@ -156,6 +161,29 @@ impl Window {
     /// state is recorded first, so `PlatformWindow::modifiers` agrees with the
     /// event GPUI is handling.
     pub(super) fn dispatch(&self, input: PlatformInput) -> bool {
+        // Generic ingress (including synthetic keys) never inherits a native key.
+        #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+        let _observation = crate::native_edit_observer::KeyScope::enter(None);
+        self.dispatch_input(input)
+    }
+
+    #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+    fn dispatch_native_edit(
+        &self,
+        input: PlatformInput,
+        key: Option<crate::native_edit_observer::ObservationKey>,
+    ) -> bool {
+        let key = if matches!(&input, PlatformInput::KeyDown(_) | PlatformInput::KeyUp(_)) {
+            key
+        } else {
+            None
+        };
+        let _observation = crate::native_edit_observer::KeyScope::enter(key);
+        self.dispatch_input(input)
+    }
+
+    // The two ingress methods establish provenance before reaching callbacks.
+    fn dispatch_input(&self, input: PlatformInput) -> bool {
         {
             let mut state = self.state.borrow_mut();
             if state.closed {

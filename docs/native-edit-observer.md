@@ -150,3 +150,18 @@ Required exact-head lease gates (do not run concurrently with another build):
 
 No native, physical, real-key, Keychain, device signing or permission-dialog
 result is established by a source fixture. No SDK merge is authorized.
+
+## Synthetic and unknown input provenance
+
+Generic `InputTarget::dispatch` / `Window::dispatch` clear the new observation
+key for every input, including KeyDown/KeyUp from `editing::tap_key` (control
+insertion / deleteBackward) and any unknown direct ingress. Only the canonical
+native-edit closure passes its own invocation key through `dispatch_native_edit`.
+That route admits the key only for KeyDown/KeyUp, suppressing modifiers. Scoped
+restoration preserves the outer native key after a different window's synthetic
+callbacks and after callback unwind. Existing `native_edit_action` semantics,
+callback handling/count, and SDK8 defaults are unchanged by this provenance rule.
+
+The correction source fixture includes the actual tap_key, InputTarget and
+Window ingress/dispatch/callback-extraction functions. Its window/view/platform
+shells are host-shaped stubs, so it is not actual UIKit/native/receiving proof.

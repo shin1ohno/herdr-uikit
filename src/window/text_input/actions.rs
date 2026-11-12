@@ -108,7 +108,18 @@ impl GPUITextInputView {
         let summary = dispatch_edit_selector_inner(
             selector,
             self.ivars().target.modifiers(),
-            |input| self.ivars().target.dispatch(input),
+            |input| {
+                #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+                {
+                    self.ivars()
+                        .target
+                        .dispatch_native_edit(input, invocation.key())
+                }
+                #[cfg(not(all(target_os = "ios", target_abi = "sim", feature = "test-support")))]
+                {
+                    self.ivars().target.dispatch(input)
+                }
+            },
             || {
                 let pasteboard = UIPasteboard::generalPasteboard();
                 // SAFETY: this UIView is main-thread-only, so its pasteboard
