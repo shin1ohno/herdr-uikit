@@ -17,8 +17,10 @@ use std::{
 };
 
 use objc2::{
-    DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send, rc::Retained,
-    runtime::AnyObject, sel,
+    DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send,
+    rc::Retained,
+    runtime::{AnyObject, Sel},
+    sel,
 };
 use objc2_core_foundation::CGRect;
 use objc2_foundation::{NSNotification, NSNotificationCenter, NSObject, NSSet};
@@ -85,6 +87,32 @@ define_class!(
         #[unsafe(method(canBecomeFirstResponder))]
         fn can_become_first_responder(&self) -> bool {
             true
+        }
+
+        #[unsafe(method(canPerformAction:withSender:))]
+        fn can_perform_action(&self, action: Sel, sender: Option<&AnyObject>) -> bool {
+            if [sel!(copy:), sel!(cut:), sel!(paste:), sel!(selectAll:)].contains(&action) {
+                return self.owner().is_some_and(|window| window.text_input.editing_enabled(action));
+            }
+            // SAFETY: preserve UIView behavior for unrelated selectors.
+            unsafe { msg_send![super(self), canPerformAction: action, withSender: sender] }
+        }
+
+        #[unsafe(method(copy:))]
+        fn copy(&self, _: Option<&AnyObject>) {
+            if let Some(window) = self.owner() { window.text_input.perform_edit_action(sel!(copy:)); }
+        }
+        #[unsafe(method(cut:))]
+        fn cut(&self, _: Option<&AnyObject>) {
+            if let Some(window) = self.owner() { window.text_input.perform_edit_action(sel!(cut:)); }
+        }
+        #[unsafe(method(paste:))]
+        fn paste(&self, _: Option<&AnyObject>) {
+            if let Some(window) = self.owner() { window.text_input.perform_edit_action(sel!(paste:)); }
+        }
+        #[unsafe(method(selectAll:))]
+        fn select_all(&self, _: Option<&AnyObject>) {
+            if let Some(window) = self.owner() { window.text_input.perform_edit_action(sel!(selectAll:)); }
         }
 
         #[unsafe(method(touchesBegan:withEvent:))]
@@ -190,6 +218,7 @@ define_class!(
             // implementation returns nothing.
             let () = unsafe { msg_send![super(self), validateCommand: command] };
             menus::validate(command);
+            if let Some(window) = self.owner() { window.text_input.validate_edit_command(command); }
         }
 
         #[unsafe(method(handleHover:))]

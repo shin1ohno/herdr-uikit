@@ -285,3 +285,25 @@ parts of the window and platform code are adapted from GPUI's macOS platform
 crates (Copyright Zed Industries, Inc., Apache-2.0), and the font property
 mappings from zed-font-kit (Apache-2.0); `NOTICE.md` lists what came from
 where and what changed.
+
+### Explicit native edit availability
+
+`set_native_edit_availability(window, Some(NativeEditAvailability { ... }))`
+publishes a per-window policy for consumers whose visible selection is not their
+UITextInput document. Publish it after focus/selection changes, including all-false
+while a terminal is blocked, and clear with `None` when leaving that consumer.
+`None` preserves the previous text-mode/text-focus policy for ordinary clients.
+The SDK does not retain an application callback or borrow GPUI during validation.
+
+Both text and drawing responders use the same decision for
+`canPerformAction:withSender:`, `validateCommand:` and standard edit execution.
+Explicit availability requires an active window owning a key responder. Commands
+retain the existing `native_edit_action()` scoped dispatch and paste fallback.
+The consumer must recheck its live destination/selection when executing a command:
+a menu can remain visible while application state changes. This also supports a
+future long-press menu using the standard UIKit selectors without a second policy.
+
+SH1-153 validation: unit tests cover both modes, inactive/stale policy, defaults,
+and both responder method tables. The yebisu Simulator harness invokes actual
+UIKit selectors and checks clipboard/wire receipts. Physical hardware validation
+and menu screenshots are separate gates, not established by the unit tests.

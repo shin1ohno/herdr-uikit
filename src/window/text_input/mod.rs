@@ -42,7 +42,7 @@ mod view_class;
 mod tests;
 
 use gpui::{Bounds, Pixels, TextInputConfiguration};
-use objc2::{DefinedClass, MainThreadMarker, rc::Retained};
+use objc2::{DefinedClass, MainThreadMarker, rc::Retained, runtime::Sel};
 use objc2_ui_kit::UIView;
 
 pub(crate) use self::keymap::{named_key_char, us_shifted};
@@ -70,6 +70,18 @@ impl TextInputView {
     /// which are GPUI's window coordinates.
     pub(crate) fn view(&self) -> Retained<UIView> {
         Retained::into_super(self.view.clone())
+    }
+
+    pub(super) fn editing_enabled(&self, selector: Sel) -> bool {
+        self.view.editing_enabled(selector)
+    }
+
+    pub(super) fn perform_edit_action(&self, selector: Sel) {
+        self.view.perform_edit_action(selector);
+    }
+
+    pub(super) fn validate_edit_command(&self, command: &objc2_ui_kit::UICommand) {
+        self.view.validate_edit_command(command);
     }
 
     /// Text mode: the view becomes first responder with no `inputView`, so
