@@ -7,7 +7,7 @@ use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 use gpui::{AnyWindowHandle, KeyDownEvent, Keystroke, PlatformInput};
 use objc2::MainThreadMarker;
 
-pub use super::text_input::probe::NativeClient;
+pub use super::text_input::probe::{NativeClient, NativeQuery, NativeQueryError};
 use super::{scene, state::Window};
 
 fn window(handle: AnyWindowHandle) -> Option<Rc<Window>> {

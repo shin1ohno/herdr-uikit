@@ -47,3 +47,6 @@ mod composition_selection;
 
 #[cfg(feature = "test-support")]
 mod retirement;
+
+#[cfg(feature = "test-support")]
+mod native_queries;

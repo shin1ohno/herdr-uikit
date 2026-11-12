@@ -11,6 +11,9 @@ use objc2_ui_kit::{UICommand, UIKeyInput, UIMenuElementAttributes, UITextInput, 
 
 use super::{TextInputView, view_class::GPUITextInputView};
 
+mod query;
+pub use query::{NativeQuery, NativeQueryError};
+
 /// A captured native origin, not a lookup of the window's current client.
 #[derive(Clone)]
 pub struct NativeClient(Retained<GPUITextInputView>);
