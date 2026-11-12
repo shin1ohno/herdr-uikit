@@ -17,7 +17,7 @@ use std::{
     ptr::NonNull,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, Ordering},
     },
 };
 
@@ -41,7 +41,8 @@ pub enum NotificationError {
 }
 pub type NotificationResult = Result<(), NotificationError>;
 static POSTING: AtomicBool = AtomicBool::new(false);
-static EPOCH: AtomicU64 = AtomicU64::new(0);
+mod presentation;
+static PRESENTATIONS: presentation::Registry = presentation::Registry::new();
 
 fn require_authorization(provider: impl FnOnce() -> Authorization) -> NotificationResult {
     match provider() {
@@ -119,20 +120,34 @@ pub fn post_notification_when(
         callback(Err(NotificationError::Busy));
         return;
     }
-    let epoch = EPOCH.load(Ordering::Acquire);
+    let ticket = match PRESENTATIONS.insert(&notification.tag, Arc::new(current)) {
+        Ok(ticket) => ticket,
+        Err(error) => {
+            POSTING.store(false, Ordering::Release);
+            callback(Err(error));
+            return;
+        }
+    };
     let callback = Arc::new(callback);
-    let current = Arc::new(current);
     notification_authorization(move |state| {
+        if !ticket.current() {
+            PRESENTATIONS.finish(&notification.tag, &ticket);
+            POSTING.store(false, Ordering::Release);
+            callback(Err(NotificationError::Cancelled));
+            return;
+        }
         if let Err(error) = require_authorization(|| state) {
+            PRESENTATIONS.finish(&notification.tag, &ticket);
             POSTING.store(false, Ordering::Release);
             callback(Err(error));
             return;
         }
         let callback = callback.clone();
         let notification = notification.clone();
-        let current = current.clone();
+        let ticket = ticket.clone();
         dispatch2::DispatchQueue::main().exec_async(move || {
-            if EPOCH.load(Ordering::Acquire) != epoch || !current() {
+            if !ticket.current() {
+                PRESENTATIONS.finish(&notification.tag, &ticket);
                 POSTING.store(false, Ordering::Release);
                 callback(Err(NotificationError::Cancelled));
                 return;
@@ -155,13 +170,15 @@ pub fn post_notification_when(
                         let failed = !error.is_null();
                         let callback = callback.clone();
                         let tag = notification.tag.to_string();
-                        let current = current.clone();
+                        let ticket = ticket.clone();
                         dispatch2::DispatchQueue::main().exec_async(move || {
-                            if EPOCH.load(Ordering::Acquire) != epoch || !current() {
+                            if !ticket.current() {
+                                PRESENTATIONS.finish(&tag, &ticket);
                                 remove_identifiers(&[tag]);
                                 callback(Err(NotificationError::Cancelled));
                             } else {
                                 callback(if failed {
+                                    PRESENTATIONS.finish(&tag, &ticket);
                                     Err(NotificationError::Native)
                                 } else {
                                     Ok(())
@@ -175,8 +192,13 @@ pub fn post_notification_when(
 }
 /// Removes only the supplied app-owned identifiers, never other notifications.
 pub fn remove_notifications(tags: &[String]) {
-    EPOCH.fetch_add(1, Ordering::AcqRel);
-    let tags: Vec<_> = tags.iter().take(64).cloned().collect();
+    PRESENTATIONS.remove(tags);
+    let tags: Vec<_> = tags
+        .iter()
+        .take(64)
+        .filter(|s| s.len() <= 128)
+        .cloned()
+        .collect();
     dispatch2::DispatchQueue::main().exec_async(move || remove_identifiers(&tags));
 }
 fn remove_identifiers(tags: &[String]) {
@@ -192,6 +214,18 @@ fn remove_identifiers(tags: &[String]) {
     center.removeDeliveredNotificationsWithIdentifiers(&ids);
 }
 
+fn complete_presentation(
+    ticket: Option<&presentation::Ticket>,
+    completion: impl FnOnce(UNNotificationPresentationOptions),
+) {
+    let options = if ticket.is_some_and(presentation::Ticket::current) {
+        UNNotificationPresentationOptions::Banner | UNNotificationPresentationOptions::List
+    } else {
+        UNNotificationPresentationOptions::empty()
+    };
+    completion(options);
+}
+
 define_class!(
     // SAFETY: NSObject has no subclassing requirements; this class has no ivars.
     #[unsafe(super(NSObject))]
@@ -202,13 +236,14 @@ define_class!(
         fn present(
             &self,
             _center: &UNUserNotificationCenter,
-            _notification: &UNNotification,
+            notification: &UNNotification,
             completion: &DynBlock<dyn Fn(UNNotificationPresentationOptions)>,
         ) {
-            // The consumer selected OS delivery instead of its own foreground toast.
-            completion
-                .call((UNNotificationPresentationOptions::Banner
-                    | UNNotificationPresentationOptions::List,));
+            let tag = notification.request().identifier().to_string();
+            // The final decision uses the retained context, not add-request success.
+            // Unknown, removed, disconnected or invalidated tags never present.
+            let ticket = PRESENTATIONS.get(&tag);
+            complete_presentation(ticket.as_deref(), |options| completion.call((options,)));
         }
         #[unsafe(method(userNotificationCenter:didReceiveNotificationResponse:withCompletionHandler:))]
         fn response(
@@ -220,10 +255,21 @@ define_class!(
             let tag = response.notification().request().identifier().to_string();
             let action = response.actionIdentifier().to_string();
             // Dismissals are not activation; unknown actions are forwarded, never guessed.
-            if tag.len() <= 128 && action != "com.apple.UNNotificationDismissActionIdentifier" {
+            if tag.len() <= 128
+                && action.len() <= 128
+                && action != "com.apple.UNNotificationDismissActionIdentifier"
+            {
                 let action_id = (action != "com.apple.UNNotificationDefaultActionIdentifier")
                     .then(|| action.into());
+                let ticket = PRESENTATIONS.get(&tag);
                 shared::later(move |shared| {
+                    let Some(ticket) = ticket else { return };
+                    if !ticket.current() {
+                        PRESENTATIONS.finish(&tag, &ticket);
+                        return;
+                    }
+                    // Consume before dispatch, so duplicate responses cannot activate twice.
+                    PRESENTATIONS.finish(&tag, &ticket);
                     shared.notification_response.call(|f| {
                         f(SystemNotificationResponse {
                             tag: tag.into(),

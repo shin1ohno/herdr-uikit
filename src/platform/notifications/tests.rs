@@ -68,3 +68,129 @@ fn actual_center_authorization_callback() {
     let state = receiver.recv_timeout(std::time::Duration::from_secs(5));
     assert!(state.is_ok(), "native center did not answer: {state:?}");
 }
+
+fn assert_presentation(ticket: Option<&presentation::Ticket>, show: bool) {
+    let mut calls = 0;
+    complete_presentation(ticket, |options| {
+        calls += 1;
+        let expected = if show {
+            UNNotificationPresentationOptions::Banner | UNNotificationPresentationOptions::List
+        } else {
+            UNNotificationPresentationOptions::empty()
+        };
+        assert_eq!(options, expected, "final native display decision");
+    });
+    assert_eq!(calls, 1, "native completion must be called exactly once");
+}
+
+#[test]
+fn add_check_disconnect_will_present_completion_remove_never_shows() {
+    let registry = presentation::Registry::new();
+    let active = Arc::new(AtomicBool::new(true));
+    let current = active.clone();
+    let ticket = registry
+        .insert("race", Arc::new(move || current.load(Ordering::Acquire)))
+        .unwrap_or_else(|e| panic!("insert: {e:?}"));
+    // The add-request guard passed; OS completion is deliberately still pending.
+    assert!(ticket.current());
+    assert_presentation(registry.get("race").as_deref(), true);
+    active.store(false, Ordering::Release);
+    assert_presentation(registry.get("race").as_deref(), false);
+    // A later submission completion/removal cannot undo a banner already shown.
+    assert!(!ticket.current());
+    registry.finish("race", &ticket);
+    registry.remove(&["race".into()]);
+    assert_presentation(registry.get("race").as_deref(), false);
+}
+
+#[test]
+fn remove_before_authorization_or_display_invalidates_retained_callback() {
+    let registry = presentation::Registry::new();
+    let ticket = registry
+        .insert("removed", Arc::new(|| true))
+        .unwrap_or_else(|e| panic!("insert: {e:?}"));
+    registry.remove(&["removed".into()]);
+    assert!(!ticket.current());
+    assert_presentation(Some(&ticket), false);
+    assert_presentation(registry.get("removed").as_deref(), false);
+    assert_presentation(None, false);
+}
+
+#[test]
+fn unrelated_removal_preserves_current_tag_and_bounds_predicate_lifetime() {
+    let registry = presentation::Registry::new();
+    let owner = Arc::new(());
+    for n in 0..64 {
+        let owner = owner.clone();
+        let predicate = Arc::new(move || {
+            let _ = &owner;
+            true
+        });
+        assert!(registry.insert(&format!("tag-{n}"), predicate).is_ok());
+    }
+    assert!(matches!(
+        registry.insert("overflow", Arc::new(|| true)),
+        Err(NotificationError::Busy)
+    ));
+    assert!(matches!(
+        registry.insert("tag-0", Arc::new(|| true)),
+        Err(NotificationError::Busy)
+    ));
+    registry.remove(&["tag-0".into()]);
+    assert_eq!(Arc::strong_count(&owner), 64);
+    assert_presentation(registry.get("tag-1").as_deref(), true);
+    registry.remove(&(1..64).map(|n| format!("tag-{n}")).collect::<Vec<_>>());
+    assert_eq!(Arc::strong_count(&owner), 1);
+}
+
+#[test]
+fn predicate_can_invalidate_without_reentering_registry_lock() {
+    let registry = Arc::new(presentation::Registry::new());
+    let weak = Arc::downgrade(&registry);
+    let ticket = registry
+        .insert(
+            "self-remove",
+            Arc::new(move || {
+                if let Some(registry) = weak.upgrade() {
+                    registry.remove(&["self-remove".into()]);
+                }
+                true
+            }),
+        )
+        .unwrap_or_else(|e| panic!("insert: {e:?}"));
+    assert_presentation(Some(&ticket), false);
+}
+
+#[test]
+fn stale_completion_cannot_retire_new_ticket_with_same_identifier() {
+    let registry = presentation::Registry::new();
+    let old = registry
+        .insert("tag", Arc::new(|| true))
+        .unwrap_or_else(|e| panic!("{e:?}"));
+    registry.remove(&["tag".into()]);
+    let new = registry
+        .insert("tag", Arc::new(|| true))
+        .unwrap_or_else(|e| panic!("{e:?}"));
+    registry.finish("tag", &old);
+    assert!(!old.current());
+    assert!(new.current());
+    assert_presentation(registry.get("tag").as_deref(), true);
+}
+
+#[test]
+fn successful_add_completion_does_not_release_final_context() {
+    let registry = presentation::Registry::new();
+    let active = Arc::new(AtomicBool::new(true));
+    let current = active.clone();
+    let ticket = registry
+        .insert(
+            "accepted",
+            Arc::new(move || current.load(Ordering::Acquire)),
+        )
+        .unwrap_or_else(|e| panic!("{e:?}"));
+    assert!(ticket.current()); // successful add completion, not presentation
+    drop(ticket);
+    assert_presentation(registry.get("accepted").as_deref(), true);
+    active.store(false, Ordering::Release);
+    assert_presentation(registry.get("accepted").as_deref(), false);
+}
