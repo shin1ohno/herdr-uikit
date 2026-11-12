@@ -260,3 +260,89 @@ fn native_origin_nested_dispatch_restores_outer_even_after_unwind() {
     );
     assert_eq!(native_edit_action(), None);
 }
+
+#[test]
+fn explicit_edit_policy_is_independent_of_keyboard_mode_and_rechecked() {
+    use crate::NativeEditAvailability;
+    for mode in [Some(Mode::Text), Some(Mode::KeyOnly)] {
+        for selected in [false, true] {
+            let policy = NativeEditAvailability {
+                copy: selected,
+                paste: true,
+                ..Default::default()
+            };
+            assert!(editing_allowed(
+                EditAction::Paste,
+                Some(policy),
+                true,
+                mode,
+                false
+            ));
+            assert_eq!(
+                editing_allowed(EditAction::Copy, Some(policy), true, mode, false),
+                selected
+            );
+            assert!(!editing_allowed(
+                EditAction::Cut,
+                Some(policy),
+                true,
+                mode,
+                true
+            ));
+            assert!(!editing_allowed(
+                EditAction::SelectAll,
+                Some(policy),
+                true,
+                mode,
+                true
+            ));
+            // Losing the window/responder or clearing policy must refuse a stale command.
+            assert!(!editing_allowed(
+                EditAction::Paste,
+                Some(policy),
+                false,
+                mode,
+                true
+            ));
+            assert!(!editing_allowed(
+                EditAction::Paste,
+                Some(NativeEditAvailability::default()),
+                true,
+                mode,
+                true
+            ));
+        }
+    }
+    for mode in [None, Some(Mode::Text), Some(Mode::KeyOnly)] {
+        for focused in [false, true] {
+            assert_eq!(
+                editing_allowed(EditAction::Paste, None, true, mode, focused),
+                mode == Some(Mode::Text) && focused
+            );
+        }
+    }
+}
+
+#[test]
+fn both_responders_override_standard_edit_validation_and_execution() {
+    use objc2::ClassType;
+    for class in [
+        GPUITextInputView::class(),
+        crate::window::view::GpuiView::class(),
+    ] {
+        let methods = class.instance_methods();
+        for selector in [
+            sel!(canPerformAction:withSender:),
+            sel!(validateCommand:),
+            sel!(copy:),
+            sel!(paste:),
+            sel!(cut:),
+            sel!(selectAll:),
+        ] {
+            assert!(
+                methods.iter().any(|method| method.name() == selector),
+                "{class:?} {selector:?}"
+            );
+        }
+    }
+}

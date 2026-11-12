@@ -15,7 +15,7 @@ use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_clas
 use objc2_core_foundation::{CGPoint, CGRect};
 use objc2_foundation::{NSArray, NSComparisonResult, NSInteger, NSRange, NSSet, NSString};
 use objc2_ui_kit::{
-    NSWritingDirection, UIDictationPhrase, UIEvent, UIKeyInput, UIPress, UIPressesEvent,
+    NSWritingDirection, UICommand, UIDictationPhrase, UIEvent, UIKeyInput, UIPress, UIPressesEvent,
     UIResponder, UIReturnKeyType, UITextAutocapitalizationType, UITextAutocorrectionType,
     UITextInlinePredictionType, UITextInput, UITextInputDelegate, UITextInputStringTokenizer,
     UITextInputTokenizer, UITextInputTraits, UITextLayoutDirection, UITextPosition, UITextRange,
@@ -24,7 +24,6 @@ use objc2_ui_kit::{
 };
 
 use super::super::{input_target::InputTarget, keyboard::ResignReason};
-use super::actions::EditAction;
 use super::positions::{self, TextPosition, TextRange};
 use super::state::{Ivars, Mode};
 use super::utf16;
@@ -87,7 +86,14 @@ define_class!(
 
         #[unsafe(method(canPerformAction:withSender:))]
         fn __can_perform_action(&self, action: Sel, _: Option<&AnyObject>) -> bool {
-            self.editing_enabled() && EditAction::from_selector(action).is_some()
+            self.editing_enabled(action)
+        }
+
+        #[unsafe(method(validateCommand:))]
+        fn __validate_command(&self, command: &UICommand) {
+            // SAFETY: UIKit supplies this command; the superclass returns void.
+            let () = unsafe { msg_send![super(self), validateCommand: command] };
+            self.validate_edit_command(command);
         }
 
         #[unsafe(method(paste:))]

@@ -62,6 +62,19 @@ impl InputTarget {
             .is_some_and(|window| window.state.borrow().text_input_focused)
     }
 
+    pub(crate) fn native_edit_availability(&self) -> Option<crate::NativeEditAvailability> {
+        self.window
+            .upgrade()
+            .and_then(|window| window.state.borrow().native_edit_availability)
+    }
+
+    pub(crate) fn edit_window_active(&self) -> bool {
+        self.window.upgrade().is_some_and(|window| {
+            let state = window.state.borrow();
+            !state.closed && state.is_active
+        }) && self.has_key_responder()
+    }
+
     pub(crate) fn modifiers(&self) -> (Modifiers, Capslock) {
         self.window.upgrade().map_or_else(
             || (Modifiers::default(), Capslock::default()),

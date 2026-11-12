@@ -60,7 +60,7 @@ pub(crate) use self::error::Error;
 pub(crate) use self::pointer::set_cursor_style;
 pub(crate) use self::scene::{
     active_window, scene_activation_changed, scene_connected, scene_disconnected,
-    scene_geometry_changed, window_control_insets, window_stack,
+    scene_geometry_changed, set_native_edit_availability, window_control_insets, window_stack,
 };
 use self::state::Window;
 pub(crate) use self::text_input::{named_key_char, us_shifted};

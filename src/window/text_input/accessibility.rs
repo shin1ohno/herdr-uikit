@@ -17,13 +17,14 @@ use objc2_foundation::NSString;
 use objc2_ui_kit::{UIAccessibilityLayoutChangedNotification, UIAccessibilityPostNotification};
 
 use super::geometry;
+use super::state::Mode;
 use super::view_class::GPUITextInputView;
 
 impl GPUITextInputView {
     pub(super) fn accessibility_text_entry(&self) -> bool {
         // The element must exist while UIKit acquires its responder, so AX
         // can associate keyboard focus with the custom text client then.
-        self.editing_enabled()
+        self.ivars().mode.get() == Some(Mode::Text) && self.ivars().target.text_input_focused()
     }
 
     pub(super) fn accessibility_text_entry_acquired(&self) {

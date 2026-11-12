@@ -36,6 +36,7 @@ mod key_routing;
 mod layout_direction;
 mod menu;
 mod native_edit_action;
+mod native_edit_availability;
 mod platform;
 mod renderer;
 mod scene_fallback;
@@ -47,6 +48,7 @@ pub use background_task::BackgroundTask;
 pub use error::{Error, Result};
 pub use layout_direction::{LayoutDirection, layout_direction, set_layout_direction};
 pub use native_edit_action::{NativeEditAction, native_edit_action};
+pub use native_edit_availability::{NativeEditAvailability, set_native_edit_availability};
 pub use platform::IosPlatform;
 pub use window_controls::window_control_insets;
 

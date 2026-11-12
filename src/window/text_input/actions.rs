@@ -10,7 +10,7 @@ use gpui::{
     Capslock, KeyDownEvent, KeyUpEvent, Keystroke, Modifiers, ModifiersChangedEvent, PlatformInput,
 };
 use objc2::{DefinedClass, runtime::Sel, sel};
-use objc2_ui_kit::UIPasteboard;
+use objc2_ui_kit::{UICommand, UIMenuElementAttributes, UIPasteboard};
 
 use super::state::Mode;
 use super::view_class::GPUITextInputView;
@@ -52,12 +52,35 @@ impl EditAction {
 }
 
 impl GPUITextInputView {
-    pub(super) fn editing_enabled(&self) -> bool {
-        self.ivars().mode.get() == Some(Mode::Text) && self.ivars().target.text_input_focused()
+    pub(super) fn editing_enabled(&self, selector: Sel) -> bool {
+        let Some(action) = EditAction::from_selector(selector) else {
+            return false;
+        };
+        let target = &self.ivars().target;
+        editing_allowed(
+            action,
+            target.native_edit_availability(),
+            target.edit_window_active(),
+            self.ivars().mode.get(),
+            target.text_input_focused(),
+        )
+    }
+
+    pub(super) fn validate_edit_command(&self, command: &UICommand) {
+        // SAFETY: UICommand always carries an action selector.
+        let selector = unsafe { command.action() };
+        if EditAction::from_selector(selector).is_some() {
+            let mut attributes = command.attributes();
+            attributes.set(
+                UIMenuElementAttributes::Disabled,
+                !self.editing_enabled(selector),
+            );
+            command.setAttributes(attributes);
+        }
     }
 
     pub(super) fn perform_edit_action(&self, selector: Sel) {
-        if !self.editing_enabled() {
+        if !self.editing_enabled(selector) {
             return;
         }
         dispatch_edit_selector(
@@ -121,3 +144,18 @@ fn dispatch_edit_action(
 
 #[cfg(test)]
 mod tests;
+
+// One decision for canPerformAction, validateCommand, and execution. Explicit
+// consumers work in either keyboard mode; non-opted-in clients keep defaults.
+fn editing_allowed(
+    action: EditAction,
+    override_state: Option<crate::NativeEditAvailability>,
+    active: bool,
+    mode: Option<Mode>,
+    text_focused: bool,
+) -> bool {
+    match override_state {
+        Some(state) => active && state.allows(action),
+        None => mode == Some(Mode::Text) && text_focused,
+    }
+}

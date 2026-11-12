@@ -89,6 +89,7 @@ pub(super) struct State {
     pub(super) scene: Option<Retained<UIWindowScene>>,
     /// GPUI's focused element takes text input.
     pub(super) text_input_focused: bool,
+    pub(super) native_edit_availability: Option<crate::NativeEditAvailability>,
     pub(super) title: String,
     pub(super) touches: TouchIds<TouchKey>,
     pub(super) ui_window: Option<Retained<UIWindow>>,
@@ -122,6 +123,7 @@ impl State {
             scale_factor,
             scene: None,
             text_input_focused: false,
+            native_edit_availability: None,
             title,
             touches: TouchIds::default(),
             ui_window: None,
