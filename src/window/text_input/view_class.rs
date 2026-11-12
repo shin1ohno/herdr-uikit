@@ -37,7 +37,7 @@ define_class!(
     #[unsafe(super(UIView, UIResponder, NSObject))]
     #[thread_kind = MainThreadOnly]
     #[ivars = Ivars]
-    pub(super) struct GPUITextInputView;
+    pub(in crate::window) struct GPUITextInputView;
 
     impl GPUITextInputView {
         // The view has real layout bounds so accessibility can discover the
@@ -112,7 +112,7 @@ define_class!(
 
         #[unsafe(method(canBecomeFirstResponder))]
         fn __can_become_first_responder(&self) -> bool {
-            true
+            self.ivars().target.client.live()
         }
 
         #[unsafe(method_id(inputView))]

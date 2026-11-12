@@ -73,6 +73,9 @@ impl GPUITextInputView {
     /// The queued flush: the mode, then the traits, then any text change.
     pub(super) fn flush(&self) {
         self.ivars().flush_scheduled.set(false);
+        if !self.ivars().target.client.live() {
+            return;
+        }
         self.apply_mode();
         self.apply_traits();
         self.sync_text_state();

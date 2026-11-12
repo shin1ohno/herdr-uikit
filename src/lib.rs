@@ -39,6 +39,7 @@ mod native_edit_action;
 mod platform;
 mod renderer;
 mod scene_fallback;
+mod text_input_retirement;
 mod text_system;
 mod window;
 mod window_controls;
@@ -48,6 +49,11 @@ pub use error::{Error, Result};
 pub use layout_direction::{LayoutDirection, layout_direction, set_layout_direction};
 pub use native_edit_action::{NativeEditAction, native_edit_action};
 pub use platform::IosPlatform;
+pub use text_input_retirement::{
+    RetiredTextInputSession, TextInputRetirement, TextInputRetirementError,
+    TextInputRetirementStatus, TextInputSessionState, retire_text_input_session,
+    text_input_session_state,
+};
 pub use window_controls::window_control_insets;
 
 /// The GPUI application on iPadOS, the counterpart of

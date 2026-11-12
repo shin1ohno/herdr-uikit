@@ -3,7 +3,9 @@
 //! focused element. The window implements it over its state; the text input
 //! view only calls it.
 
-use std::rc::Weak;
+use std::rc::{Rc, Weak};
+
+use super::client_lifetime::ClientLifetime;
 
 use gpui::{Capslock, Modifiers, PlatformInput, PlatformInputHandler};
 
@@ -17,20 +19,54 @@ use super::{
 #[derive(Clone)]
 pub(crate) struct InputTarget {
     window: Weak<Window>,
+    pub(crate) client: Rc<ClientLifetime>,
+    #[cfg(all(test, feature = "test-support"))]
+    test_handler: Option<Rc<std::cell::RefCell<Option<PlatformInputHandler>>>>,
 }
 
 impl InputTarget {
     pub(super) fn new(window: Weak<Window>) -> Self {
-        Self { window }
+        Self {
+            window,
+            client: Rc::new(ClientLifetime::default()),
+            #[cfg(all(test, feature = "test-support"))]
+            test_handler: None,
+        }
     }
 }
 
 impl InputTarget {
+    #[cfg(all(test, feature = "test-support"))]
+    pub(crate) fn with_test_handler(handler: PlatformInputHandler) -> Self {
+        Self {
+            test_handler: Some(Rc::new(std::cell::RefCell::new(Some(handler)))),
+            ..Self::new(Weak::new())
+        }
+    }
+
+    fn live_window(&self) -> Option<Rc<Window>> {
+        if !self.client.live() {
+            return None;
+        }
+        self.window.upgrade()
+    }
+
+    pub(crate) fn successor(&self) -> Option<Self> {
+        Some(Self {
+            window: self.window.clone(),
+            client: self.client.successor()?,
+            #[cfg(all(test, feature = "test-support"))]
+            test_handler: self.test_handler.clone(),
+        })
+    }
+
     /// Sends `input` through the window's event callback. Returns whether
     /// GPUI handled it (`DispatchEventResult::propagate == false`).
     pub(crate) fn dispatch(&self, input: PlatformInput) -> bool {
-        self.window
-            .upgrade()
+        let Some(_callback) = self.client.enter() else {
+            return false;
+        };
+        self.live_window()
             .is_some_and(|window| window.dispatch(input))
     }
 
@@ -40,30 +76,35 @@ impl InputTarget {
         &self,
         f: impl FnOnce(&mut PlatformInputHandler) -> R,
     ) -> Option<R> {
-        self.window.upgrade()?.with_input_handler(f)
+        let _callback = self.client.enter()?;
+        #[cfg(all(test, feature = "test-support"))]
+        if let Some(slot) = &self.test_handler {
+            let mut handler = slot.borrow_mut().take()?;
+            let result = f(&mut handler);
+            slot.borrow_mut().get_or_insert(handler);
+            return Some(result);
+        }
+        self.live_window()?.with_input_handler(f)
     }
 
     /// The window's scale factor, to convert between points and GPUI pixels.
     pub(crate) fn scale_factor(&self) -> f32 {
-        self.window
-            .upgrade()
+        self.live_window()
             .map_or(1.0, |window| window.state.borrow().scale_factor)
     }
 
     pub(crate) fn accessibility_label(&self) -> String {
-        self.window
-            .upgrade()
+        self.live_window()
             .map_or_else(String::new, |window| window.state.borrow().title.clone())
     }
 
     pub(crate) fn text_input_focused(&self) -> bool {
-        self.window
-            .upgrade()
+        self.live_window()
             .is_some_and(|window| window.state.borrow().text_input_focused)
     }
 
     pub(crate) fn modifiers(&self) -> (Modifiers, Capslock) {
-        self.window.upgrade().map_or_else(
+        self.live_window().map_or_else(
             || (Modifiers::default(), Capslock::default()),
             |window| {
                 let state = window.state.borrow();
@@ -75,7 +116,7 @@ impl InputTarget {
     /// The drawing view receives and forwards hardware keys in key-only
     /// mode; repeats must work with either of the window's responders.
     pub(crate) fn has_key_responder(&self) -> bool {
-        self.window.upgrade().is_some_and(|window| {
+        self.live_window().is_some_and(|window| {
             window.text_input.view().isFirstResponder() || window.view.isFirstResponder()
         })
     }
@@ -83,45 +124,43 @@ impl InputTarget {
     /// Keyboard visibility can change without a frame notification when
     /// UIKit switches text clients while the keyboard is already up.
     pub(crate) fn reconcile_keyboard_layout(&self) {
-        if let Some(window) = self.window.upgrade() {
+        if let Some(window) = self.live_window() {
             window.reconcile_keyboard_layout();
         }
     }
 
     pub(super) fn keyboard_needs_responder_restart(&self) -> bool {
-        self.window
-            .upgrade()
+        self.live_window()
             .is_some_and(|window| window.state.borrow().keyboard.minimized)
     }
 
     pub(super) fn text_input_resign_context(&self, first_responder: bool) -> ResignContext {
-        self.window
-            .upgrade()
+        self.live_window()
             .map_or_else(ResignContext::default, |window| {
                 window.keyboard_resign_context(first_responder)
             })
     }
 
     pub(super) fn text_input_did_resign(&self, context: ResignContext) {
-        if let Some(window) = self.window.upgrade() {
+        if let Some(window) = self.live_window() {
             window.state.borrow_mut().keyboard.resigned(context);
         }
     }
 
     pub(super) fn expect_keyboard_hide(&self, reason: ResignReason) {
-        if let Some(window) = self.window.upgrade() {
+        if let Some(window) = self.live_window() {
             window.state.borrow_mut().keyboard.expect_hide(reason);
         }
     }
 
     pub(super) fn text_input_did_acquire(&self) {
-        if let Some(window) = self.window.upgrade() {
+        if let Some(window) = self.live_window() {
             window.state.borrow_mut().keyboard.acquired();
         }
     }
 
     pub(super) fn text_input_can_acquire(&self) -> bool {
-        self.window.upgrade().is_some_and(|window| {
+        self.live_window().is_some_and(|window| {
             let state = window.state.borrow();
             !state.closed
                 && state.is_active

@@ -82,7 +82,7 @@ impl Acquire {
     }
 }
 
-pub(super) struct Ivars {
+pub(in crate::window) struct Ivars {
     pub(super) target: InputTarget,
     /// The mode the window last asked for; `None` until it asks.
     pub(super) mode: Cell<Option<Mode>>,

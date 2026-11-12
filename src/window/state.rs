@@ -163,10 +163,8 @@ pub(super) struct Callbacks {
 /// A callback GPUI registered while this one ran replaces it.
 pub(super) fn call<F: ?Sized, R>(slot: &Slot<F>, f: impl FnOnce(&mut F) -> R) -> Option<R> {
     let mut callback = slot.borrow_mut().take()?;
-    let result = {
-        let _in_gpui = crate::gpui_call::InGpui::enter();
-        f(&mut callback)
-    };
+    let _in_gpui = crate::gpui_call::InGpui::enter();
+    let result = f(&mut callback);
     slot.borrow_mut().get_or_insert(callback);
     Some(result)
 }

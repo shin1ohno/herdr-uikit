@@ -31,6 +31,7 @@ mod keymap;
 mod keys;
 mod positions;
 mod query;
+mod retirement;
 mod run_loop;
 mod state;
 mod sync;
@@ -40,6 +41,8 @@ mod view_class;
 
 #[cfg(test)]
 mod tests;
+
+use std::cell::{Cell, RefCell};
 
 use gpui::{Bounds, Pixels, TextInputConfiguration};
 use objc2::{DefinedClass, MainThreadMarker, rc::Retained};
@@ -54,13 +57,19 @@ use view_class::GPUITextInputView;
 
 /// The window's handle to its text input view.
 pub(crate) struct TextInputView {
-    view: Retained<GPUITextInputView>,
+    view: RefCell<Retained<GPUITextInputView>>,
+    pub(super) replacing: Cell<bool>,
 }
 
 impl TextInputView {
+    fn current(&self) -> Retained<GPUITextInputView> {
+        self.view.borrow().clone()
+    }
+
     pub(crate) fn new(mtm: MainThreadMarker, target: InputTarget) -> Self {
         Self {
-            view: GPUITextInputView::new(mtm, target),
+            view: RefCell::new(GPUITextInputView::new(mtm, target)),
+            replacing: Cell::new(false),
         }
     }
 
@@ -69,7 +78,7 @@ impl TextInputView {
     /// override takes no touches, and its coordinates are the `GPUIView`'s,
     /// which are GPUI's window coordinates.
     pub(crate) fn view(&self) -> Retained<UIView> {
-        Retained::into_super(self.view.clone())
+        Retained::into_super(self.current())
     }
 
     /// Text mode: the view becomes first responder with no `inputView`, so
@@ -80,7 +89,7 @@ impl TextInputView {
     /// also calls it when the user taps a text element after dismissing the
     /// keyboard.
     pub(crate) fn activate(&self) {
-        self.view.request_mode(Mode::Text);
+        self.current().request_mode(Mode::Text);
     }
 
     /// Key-only mode: the window gives first responder to the drawing view,
@@ -89,15 +98,15 @@ impl TextInputView {
     /// assistant. The window calls this when text focus ends or GPUI dismisses
     /// the software keyboard.
     pub(crate) fn deactivate(&self) {
-        self.view.request_mode(Mode::KeyOnly);
+        self.current().request_mode(Mode::KeyOnly);
     }
 
     /// Marks an intentional native resignation before UIKit can synchronously
     /// deliver its hide notifications or responder callback.
     pub(super) fn resign(&self, reason: ResignReason) {
-        if self.view.isFirstResponder() {
-            self.view.ivars().target.expect_keyboard_hide(reason);
-            self.view.resignFirstResponder();
+        if self.current().isFirstResponder() {
+            self.current().ivars().target.expect_keyboard_hide(reason);
+            self.current().resignFirstResponder();
         }
     }
 
@@ -105,7 +114,7 @@ impl TextInputView {
     /// `GPUITextInputView::menu_shortcut`. Returns whether the key press
     /// was GPUI's to handle, so the command's action must not run.
     pub(crate) fn menu_shortcut(&self, shortcut: &Shortcut) -> bool {
-        self.view.menu_shortcut(shortcut)
+        self.current().menu_shortcut(shortcut)
     }
 
     /// GPUI replaced or changed the input handler. The flush re-reads the
@@ -116,7 +125,7 @@ impl TextInputView {
     /// drawn frame, so this never takes first responder; only `activate`
     /// and `deactivate` do.
     pub(crate) fn input_handler_changed(&self) {
-        self.view.schedule_flush();
+        self.current().schedule_flush();
     }
 
     /// Where the caret is, in window coordinates. Kept for
@@ -125,14 +134,14 @@ impl TextInputView {
     /// keyboard's avoidance follow the caret; the selection it implies is
     /// re-read and reported to UIKit.
     pub(crate) fn caret_bounds_changed(&self, bounds: Bounds<Pixels>) {
-        self.view.set_caret(bounds);
+        self.current().set_caret(bounds);
     }
 
     /// The focused element's text assistance: autocorrection, capitalization,
     /// suggestions, and the return key's label. Smart punctuation stays off.
     /// The window forwards `PlatformWindow::set_text_input_configuration`.
     pub(crate) fn set_text_input_configuration(&self, configuration: &TextInputConfiguration) {
-        self.view.request_traits(Traits::from(configuration));
+        self.current().request_traits(Traits::from(configuration));
     }
 }
 
@@ -140,6 +149,6 @@ impl Drop for TextInputView {
     /// Queued flushes and key repeats retain the view; cancel them so a
     /// closed window's view is not kept alive or driven afterwards.
     fn drop(&mut self) {
-        self.view.cancel_pending();
+        self.current().cancel_pending();
     }
 }

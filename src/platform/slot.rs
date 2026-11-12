@@ -58,10 +58,8 @@ impl<F: ?Sized> Slot<F> {
             };
         };
         self.running.set(true);
-        let result = {
-            let _in_gpui = InGpui::enter();
-            call(&mut callback)
-        };
+        let _in_gpui = InGpui::enter();
+        let result = call(&mut callback);
         self.running.set(false);
         let mut slot = self.callback.borrow_mut();
         if slot.is_none() {

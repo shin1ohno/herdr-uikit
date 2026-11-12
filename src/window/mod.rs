@@ -26,6 +26,7 @@
 //! | `direction` | The app's layout direction on the views UIKit sees |
 //! | `platform_window` | `gpui::PlatformWindow` over the above |
 
+mod client_lifetime;
 mod convert;
 mod direction;
 mod error;
@@ -37,6 +38,7 @@ mod lifecycle;
 mod platform_window;
 mod pointer;
 mod requests;
+mod retirement;
 mod scene;
 mod state;
 mod text_input;
@@ -58,6 +60,7 @@ use objc2_ui_kit::UIApplication;
 pub(crate) use self::direction::layout_direction_changed;
 pub(crate) use self::error::Error;
 pub(crate) use self::pointer::set_cursor_style;
+pub(crate) use self::retirement::{retire_text_input_session, text_input_session_state};
 pub(crate) use self::scene::{
     active_window, scene_activation_changed, scene_connected, scene_disconnected,
     scene_geometry_changed, window_control_insets, window_stack,
