@@ -133,3 +133,45 @@ view code and exports; integrate with review of those overlaps. Any new Edit
 availability accessor added there must honor the captured client's live gate.
 Its per-window availability state must remain shared by the replacement, not
 copied from an old native view. Re-run both suites after combining the branches.
+
+
+## Combined SDK8 correction and public API probe
+
+The SDK9 branch integrates the unmerged SDK8 source at
+`1748c77a5b7086998fd8c29caf3ecb711c1f7a2b`. This is a source integration, not a
+GitHub merge or acceptance of either PR. The three edit entry methods clone
+`current()` before native calls; the availability accessors use `live_window()`.
+Availability remains per-window so replacements observe subsequent updates.
+
+Launch, close and input-handler calls now enter `InGpui`, like platform slots,
+window callback slots and dispatcher tasks. In particular, the launch guard
+outlives `Application::run`'s AppCell borrow, and the input-handler guard drops
+after the handler is restored and its state borrow is released. This protects
+retirement requested by a handler for a different, idle window too.
+
+`examples/retirement_probe.rs` is an SDK-owned UIApplicationMain application,
+built with `test-support`. Its launch closure calls the public API and the
+retirement callback performs a weak GPUI update. Its actual GPUI key listener
+requests retirement through the real platform-window input callback slot; the
+retirement callback sends a sentinel through that same slot after its weak
+update. This catches draining before slot restoration. It also exercises
+retained old native selectors, current/old edit availability and validation,
+native callback refusal, fresh identical/direct/composed text, key-only mode,
+focus restoration and a callback that closes the real window.
+
+The helper API `retirement_probe` is hidden and feature-gated; it does not add
+production scheduling or recovery. Injected platform events and Objective-C
+selectors are labeled as injection. The app does not claim OS keyboard/IME
+routing, physical hardware delivery, observer ordering, or consumer peer receipt.
+The explicit `NativeCallbackInFlight` refusal remains; the probe demonstrates
+the refusal's unchanged state and does not implement consumer recovery.
+
+Run `scripts/check-public-retirement.py` only inside the exclusive Mac lease,
+under the existing byte-identical 6 GiB guard. Set `HERDR_RETIREMENT_LEASE=exclusive`,
+`SIMULATOR_UDID`, `CARGO_TARGET_DIR`, and a new task-owned absolute
+`HERDR_PROBE_OUTPUT` outside the checkout. It builds a simulator-only app,
+ad-hoc signs it without keychain identities, preserves raw logs, and requires
+an executed weak-update failure when the launch guard is removed and a sentinel
+failure when the callback slot is restored too late. Each restoration must pass.
+The selector mutation suite remains separately required. Do not infer pass
+from build success, process launch, or a missing failure line.

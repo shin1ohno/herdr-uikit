@@ -101,7 +101,10 @@ impl Shared {
         if !self.launched.replace(true) {
             let launch = self.finish_launching.borrow_mut().take();
             match launch {
-                Some(launch) => launch(),
+                Some(launch) => {
+                    let _in_gpui = crate::gpui_call::InGpui::enter();
+                    launch();
+                }
                 None => tracing::error!("a scene connected before GPUI's launch callback was set"),
             }
             return;

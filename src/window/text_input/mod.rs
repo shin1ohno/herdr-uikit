@@ -30,6 +30,8 @@ mod geometry;
 mod keymap;
 mod keys;
 mod positions;
+#[cfg(feature = "test-support")]
+pub(super) mod probe;
 mod query;
 mod retirement;
 mod run_loop;
@@ -45,7 +47,7 @@ mod tests;
 use std::cell::{Cell, RefCell};
 
 use gpui::{Bounds, Pixels, TextInputConfiguration};
-use objc2::{DefinedClass, MainThreadMarker, rc::Retained};
+use objc2::{DefinedClass, MainThreadMarker, rc::Retained, runtime::Sel};
 use objc2_ui_kit::UIView;
 
 pub(crate) use self::keymap::{named_key_char, us_shifted};
@@ -79,6 +81,18 @@ impl TextInputView {
     /// which are GPUI's window coordinates.
     pub(crate) fn view(&self) -> Retained<UIView> {
         Retained::into_super(self.current())
+    }
+
+    pub(super) fn editing_enabled(&self, selector: Sel) -> bool {
+        self.current().editing_enabled(selector)
+    }
+
+    pub(super) fn perform_edit_action(&self, selector: Sel) {
+        self.current().perform_edit_action(selector);
+    }
+
+    pub(super) fn validate_edit_command(&self, command: &objc2_ui_kit::UICommand) {
+        self.current().validate_edit_command(command);
     }
 
     /// Text mode: the view becomes first responder with no `inputView`, so

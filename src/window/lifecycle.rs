@@ -253,6 +253,7 @@ impl Window {
     fn run_close_callback(&self) {
         let close = self.callbacks.close.borrow_mut().take();
         if let Some(close) = close {
+            let _in_gpui = crate::gpui_call::InGpui::enter();
             close();
         }
     }

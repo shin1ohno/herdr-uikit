@@ -349,3 +349,31 @@ fn log_refusal(error: NonNull<NSError>) {
         "the system refused a window scene request"
     );
 }
+
+/// Publish consumer edit state for precisely this live window.
+pub(crate) fn set_native_edit_availability(
+    handle: AnyWindowHandle,
+    availability: Option<crate::NativeEditAvailability>,
+    mtm: MainThreadMarker,
+) -> bool {
+    let window = REGISTRY.with_borrow(|registry| {
+        registry
+            .scenes
+            .iter()
+            .filter_map(SceneEntry::live_window)
+            .find(|window| window.handle == handle)
+    });
+    let Some(window) = window else {
+        return false;
+    };
+    let mut state = window.state.borrow_mut();
+    if state.closed {
+        return false;
+    }
+    if state.native_edit_availability != availability {
+        state.native_edit_availability = availability;
+        drop(state);
+        objc2_ui_kit::UIMenuSystem::mainSystem(mtm).setNeedsRevalidate();
+    }
+    true
+}

@@ -80,6 +80,7 @@ impl InputTarget {
         #[cfg(all(test, feature = "test-support"))]
         if let Some(slot) = &self.test_handler {
             let mut handler = slot.borrow_mut().take()?;
+            let _in_gpui = crate::gpui_call::InGpui::enter();
             let result = f(&mut handler);
             slot.borrow_mut().get_or_insert(handler);
             return Some(result);
@@ -101,6 +102,18 @@ impl InputTarget {
     pub(crate) fn text_input_focused(&self) -> bool {
         self.live_window()
             .is_some_and(|window| window.state.borrow().text_input_focused)
+    }
+
+    pub(crate) fn native_edit_availability(&self) -> Option<crate::NativeEditAvailability> {
+        self.live_window()
+            .and_then(|window| window.state.borrow().native_edit_availability)
+    }
+
+    pub(crate) fn edit_window_active(&self) -> bool {
+        self.live_window().is_some_and(|window| {
+            let state = window.state.borrow();
+            !state.closed && state.is_active
+        }) && self.has_key_responder()
     }
 
     pub(crate) fn modifiers(&self) -> (Modifiers, Capslock) {
@@ -201,6 +214,9 @@ impl Window {
         f: impl FnOnce(&mut PlatformInputHandler) -> R,
     ) -> Option<R> {
         let mut handler = self.state.borrow_mut().input_handler.take()?;
+        // A handler can request retirement of another window, whose native
+        // client is not busy. Keep its callback outside this GPUI borrow too.
+        let _in_gpui = crate::gpui_call::InGpui::enter();
         let result = f(&mut handler);
         let mut state = self.state.borrow_mut();
         if state.input_handler.is_none() && !state.closed {
