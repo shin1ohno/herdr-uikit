@@ -92,10 +92,11 @@ define_class!(
         #[unsafe(method(canPerformAction:withSender:))]
         fn can_perform_action(&self, action: Sel, sender: Option<&AnyObject>) -> bool {
             if [sel!(copy:), sel!(cut:), sel!(paste:), sel!(selectAll:)].contains(&action) {
-                return self.owner().is_some_and(|window| window.text_input.editing_enabled(action));
+                self.owner().is_some_and(|window| window.text_input.editing_enabled(action))
+            } else {
+                // SAFETY: preserve UIView behavior for unrelated selectors.
+                unsafe { msg_send![super(self), canPerformAction: action, withSender: sender] }
             }
-            // SAFETY: preserve UIView behavior for unrelated selectors.
-            unsafe { msg_send![super(self), canPerformAction: action, withSender: sender] }
         }
 
         #[unsafe(method(copy:))]
