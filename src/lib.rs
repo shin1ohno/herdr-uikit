@@ -50,7 +50,8 @@ pub use native_edit_action::{NativeEditAction, native_edit_action};
 pub use platform::IosPlatform;
 pub use platform::notifications::{
     Authorization, NotificationError, NotificationResult, notification_authorization,
-    post_notification, remove_notifications, request_notification_authorization,
+    post_notification, post_notification_when, remove_notifications,
+    request_notification_authorization,
 };
 pub use window_controls::window_control_insets;
 

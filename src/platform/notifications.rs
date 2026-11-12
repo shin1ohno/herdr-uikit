@@ -96,6 +96,16 @@ pub fn post_notification(
     notification: SystemNotification,
     callback: impl Fn(NotificationResult) + Send + Sync + 'static,
 ) {
+    post_notification_when(notification, || true, callback);
+}
+
+/// Rechecks a nonblocking consumer validity predicate after asynchronous OS work.
+/// A false predicate cancels instead of delivering stale or queued content.
+pub fn post_notification_when(
+    notification: SystemNotification,
+    current: impl Fn() -> bool + Send + Sync + 'static,
+    callback: impl Fn(NotificationResult) + Send + Sync + 'static,
+) {
     if notification.tag.is_empty()
         || notification.tag.len() > 128
         || notification.title.len() > 256
@@ -111,6 +121,7 @@ pub fn post_notification(
     }
     let epoch = EPOCH.load(Ordering::Acquire);
     let callback = Arc::new(callback);
+    let current = Arc::new(current);
     notification_authorization(move |state| {
         if let Err(error) = require_authorization(|| state) {
             POSTING.store(false, Ordering::Release);
@@ -119,8 +130,9 @@ pub fn post_notification(
         }
         let callback = callback.clone();
         let notification = notification.clone();
+        let current = current.clone();
         dispatch2::DispatchQueue::main().exec_async(move || {
-            if EPOCH.load(Ordering::Acquire) != epoch {
+            if EPOCH.load(Ordering::Acquire) != epoch || !current() {
                 POSTING.store(false, Ordering::Release);
                 callback(Err(NotificationError::Cancelled));
                 return;
@@ -143,8 +155,9 @@ pub fn post_notification(
                         let failed = !error.is_null();
                         let callback = callback.clone();
                         let tag = notification.tag.to_string();
+                        let current = current.clone();
                         dispatch2::DispatchQueue::main().exec_async(move || {
-                            if EPOCH.load(Ordering::Acquire) != epoch {
+                            if EPOCH.load(Ordering::Acquire) != epoch || !current() {
                                 remove_identifiers(&[tag]);
                                 callback(Err(NotificationError::Cancelled));
                             } else {

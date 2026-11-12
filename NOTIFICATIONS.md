@@ -33,3 +33,13 @@ checks; no test grants permissions automatically.
 Consumer integration: shin1ohno/yebisu branch feat/p14-connected-notifications,
 base dc2511fe695935cdce60ba6bb3cfb4288a425778. Consumer must pin the exact reviewed
 SDK commit before merging; SDK8/9 and other writers' branches are not included.
+
+`post_notification_when(notification, current, callback)` additionally checks a
+nonblocking consumer predicate after authorization and after OS completion. Use
+it for connection-bound effects: invalidate the consumer generation immediately
+on disconnect and reject aged events. Native callbacks never infer that an old
+mailbox remains current. The global cancellation epoch remains a second guard.
+
+Resolution-only check: Cargo 1.99.1 `cargo update --package herdr-uikit` added only
+objc2-user-notifications 0.3.2; no existing package version changed. Native
+compilation and delivery remain unverified.
