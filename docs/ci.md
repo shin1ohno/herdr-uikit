@@ -7,6 +7,8 @@ checkout credentials, a 40-minute timeout, and cancellation of superseded runs.
 Actions use full commit SHA pins. The runner and checkout behavior follow
 yebisu's CI at `aa457e9f0c06dbc706c64447cc3c4f839c3979f3`; this workflow
 additionally replaces the checkout tag with the immutable `v4.3.1` commit.
+Checkout includes history so the responder-routing check can compare the
+known five-call baseline commit before checking the current source.
 
 The job installs the toolchain, components and targets declared in
 `rust-toolchain.toml` via `rustup show active-toolchain`, then records the
