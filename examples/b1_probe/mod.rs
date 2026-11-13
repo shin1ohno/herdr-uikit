@@ -10,7 +10,7 @@ use herdr_uikit::{
 use host::{Host, Record, check, frame, origin, require, task};
 use std::{cell::RefCell, rc::Rc};
 
-pub(super) fn open(
+fn open(
     cx: &mut App,
 ) -> (
     gpui::WindowHandle<Host>,
