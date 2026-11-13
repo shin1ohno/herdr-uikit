@@ -57,9 +57,8 @@ impl EditMenuDelegate {
         suggested: &NSArray<UIMenuElement>,
     ) -> Retained<UIMenu> {
         let identifier = configuration.identifier();
-        let identifier = identifier
-            .downcast_ref::<NSString>()
-            .map(ToString::to_string);
+        let object: &AnyObject = (*identifier).as_ref();
+        let identifier = object.downcast_ref::<NSString>().map(ToString::to_string);
         #[cfg(any(test, feature = "test-support"))]
         if let Some(fixture) = &self.ivars().fixture {
             return build_menu(
@@ -134,7 +133,7 @@ pub(in crate::window) fn classify(sender: Option<&AnyObject>) -> Sender {
         return Sender::Command;
     };
     // NSDictionary generic types are checked again at the value boundary.
-    let Some(dictionary) = properties.downcast_ref::<NSDictionary<NSString, AnyObject>>() else {
+    let Some(dictionary) = properties.downcast_ref::<NSDictionary>() else {
         return Sender::Command;
     };
     let Some(value) = dictionary.objectForKey(&NSString::from_str(EDIT_MENU_PROPERTY_KEY)) else {

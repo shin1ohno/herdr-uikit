@@ -110,7 +110,7 @@ pub(crate) fn present(handle: AnyWindowHandle, at: Point<Pixels>) -> Option<Nati
     let window = scene::menu_window(handle)?;
     let valid = {
         let s = window.state.borrow();
-        state::can_present(
+        can_present(
             s.native_edit_availability.is_some(),
             s.closed,
             s.is_active,

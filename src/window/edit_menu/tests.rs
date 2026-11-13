@@ -16,7 +16,7 @@ use objc2::{
 use objc2_foundation::{NSArray, NSDictionary, NSNumber, NSString};
 use objc2_ui_kit::{
     UICommand, UIEditMenuConfiguration, UIEditMenuInteraction, UIEditMenuInteractionDelegate,
-    UIMenu, UIMenuElement, UIMenuElementAttributes,
+    UIMenu, UIMenuElementAttributes,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -217,7 +217,11 @@ pub(crate) fn run() {
         disabled
             .children()
             .iter()
-            .all(|c| c.attributes().contains(UIMenuElementAttributes::Disabled))
+            .all(
+                |c| c.downcast_ref::<UICommand>().is_some_and(|command| command
+                    .attributes()
+                    .contains(UIMenuElementAttributes::Disabled))
+            )
     );
     println!(
         "SH1-152 S1/S2/S2c/S4/S5/S6: real delegate, token commands, retained-item rejection, no fallback, ordinary Edit PASS"
