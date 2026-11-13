@@ -371,7 +371,12 @@ impl EntityInputHandler for Host {
 }
 
 pub(super) fn frame(mut app: AsyncWindowContext, f: impl FnOnce() + 'static) {
-    app.on_next_frame(move |_, _| native::next_native_turn(f));
+    require(
+        app.update(move |window, _| {
+            window.on_next_frame(move |_, _| native::next_native_turn(f));
+        }),
+        "fixture-register-frame",
+    );
 }
 pub(super) fn task(app: &AsyncWindowContext, f: impl FnOnce() + 'static) {
     app.spawn(async move |_| f()).detach();

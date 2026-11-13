@@ -47,7 +47,16 @@ pub fn run() {
         check(matches!(request_native_edit_retirement(handle.into(), origin(handle), |_| PrepareDecision::Decline),
             Err(Error::UnsupportedNativeEntry)), "native-launch-is-not-dispatcher-task");
         let next = app.clone();
-        frame(app, move || ready(handle, next, record, 0));
+        require(
+            handle.update(cx, move |_, window, _| {
+                window.on_next_frame(move |_, _| {
+                    herdr_uikit::retirement_probe::next_native_turn(move || {
+                        ready(handle, next, record, 0);
+                    });
+                });
+            }),
+            "fixture-register-launch-frame",
+        );
     });
 }
 
