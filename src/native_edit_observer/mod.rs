@@ -140,7 +140,7 @@ fn snapshot(queue: &mut Queue, run: ProcessRun) -> Result<Status, ObserverError>
         .ok_or_else(|| error(ObserverError::CounterOverflow))?;
     for _ in 0..4 {
         let before = VERSION.load(SeqCst);
-        if before % 2 != 0 || before == u64::MAX {
+        if !before.is_multiple_of(2) || before == u64::MAX {
             continue;
         }
         let dropped_total = DROPPED.load(SeqCst);
@@ -241,10 +241,10 @@ impl KeyScope {
 }
 impl Drop for KeyScope {
     fn drop(&mut self) {
-        if let Some(previous) = self.0 {
-            if KEY.try_with(|cell| cell.set(previous)).is_err() {
-                reject(InvalidReason::Contention);
-            }
+        if let Some(previous) = self.0
+            && KEY.try_with(|cell| cell.set(previous)).is_err()
+        {
+            reject(InvalidReason::Contention);
         }
     }
 }
@@ -290,10 +290,10 @@ impl DrawingScope {
 }
 impl Drop for DrawingScope {
     fn drop(&mut self) {
-        if let Some(previous) = self.0 {
-            if RESPONDER.try_with(|cell| cell.set(previous)).is_err() {
-                reject(InvalidReason::Contention);
-            }
+        if let Some(previous) = self.0
+            && RESPONDER.try_with(|cell| cell.set(previous)).is_err()
+        {
+            reject(InvalidReason::Contention);
         }
     }
 }
