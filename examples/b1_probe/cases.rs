@@ -36,7 +36,7 @@ pub(super) fn edits(
         Action::Paste
     };
     check(
-        native::edit(handle.into(), action, index >= 4 && index < 8),
+        native::edit(handle.into(), action, (4..8).contains(&index)),
         "fixture-native-edit",
     );
     check(

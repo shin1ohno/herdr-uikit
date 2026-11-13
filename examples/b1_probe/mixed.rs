@@ -36,7 +36,7 @@ fn cross_product(
 ) {
     // A was fenced by the previous cancellation. B is initially live; each
     // interrupted live case preserves its endpoint for the next case.
-    let (target, other, fenced) = if index % 2 == 0 {
+    let (target, other, fenced) = if index.is_multiple_of(2) {
         (a, b, true)
     } else {
         (b, a, false)
