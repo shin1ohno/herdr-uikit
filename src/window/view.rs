@@ -105,10 +105,15 @@ define_class!(
         #[unsafe(method(sh1152ProbeEmpty:))]
         fn menu_probe(&self, empty: bool) {
             if std::env::var_os("HERDR_EDIT_MENU_PROBE").is_none() { return; }
-            if self.ivars().menu_probe.borrow().is_none() {
-                self.ivars().menu_probe.replace(Some(super::edit_menu_probe::Probe::new(self)));
+            if let Some(window) = self.owner() {
+                window.defer(move |window| {
+                    let view = &window.view;
+                    if view.ivars().menu_probe.borrow().is_none() {
+                        view.ivars().menu_probe.replace(Some(super::edit_menu_probe::Probe::new(view)));
+                    }
+                    if let Some(probe) = view.ivars().menu_probe.borrow().as_ref() { probe.present(empty); }
+                });
             }
-            if let Some(probe) = self.ivars().menu_probe.borrow().as_ref() { probe.present(empty); }
         }
 
         #[cfg(target_abi = "sim")]
