@@ -18,7 +18,11 @@ pub(crate) fn retire_text_input_session(
         .into_iter()
         .find(|window| window.handle == handle && !window.state.borrow().closed)
         .ok_or(TextInputRetirementError::WindowUnavailable)?;
+    if window.state.borrow().native_request_pending.is_some() {
+        return Err(TextInputRetirementError::InProgress);
+    }
     let (old, next, receipt) = window.text_input.begin_retirement()?;
+    super::legacy_interrupt_native_retirement();
     let result = receipt.clone();
     let weak_window = std::rc::Rc::downgrade(&window);
     crate::gpui_call::after_update(move || {

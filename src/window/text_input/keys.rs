@@ -305,6 +305,10 @@ impl GPUITextInputView {
     /// the timer would never stop. A repeat UIKit performs reaches GPUI as a
     /// held key instead.
     pub(super) fn menu_shortcut(&self, shortcut: &Shortcut) -> bool {
+        let _entry = crate::native_operation::refused();
+        if !matches!(application::event_source(), EventSource::Other) {
+            self.ivars().target.mark_hardware_observed();
+        }
         if !self.ivars().target.client.live() {
             return false;
         }
@@ -405,6 +409,7 @@ impl GPUITextInputView {
 
     /// The repeat timer: one held `KeyDown`, then the next tick.
     pub(super) fn repeat_key(&self) {
+        self.ivars().target.mark_hardware_observed();
         if !self.ivars().target.client.live() {
             return;
         }

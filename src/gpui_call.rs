@@ -10,6 +10,7 @@ thread_local! {
     static DEPTH: Cell<u32> = const { Cell::new(0) };
     static AFTER: RefCell<Vec<Box<dyn FnOnce()>>> = const { RefCell::new(Vec::new()) };
     static DRAINING: Cell<bool> = const { Cell::new(false) };
+    static LEGACY_HOLD: Cell<bool> = const { Cell::new(false) };
 }
 
 /// Marks GPUI as running until dropped. Nests.
@@ -44,7 +45,7 @@ pub(crate) fn after_update(f: impl FnOnce() + 'static) {
 }
 
 fn drain() {
-    if is_running() || DRAINING.replace(true) {
+    if is_running() || LEGACY_HOLD.get() || DRAINING.replace(true) {
         return;
     }
     struct Reset;
@@ -63,6 +64,26 @@ fn drain() {
             action();
         }
     }
+}
+
+/// The new transaction holds only legacy AFTER execution, never GPUI's borrow
+/// predicate. Default legacy acceptance and its existing refill loop stay intact.
+pub(crate) struct LegacyDrainHold(bool);
+impl LegacyDrainHold {
+    pub(crate) fn enter() -> Self {
+        Self(LEGACY_HOLD.replace(true))
+    }
+}
+impl Drop for LegacyDrainHold {
+    fn drop(&mut self) {
+        LEGACY_HOLD.set(self.0);
+        if !std::thread::panicking() {
+            drain();
+        }
+    }
+}
+pub(crate) fn legacy_busy() -> bool {
+    LEGACY_HOLD.get() || DRAINING.get() || AFTER.with_borrow(|queue| !queue.is_empty())
 }
 
 #[cfg(test)]

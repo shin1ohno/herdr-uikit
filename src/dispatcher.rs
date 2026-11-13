@@ -96,6 +96,14 @@ fn delay_nanos(duration: Duration) -> i64 {
 /// Runs a task inside GPUI's profiler bookkeeping, as upstream's trampoline
 /// does.
 fn run(runnable: RunnableVariant) {
+    if MainThreadMarker::new().is_some() {
+        crate::native_operation::dispatcher_task(|| run_task(runnable));
+    } else {
+        run_task(runnable);
+    }
+}
+
+fn run_task(runnable: RunnableVariant) {
     let metadata = runnable.metadata();
     gpui::profiler::update_running_task(metadata.spawned, metadata.location);
     {

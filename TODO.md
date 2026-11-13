@@ -1,5 +1,16 @@
 # Deferred validation
 
+- Validate the limited B1 native Edit API on the exact combined source head.
+  Reason: the extracted Rust fixture uses explicit native/GPUI doubles; the
+  authored UIApplicationMain subset and all target compilation are UNRUN.
+  First step: independent source review of `docs/native-edit-retirement.md`, then
+  a fresh exclusive mini lease for device/simulator clippy, SDK tests and
+  `scripts/check-public-b1.py` under the existing absolute 6 GiB guard. Extend
+  actual adapter fixtures for remaining A4/A6/A7/A9/A13 text, close, focus,
+  detach/reconnect and physical-key variations before claiming full coverage.
+  Close only with exact-head baseline/intended-negative/restore receiving logs
+  and separately verified original consumer/OS S1-S6 and Z1-Z7 criteria.
+
 - Captured native query helpers need exact-head iOS validation. Reason: the
   source-only P13 stage has no native lease and its fixtures/mutations are UNRUN.
   First step: review the helper commit, then under a fresh exclusive mini lease

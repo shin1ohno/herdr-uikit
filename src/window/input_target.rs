@@ -25,6 +25,17 @@ pub(crate) struct InputTarget {
 }
 
 impl InputTarget {
+    pub(crate) fn origin(&self) -> crate::NativeInputOrigin {
+        crate::NativeInputOrigin {
+            window: self.window.clone(),
+            client: self.client.identity,
+        }
+    }
+    pub(crate) fn mark_hardware_observed(&self) {
+        if let Some(window) = self.window.upgrade() {
+            window.state.borrow_mut().native_hardware_observed = true;
+        }
+    }
     pub(super) fn new(window: Weak<Window>) -> Self {
         Self {
             window,
@@ -63,11 +74,29 @@ impl InputTarget {
     /// Sends `input` through the window's event callback. Returns whether
     /// GPUI handled it (`DispatchEventResult::propagate == false`).
     pub(crate) fn dispatch(&self, input: PlatformInput) -> bool {
+        let _entry = crate::native_operation::refused();
+        if matches!(&input, PlatformInput::KeyDown(_) | PlatformInput::KeyUp(_)) {
+            self.mark_hardware_observed();
+        }
+        self.dispatch_inner(input)
+    }
+    pub(crate) fn dispatch_edit(
+        &self,
+        op: &crate::native_operation::NativeOperation,
+        input: PlatformInput,
+    ) -> bool {
+        op.phase(
+            self.origin(),
+            crate::native_operation::Phase::EditDispatch,
+            || self.dispatch_inner(input),
+        )
+    }
+    fn dispatch_inner(&self, input: PlatformInput) -> bool {
         let Some(_callback) = self.client.enter() else {
             return false;
         };
         self.live_window()
-            .is_some_and(|window| window.dispatch(input))
+            .is_some_and(|window| window.dispatch_inner(input))
     }
 
     /// Runs `f` with the focused element's input handler, if GPUI has
@@ -76,6 +105,22 @@ impl InputTarget {
         &self,
         f: impl FnOnce(&mut PlatformInputHandler) -> R,
     ) -> Option<R> {
+        let _entry = crate::native_operation::refused();
+        self.with_input_handler_inner(f)
+    }
+    pub(crate) fn with_edit_handler<R>(
+        &self,
+        op: &crate::native_operation::NativeOperation,
+        phase: crate::native_operation::Phase,
+        f: impl FnOnce(&mut PlatformInputHandler) -> R,
+    ) -> Option<R> {
+        op.phase(self.origin(), phase, || self.with_input_handler_inner(f))
+    }
+    fn with_input_handler_inner<R>(
+        &self,
+        f: impl FnOnce(&mut PlatformInputHandler) -> R,
+    ) -> Option<R> {
+        let _loan = crate::native_operation::loan();
         let _callback = self.client.enter()?;
         #[cfg(all(test, feature = "test-support"))]
         if let Some(slot) = &self.test_handler {
@@ -85,7 +130,7 @@ impl InputTarget {
             slot.borrow_mut().get_or_insert(handler);
             return Some(result);
         }
-        self.live_window()?.with_input_handler(f)
+        self.live_window()?.with_input_handler_inner(f)
     }
 
     /// The window's scale factor, to convert between points and GPUI pixels.
@@ -188,6 +233,13 @@ impl Window {
     /// state is recorded first, so `PlatformWindow::modifiers` agrees with the
     /// event GPUI is handling.
     pub(super) fn dispatch(&self, input: PlatformInput) -> bool {
+        let _entry = crate::native_operation::refused();
+        if matches!(&input, PlatformInput::KeyDown(_) | PlatformInput::KeyUp(_)) {
+            self.state.borrow_mut().native_hardware_observed = true;
+        }
+        self.dispatch_inner(input)
+    }
+    fn dispatch_inner(&self, input: PlatformInput) -> bool {
         {
             let mut state = self.state.borrow_mut();
             if state.closed {
@@ -213,6 +265,14 @@ impl Window {
         &self,
         f: impl FnOnce(&mut PlatformInputHandler) -> R,
     ) -> Option<R> {
+        let _entry = crate::native_operation::refused();
+        self.with_input_handler_inner(f)
+    }
+    fn with_input_handler_inner<R>(
+        &self,
+        f: impl FnOnce(&mut PlatformInputHandler) -> R,
+    ) -> Option<R> {
+        let _loan = crate::native_operation::loan();
         let mut handler = self.state.borrow_mut().input_handler.take()?;
         // A handler can request retirement of another window, whose native
         // client is not busy. Keep its callback outside this GPUI borrow too.

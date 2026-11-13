@@ -79,14 +79,28 @@ impl GPUITextInputView {
         }
     }
 
-    pub(super) fn perform_edit_action(&self, selector: Sel) {
+    pub(super) fn perform_native_edit_action(&self, selector: Sel) {
+        let captured = objc2::Message::retain(self);
+        crate::native_operation::NativeOperation::edit(|operation| {
+            captured.perform_edit_action(selector, operation)
+        });
+    }
+
+    pub(super) fn perform_edit_action(
+        &self,
+        selector: Sel,
+        operation: &crate::native_operation::NativeOperation,
+    ) {
+        if crate::native_operation::hardware_event() {
+            self.ivars().target.mark_hardware_observed();
+        }
         if !self.editing_enabled(selector) {
             return;
         }
         dispatch_edit_selector(
             selector,
             self.ivars().target.modifiers(),
-            |input| self.ivars().target.dispatch(input),
+            |input| self.ivars().target.dispatch_edit(operation, input),
             || {
                 let pasteboard = UIPasteboard::generalPasteboard();
                 // SAFETY: this UIView is main-thread-only, so its pasteboard
@@ -96,13 +110,17 @@ impl GPUITextInputView {
                 }
                 // SAFETY: as above; this is an explicit user paste action.
                 if let Some(text) = unsafe { pasteboard.string() } {
-                    self.with_handler(|handler| {
-                        handler.replace_text_in_range(None, &text.to_string());
-                    });
+                    self.ivars().target.with_edit_handler(
+                        operation,
+                        crate::native_operation::Phase::PasteFallback,
+                        |handler| {
+                            handler.replace_text_in_range(None, &text.to_string());
+                        },
+                    );
                 }
             },
         );
-        self.refresh_snapshot();
+        self.refresh_edit_snapshot(operation);
     }
 }
 

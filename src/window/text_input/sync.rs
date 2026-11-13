@@ -70,6 +70,22 @@ impl GPUITextInputView {
         *self.ivars().snapshot.borrow_mut() = snapshot;
     }
 
+    pub(super) fn refresh_edit_snapshot(
+        &self,
+        operation: &crate::native_operation::NativeOperation,
+    ) {
+        let snapshot = self
+            .ivars()
+            .target
+            .with_edit_handler(
+                operation,
+                crate::native_operation::Phase::ObserveSnapshot,
+                TextState::sample,
+            )
+            .unwrap_or_default();
+        *self.ivars().snapshot.borrow_mut() = snapshot;
+    }
+
     /// The queued flush: the mode, then the traits, then any text change.
     pub(super) fn flush(&self) {
         self.ivars().flush_scheduled.set(false);

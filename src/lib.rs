@@ -37,6 +37,8 @@ mod layout_direction;
 mod menu;
 mod native_edit_action;
 mod native_edit_availability;
+mod native_operation;
+mod native_retirement_request;
 mod platform;
 mod renderer;
 mod scene_fallback;
@@ -50,6 +52,12 @@ pub use error::{Error, Result};
 pub use layout_direction::{LayoutDirection, layout_direction, set_layout_direction};
 pub use native_edit_action::{NativeEditAction, native_edit_action};
 pub use native_edit_availability::{NativeEditAvailability, set_native_edit_availability};
+pub use native_retirement_request::{
+    NativeInputOrigin, NativeRetirementCancellation, NativeRetirementInterruption,
+    NativeRetirementOutcome, NativeRetirementRequest, NativeRetirementRequestError,
+    NativeRetirementRequestStatus, PrepareDecision, PreparedNativeRetirement, RequestKey,
+    native_input_origin, request_native_edit_retirement,
+};
 pub use platform::IosPlatform;
 pub use text_input_retirement::{
     RetiredTextInputSession, TextInputRetirement, TextInputRetirementError,
