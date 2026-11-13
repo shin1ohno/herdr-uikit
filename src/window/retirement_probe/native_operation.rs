@@ -88,7 +88,9 @@ pub fn raw_later() -> bool {
         return false;
     };
     let app = UIApplication::sharedApplication(mtm);
-    let Some(delegate) = app.delegate() else {
+    // SAFETY: UIApplicationMain owns the SDK delegate for the lifetime of
+    // this isolated main-thread fixture, including this read and callback.
+    let Some(delegate) = (unsafe { app.delegate() }) else {
         return false;
     };
     // SAFETY: the SDK delegate implements this standard UIApplication callback.
@@ -120,8 +122,7 @@ pub fn raw_scene_refusal() -> bool {
     // No real scene requests are installed by this isolated test helper. The
     // caller must run after all fixture windows have connected (stage contract).
     let callback = super::super::scene::new_scene_refused(id);
-    let error =
-        NSError::errorWithDomain_code_userInfo(&NSString::from_str("SDK fixture"), -1, None);
+    let error = NSError::new(-1, &NSString::from_str("SDK fixture"));
     callback.call((NonNull::from(&*error),));
     true
 }
