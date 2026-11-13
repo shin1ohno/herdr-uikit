@@ -103,7 +103,9 @@ define_class!(
         fn resign_first_responder(&self) -> bool {
             // SAFETY: same signature as UIResponder's method.
             let result: bool = unsafe { msg_send![super(self), resignFirstResponder] };
-            if result { if let Some(window) = self.owner() { window.edit_menu.resigned(); } }
+            if result && let Some(window) = self.owner() {
+                window.edit_menu.resigned();
+            }
             result
         }
 

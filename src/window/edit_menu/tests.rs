@@ -155,6 +155,22 @@ pub(crate) fn run() {
     let current = get_menu(format!("{EDIT_MENU_IDENTIFIER_PREFIX}{}", t2.value()));
     assert_eq!(current.children().count(), 2);
     assert_eq!(execute_menu(&state.borrow(), &current), (2, 0, 2));
+    let other_state = RefCell::new(EditMenuState::default());
+    other_state.borrow_mut().availability(true);
+    let other_token = token(&other_state);
+    let other_items = build_menu(
+        MenuDecision::Items(other_token),
+        [true; 2],
+        &suggestions,
+        mtm,
+    );
+    assert_eq!(execute_menu(&state.borrow(), &other_items), (0, 0, 0));
+    for id in [
+        format!("{EDIT_MENU_IDENTIFIER_PREFIX}{}", other_token.value()),
+        format!("{EDIT_MENU_IDENTIFIER_PREFIX}bad"),
+    ] {
+        assert_eq!(get_menu(id).children().count(), 0);
+    }
     let foreign = get_menu("other-owner".into());
     assert_eq!(foreign.children().count(), 2);
     assert_eq!(execute_menu(&state.borrow(), &foreign), (2, 0, 0));
@@ -197,6 +213,47 @@ pub(crate) fn run() {
         classify(Some(&command(Some(&other_property), mtm))),
         Sender::Command
     );
+    assert_eq!(
+        execute(
+            &state.borrow(),
+            Some(&command(Some(&other_property), mtm)),
+            sel!(paste:),
+            false
+        ),
+        (1, 1, vec![None, None])
+    );
+    for invalid in [NSNumber::new_i64(-1), NSNumber::new_f64(1.5)] {
+        let properties = NSDictionary::from_slices(
+            &[&*NSString::from_str(EDIT_MENU_PROPERTY_KEY)],
+            &[&*invalid as &AnyObject],
+        );
+        assert_eq!(
+            execute(
+                &state.borrow(),
+                Some(&command(Some(&properties), mtm)),
+                sel!(paste:),
+                false
+            ),
+            (0, 0, vec![])
+        );
+    }
+    {
+        use crate::{
+            native_edit_action::NativeEditActionGuard, native_edit_menu::NativeEditMenuGuard,
+        };
+        let _outer = NativeEditMenuGuard::enter(Some(t2));
+        {
+            let _physical = NativeEditActionGuard::enter(None);
+            assert_eq!(crate::native_edit_menu_token(), None);
+            {
+                let _inner = NativeEditMenuGuard::enter(Some(other_token));
+                assert_eq!(crate::native_edit_menu_token(), Some(other_token));
+            }
+            assert_eq!(crate::native_edit_menu_token(), None);
+        }
+        assert_eq!(crate::native_edit_menu_token(), Some(t2));
+    }
+    assert_eq!(crate::native_edit_menu_token(), None);
     for reason in [
         RevokeReason::Inactive,
         RevokeReason::ResignedOutside,
