@@ -39,6 +39,8 @@ pub(super) struct ViewIvars {
     /// Set while a press is being handed to the text input view, so a press
     /// it passes up the responder chain goes on rather than back to it.
     forwarding_presses: Cell<bool>,
+    #[cfg(target_abi = "sim")]
+    menu_probe: std::cell::RefCell<Option<super::edit_menu_probe::Probe>>,
     window: Weak<Window>,
 }
 
@@ -99,8 +101,31 @@ define_class!(
             }
         }
 
+        #[cfg(target_abi = "sim")]
+        #[unsafe(method(sh1152ProbeEmpty:))]
+        fn menu_probe(&self, empty: bool) {
+            if std::env::var_os("HERDR_EDIT_MENU_PROBE").is_none() { return; }
+            if self.ivars().menu_probe.borrow().is_none() {
+                self.ivars().menu_probe.replace(Some(super::edit_menu_probe::Probe::new(self)));
+            }
+            if let Some(probe) = self.ivars().menu_probe.borrow().as_ref() { probe.present(empty); }
+        }
+
+        #[cfg(target_abi = "sim")]
+        #[unsafe(method(resignFirstResponder))]
+        fn probe_resign(&self) -> bool {
+            super::edit_menu_probe::log("resign view=HerdrUIKitGPUIView begin");
+            // SAFETY: same signature as UIResponder's method.
+            let result: bool = unsafe { msg_send![super(self), resignFirstResponder] };
+            super::edit_menu_probe::log(&format!("resign view=HerdrUIKitGPUIView result={result}"));
+            result
+        }
+
         #[unsafe(method(copy:))]
-        fn copy(&self, _: Option<&AnyObject>) {
+        fn copy(&self, sender: Option<&AnyObject>) {
+            #[cfg(target_abi = "sim")]
+            super::edit_menu_probe::sender("HerdrUIKitGPUIView", "copy", sender);
+            let _ = sender;
             if let Some(window) = self.owner() { window.text_input.perform_edit_action(sel!(copy:)); }
         }
         #[unsafe(method(cut:))]
@@ -108,7 +133,10 @@ define_class!(
             if let Some(window) = self.owner() { window.text_input.perform_edit_action(sel!(cut:)); }
         }
         #[unsafe(method(paste:))]
-        fn paste(&self, _: Option<&AnyObject>) {
+        fn paste(&self, sender: Option<&AnyObject>) {
+            #[cfg(target_abi = "sim")]
+            super::edit_menu_probe::sender("HerdrUIKitGPUIView", "paste", sender);
+            let _ = sender;
             if let Some(window) = self.owner() { window.text_input.perform_edit_action(sel!(paste:)); }
         }
         #[unsafe(method(selectAll:))]
@@ -295,6 +323,8 @@ impl GpuiView {
     ) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(ViewIvars {
             forwarding_presses: Cell::new(false),
+            #[cfg(target_abi = "sim")]
+            menu_probe: std::cell::RefCell::new(None),
             window,
         });
         // SAFETY: `initWithFrame:` is UIView's designated initializer.

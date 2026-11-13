@@ -28,6 +28,8 @@
 
 mod convert;
 mod direction;
+#[cfg(target_abi = "sim")]
+mod edit_menu_probe;
 mod error;
 mod frame;
 mod input_target;

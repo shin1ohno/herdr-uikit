@@ -97,12 +97,18 @@ define_class!(
         }
 
         #[unsafe(method(paste:))]
-        fn __paste(&self, _: Option<&AnyObject>) {
+        fn __paste(&self, sender: Option<&AnyObject>) {
+            #[cfg(target_abi = "sim")]
+            super::super::edit_menu_probe::sender("GPUITextInputView", "paste", sender);
+            let _ = sender;
             self.perform_edit_action(sel!(paste:));
         }
 
         #[unsafe(method(copy:))]
-        fn __copy(&self, _: Option<&AnyObject>) {
+        fn __copy(&self, sender: Option<&AnyObject>) {
+            #[cfg(target_abi = "sim")]
+            super::super::edit_menu_probe::sender("GPUITextInputView", "copy", sender);
+            let _ = sender;
             self.perform_edit_action(sel!(copy:));
         }
 
@@ -136,7 +142,11 @@ define_class!(
             // first responder, so capture ownership before the native call.
             let context = self.ivars().target.text_input_resign_context(self.isFirstResponder());
             // SAFETY: `resignFirstResponder` takes nothing and returns a BOOL.
+            #[cfg(target_abi = "sim")]
+            super::super::edit_menu_probe::log("resign view=GPUITextInputView begin");
             let resigned: bool = unsafe { msg_send![super(self), resignFirstResponder] };
+            #[cfg(target_abi = "sim")]
+            super::super::edit_menu_probe::log(&format!("resign view=GPUITextInputView result={resigned}"));
             if resigned {
                 self.did_resign_first_responder(context);
             }
