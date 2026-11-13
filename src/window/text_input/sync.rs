@@ -108,6 +108,8 @@ impl GPUITextInputView {
                 // with its own hide key while this view remains responder.
                 // Only an explicit request restarts that native acquisition.
                 tracing::debug!("restarting text responder for a minimized keyboard");
+                #[cfg(target_abi = "sim")]
+                ivars.target.menu_restart();
                 ivars.target.expect_keyboard_hide(ResignReason::Restart);
                 switch.resign(&**self);
                 ivars.acquire.set(Acquire::Requested);

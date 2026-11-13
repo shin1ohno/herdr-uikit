@@ -55,3 +55,24 @@ pub fn native_edit_menu_status(
     }
     crate::window::edit_menu::status(window, token)
 }
+
+/// Independent inputs to the responder-switch decision (Simulator QA only).
+#[cfg(target_abi = "sim")]
+#[derive(Clone, Debug)]
+pub struct NativeEditMenuSwitchObservation {
+    pub restart_reached: bool,
+    pub acquire_returns: Vec<bool>,
+    pub drawing_owned: bool,
+    pub text_owned: bool,
+}
+
+/// Drains switch observations; the overflow count must be zero for a QA verdict.
+#[cfg(target_abi = "sim")]
+pub fn take_native_edit_menu_switch_observations(
+    window: AnyWindowHandle,
+) -> (usize, Vec<NativeEditMenuSwitchObservation>) {
+    if MainThreadMarker::new().is_none() {
+        return (0, Vec::new());
+    }
+    crate::window::edit_menu::take_observations(window)
+}

@@ -137,6 +137,10 @@ impl EditMenuState {
     pub(crate) fn resigned(&mut self) -> bool {
         resign_revokes(self.switch_depth != 0) && self.revoke(RevokeReason::ResignedOutside)
     }
+    #[cfg(target_abi = "sim")]
+    pub(crate) fn switching(&self) -> bool {
+        self.switch_depth != 0
+    }
     pub(crate) fn begin_switch(&mut self) {
         self.switch_depth += 1;
     }

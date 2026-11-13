@@ -148,6 +148,8 @@ fn production_guard_preserves_successful_same_flush_restart_but_revokes_failure(
         };
         {
             let guard = ResponderSwitch::new(&owner);
+            #[cfg(target_abi = "sim")]
+            assert!(owner.state.borrow().switching());
             guard.resign(&endpoint);
             assert_eq!(
                 owner.state.borrow().status(token),

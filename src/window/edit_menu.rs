@@ -22,6 +22,8 @@ pub(super) struct EditMenu {
     _delegate: Retained<EditMenuDelegate>,
     interaction: Retained<UIEditMenuInteraction>,
     pub(super) state: RefCell<EditMenuState>,
+    #[cfg(target_abi = "sim")]
+    pub(super) observation: RefCell<SwitchTrace>,
 }
 
 impl EditMenu {
@@ -36,6 +38,8 @@ impl EditMenu {
             _delegate: delegate,
             interaction,
             state: RefCell::default(),
+            #[cfg(target_abi = "sim")]
+            observation: RefCell::default(),
         }
     }
     pub(super) fn revoke(&self, reason: RevokeReason) {
@@ -67,14 +71,35 @@ impl EditMenu {
 
 impl SwitchOwner for &Window {
     fn begin(&self) {
+        #[cfg(target_abi = "sim")]
+        if !self.edit_menu.state.borrow().switching() {
+            let mut trace = self.edit_menu.observation.borrow_mut();
+            trace.restart = false;
+            trace.acquires.clear();
+        }
         self.edit_menu.state.borrow_mut().begin_switch();
     }
     fn acquired(&self, result: bool) {
         self.edit_menu.state.borrow_mut().acquired(result);
+        #[cfg(target_abi = "sim")]
+        self.edit_menu
+            .observation
+            .borrow_mut()
+            .acquires
+            .push(result);
     }
     fn finish(&self) {
-        let owned = self.view.isFirstResponder() || self.text_input.view().isFirstResponder();
+        let drawing_owned = self.view.isFirstResponder();
+        let text_owned = self.text_input.view().isFirstResponder();
+        let owned = drawing_owned || text_owned;
         let revoked = self.edit_menu.state.borrow_mut().end_switch(owned);
+        #[cfg(target_abi = "sim")]
+        if !self.edit_menu.state.borrow().switching() {
+            self.edit_menu
+                .observation
+                .borrow_mut()
+                .finish(drawing_owned, text_owned);
+        }
         if revoked {
             self.edit_menu.interaction.dismissMenu();
         }
@@ -141,4 +166,45 @@ impl SwitchOwner for Rc<Window> {
     fn finish(&self) {
         (&**self).finish();
     }
+}
+
+#[cfg(target_abi = "sim")]
+#[derive(Default)]
+pub(super) struct SwitchTrace {
+    pub(super) restart: bool,
+    acquires: Vec<bool>,
+    events: std::collections::VecDeque<crate::NativeEditMenuSwitchObservation>,
+    dropped: usize,
+}
+#[cfg(target_abi = "sim")]
+impl SwitchTrace {
+    fn finish(&mut self, drawing_owned: bool, text_owned: bool) {
+        if !self.restart && self.acquires.is_empty() {
+            return;
+        }
+        if self.events.len() == 256 {
+            self.events.pop_front();
+            self.dropped += 1;
+        }
+        self.events
+            .push_back(crate::NativeEditMenuSwitchObservation {
+                restart_reached: self.restart,
+                acquire_returns: std::mem::take(&mut self.acquires),
+                drawing_owned,
+                text_owned,
+            });
+    }
+}
+#[cfg(target_abi = "sim")]
+pub(crate) fn take_observations(
+    handle: AnyWindowHandle,
+) -> (usize, Vec<crate::NativeEditMenuSwitchObservation>) {
+    let Some(window) = scene::menu_window(handle) else {
+        return (0, Vec::new());
+    };
+    let mut trace = window.edit_menu.observation.borrow_mut();
+    (
+        std::mem::take(&mut trace.dropped),
+        trace.events.drain(..).collect(),
+    )
 }

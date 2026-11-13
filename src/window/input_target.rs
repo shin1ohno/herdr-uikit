@@ -33,6 +33,12 @@ impl InputTarget {
             self.window.upgrade()?,
         ))
     }
+    #[cfg(target_abi = "sim")]
+    pub(super) fn menu_restart(&self) {
+        if let Some(window) = self.window.upgrade() {
+            window.edit_menu.observation.borrow_mut().restart = true;
+        }
+    }
     pub(super) fn menu_resigned(&self) {
         if let Some(window) = self.window.upgrade() {
             window.edit_menu.resigned();

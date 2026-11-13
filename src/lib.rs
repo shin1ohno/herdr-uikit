@@ -70,3 +70,8 @@ pub fn application() -> gpui::Application {
 pub fn test_native_edit_menu_contract() {
     window::edit_menu::tests::run();
 }
+
+#[cfg(target_abi = "sim")]
+pub use native_edit_menu::{
+    NativeEditMenuSwitchObservation, take_native_edit_menu_switch_observations,
+};
