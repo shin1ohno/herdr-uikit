@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: macOS SDK checks
+    runs-on: macos-26
+    timeout-minutes: 40
+    env:
+      IPHONEOS_DEPLOYMENT_TARGET: '17.0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust and record toolchain
+        run: |
+          rustup show active-toolchain
+          rustc --version --verbose
+          cargo --version
+          rustup target list --installed
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          xcrun --sdk iphonesimulator --show-sdk-version
+      - name: Check formatting
+        run: cargo fmt --check --all
+      - name: Run host tests
+        run: cargo test --locked --tests
+      - name: Clippy for iOS devices
+        run: cargo clippy --locked --all-targets --features test-support --target aarch64-apple-ios -- -D warnings
+      - name: Clippy for iOS Simulator
+        run: cargo clippy --locked --all-targets --features test-support --target aarch64-apple-ios-sim -- -D warnings
