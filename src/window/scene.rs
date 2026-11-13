@@ -373,7 +373,18 @@ pub(crate) fn set_native_edit_availability(
     if state.native_edit_availability != availability {
         state.native_edit_availability = availability;
         drop(state);
+        window.edit_menu.availability(availability.is_some());
         objc2_ui_kit::UIMenuSystem::mainSystem(mtm).setNeedsRevalidate();
     }
     true
+}
+
+pub(super) fn menu_window(handle: AnyWindowHandle) -> Option<Rc<Window>> {
+    REGISTRY.with_borrow(|registry| {
+        registry
+            .scenes
+            .iter()
+            .filter_map(SceneEntry::live_window)
+            .find(|window| window.handle == handle)
+    })
 }

@@ -97,6 +97,9 @@ impl GPUITextInputView {
         if !ivars.target.text_input_can_acquire() {
             return;
         }
+        let Some(switch) = ivars.target.menu_switch() else {
+            return;
+        };
         if self.isFirstResponder() {
             let acquire = ivars.acquire.get();
             let requested = acquire == Acquire::Requested;
@@ -106,7 +109,7 @@ impl GPUITextInputView {
                 // Only an explicit request restarts that native acquisition.
                 tracing::debug!("restarting text responder for a minimized keyboard");
                 ivars.target.expect_keyboard_hide(ResignReason::Restart);
-                self.resignFirstResponder();
+                switch.resign(&**self);
                 ivars.acquire.set(Acquire::Requested);
             } else {
                 ivars.acquire.set(Acquire::Settled);
@@ -131,7 +134,7 @@ impl GPUITextInputView {
             return;
         }
         // Becoming first responder reads `inputView` afresh.
-        let became = self.becomeFirstResponder();
+        let became = switch.acquire(&**self);
         if became {
             ivars.target.text_input_did_acquire();
             ivars.applied_mode.set(Some(mode));

@@ -307,3 +307,55 @@ SH1-153 validation: unit tests cover both modes, inactive/stale policy, defaults
 and both responder method tables. The yebisu Simulator harness invokes actual
 UIKit selectors and checks clipboard/wire receipts. Physical hardware validation
 and menu screenshots are separate gates, not established by the unit tests.
+
+## Explicit native edit menus
+
+Consumers can call `present_native_edit_menu(window, point)` after publishing
+`NativeEditAvailability` and focusing their content. It returns an opaque,
+process-unique `NativeEditMenuToken`, or `None` off the main thread, for an
+unknown/closed window, absent availability, inactive scene, or absent key
+responder. UIKit presentation is deferred out of the GPUI update and checks
+that the token is still current before displaying.
+
+Read `native_edit_menu_token()` alongside `native_edit_action()` during native
+key-down/key-up dispatch. `dismiss_native_edit_menu(window, token)` only closes
+the matching current menu. `native_edit_menu_status(window, token)` reports
+`Current`, `Revoked(reason)`, or `Unknown`; consumers should discard tickets
+that cease to be current and independently check their target and selection.
+No menu origin survives outside synchronous key dispatch, including fallback,
+physical-key delivery, and nested dispatch restoration.
+
+Revocation is irreversible: replacement, explicit dismissal, availability
+becoming absent, close, scene inactivity, external responder resignation, and
+an internal responder switch that fails acquisition or ends without either
+responder. A same-flush successful keyboard restart retains ownership. All
+internal native responder calls go through `ResponderSwitch`; only close's
+already-revoked cleanup calls UIKit directly.
+
+Owned configuration identifiers have prefix `EDIT_MENU_IDENTIFIER_PREFIX`.
+The delegate returns token-tagged Copy/Paste only for the current token, and
+an explicit empty `UIMenu` for every invalid owned configuration. It forwards
+`suggestedActions` only for non-owned identifiers. Standard Edit commands
+without `EDIT_MENU_PROPERTY_KEY`, nil senders and other senders retain their
+previous untagged behavior. A present but malformed/stale/foreign token is
+rejected before dispatch and before clipboard fallback.
+
+The P1/P4 preflight on iOS 26.5 (Xcode 26.6) observed UICommand senders retaining
+the token dictionary, exactly Copy/Paste for populated menus, and zero items
+for empty menus. Therefore the UIAction and disabled-item alternatives are
+not selected. System Edit was not exposed to that XCTest run; its physical
+interaction remains device QA, separately from untagged-command contracts.
+
+Additional validation:
+
+```sh
+bash scripts/check-responder-calls.sh
+python3 scripts/test-simulator.py
+```
+
+The responder checker verifies the known five-call baseline before requiring
+only the close cleanup outside the guard. The Simulator runner creates and
+deletes its own iPad. `tests/edit_menu_uikit.rs` uses a harness-free main thread
+for actual UIKit delegate/command objects; ordinary Rust test threads exercise
+the same production state and guard with controlled ownership/acquisition.
+These checks do not replace the consumer's live scene/responder E2E or device QA.

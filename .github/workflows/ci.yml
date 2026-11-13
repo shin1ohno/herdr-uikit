@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, feat/native-edit-menu-sh1-152]
 
 permissions:
   contents: read
@@ -43,3 +43,7 @@ jobs:
         run: cargo clippy --locked --all-targets --features test-support --target aarch64-apple-ios -- -D warnings
       - name: Clippy for iOS Simulator
         run: cargo clippy --locked --all-targets --features test-support --target aarch64-apple-ios-sim -- -D warnings
+      - name: Verify responder routing
+        run: bash scripts/check-responder-calls.sh
+      - name: Run Simulator contracts
+        run: python3 scripts/test-simulator.py

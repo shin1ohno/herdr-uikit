@@ -69,3 +69,9 @@ objc2-ui-kit = { default-features = false, features = ["NSText", "UIFont", "UILa
 # lockfile offline-resolvable. Consumers ignore this table.
 [patch.crates-io]
 embed-resource = { path = "support/embed-resource" }
+
+# UIKit object tests run on the process main thread without UIApplicationMain.
+[[test]]
+name = "edit_menu_uikit"
+harness = false
+required-features = ["test-support"]
