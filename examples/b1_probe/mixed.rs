@@ -17,7 +17,7 @@ pub(super) fn ready(
     record: Rc<RefCell<Record>>,
     count: usize,
 ) {
-    if !capture(b).attached() {
+    if !native::capture(b.into()).is_some_and(|client| client.attached()) {
         check(count < 30, "fixture-second-scene-attached");
         let next = app.clone();
         frame(app, move || ready(a, b, next, record, count + 1));
