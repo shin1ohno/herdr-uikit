@@ -36,28 +36,32 @@ define_class!(
     #[unsafe(super(UIView, UIResponder, NSObject))]
     #[thread_kind = MainThreadOnly]
     #[ivars = Ivars]
-    pub(super) struct GPUITextInputView;
+    pub(in crate::window) struct GPUITextInputView;
 
     impl GPUITextInputView {
         // The view has real layout bounds so accessibility can discover the
         // first-responder text client. GPUI owns its touch hit testing.
         #[unsafe(method(pointInside:withEvent:))]
         fn __point_inside(&self, _: CGPoint, _: Option<&UIEvent>) -> bool {
+            let _native_entry = crate::native_operation::refused();
             false
         }
 
         #[unsafe(method(isAccessibilityElement))]
         fn __is_accessibility_element(&self) -> bool {
+            let _native_entry = crate::native_operation::refused();
             self.accessibility_text_entry()
         }
 
         #[unsafe(method_id(accessibilityLabel))]
         fn __accessibility_label(&self) -> Option<Retained<NSString>> {
+            let _native_entry = crate::native_operation::refused();
             self.accessibility_text_entry().then(|| self.accessibility_label())
         }
 
         #[unsafe(method_id(accessibilityValue))]
         fn __accessibility_value(&self) -> Option<Retained<NSString>> {
+            let _native_entry = crate::native_operation::refused();
             // The input handler does not expose whether a field is secure.
             // Text entry works through UITextInput without publishing its text.
             None
@@ -65,6 +69,7 @@ define_class!(
 
         #[unsafe(method(accessibilityFrame))]
         fn __accessibility_frame(&self) -> CGRect {
+            let _native_entry = crate::native_operation::refused();
             self.accessibility_frame()
         }
 
@@ -80,17 +85,20 @@ define_class!(
         fn __accessibility_text_input_responder(
             &self,
         ) -> Option<Retained<ProtocolObject<dyn UITextInput>>> {
+            let _native_entry = crate::native_operation::refused();
             self.accessibility_text_entry()
                 .then(|| ProtocolObject::from_retained(self.retain()))
         }
 
         #[unsafe(method(canPerformAction:withSender:))]
         fn __can_perform_action(&self, action: Sel, _: Option<&AnyObject>) -> bool {
+            let _native_entry = crate::native_operation::refused();
             self.editing_enabled(action)
         }
 
         #[unsafe(method(validateCommand:))]
         fn __validate_command(&self, command: &UICommand) {
+            let _native_entry = crate::native_operation::refused();
             // SAFETY: UIKit supplies this command; the superclass returns void.
             let () = unsafe { msg_send![super(self), validateCommand: command] };
             self.validate_edit_command(command);
@@ -98,31 +106,33 @@ define_class!(
 
         #[unsafe(method(paste:))]
         fn __paste(&self, sender: Option<&AnyObject>) {
-            self.perform_edit_action(sel!(paste:), sender);
+            self.perform_native_edit_action(sel!(paste:), sender);
         }
 
         #[unsafe(method(copy:))]
         fn __copy(&self, sender: Option<&AnyObject>) {
-            self.perform_edit_action(sel!(copy:), sender);
+            self.perform_native_edit_action(sel!(copy:), sender);
         }
 
         #[unsafe(method(cut:))]
         fn __cut(&self, sender: Option<&AnyObject>) {
-            self.perform_edit_action(sel!(cut:), sender);
+            self.perform_native_edit_action(sel!(cut:), sender);
         }
 
         #[unsafe(method(selectAll:))]
         fn __select_all(&self, sender: Option<&AnyObject>) {
-            self.perform_edit_action(sel!(selectAll:), sender);
+            self.perform_native_edit_action(sel!(selectAll:), sender);
         }
 
         #[unsafe(method(canBecomeFirstResponder))]
         fn __can_become_first_responder(&self) -> bool {
-            true
+            let _native_entry = crate::native_operation::refused();
+            self.ivars().target.client.live()
         }
 
         #[unsafe(method_id(inputView))]
         fn __input_view(&self) -> Option<Retained<UIView>> {
+            let _native_entry = crate::native_operation::refused();
             (self.ivars().mode.get() == Some(Mode::KeyOnly))
                 .then(|| self.ivars().key_only_input_view.clone())
         }
@@ -132,6 +142,7 @@ define_class!(
         // flushes must not take it straight back.
         #[unsafe(method(resignFirstResponder))]
         fn __resign_first_responder(&self) -> bool {
+            let _native_entry = crate::native_operation::refused();
             // UIKit may post WillHide only after it has already transferred
             // first responder, so capture ownership before the native call.
             let context = self.ivars().target.text_input_resign_context(self.isFirstResponder());
@@ -146,6 +157,7 @@ define_class!(
 
         #[unsafe(method(willMoveToWindow:))]
         fn __will_move_to_window(&self, window: Option<&UIWindow>) {
+            let _native_entry = crate::native_operation::refused();
             if window.is_none() {
                 self.ivars().target.expect_keyboard_hide(ResignReason::LeavingWindow);
             }
@@ -158,6 +170,7 @@ define_class!(
         // the view was in one, or before it left one, is applied now.
         #[unsafe(method(didMoveToWindow))]
         fn __did_move_to_window(&self) {
+            let _native_entry = crate::native_operation::refused();
             // SAFETY: `didMoveToWindow` takes and returns nothing.
             let () = unsafe { msg_send![super(self), didMoveToWindow] };
             if self.window().is_some() && self.ivars().target.text_input_can_acquire() {
@@ -167,22 +180,30 @@ define_class!(
 
         #[unsafe(method(pressesBegan:withEvent:))]
         fn __presses_began(&self, presses: &NSSet<UIPress>, event: Option<&UIPressesEvent>) {
+            let _native_entry = crate::native_operation::refused();
+            self.ivars().target.mark_hardware_observed();
             self.presses_began(presses, event);
         }
 
         #[unsafe(method(pressesChanged:withEvent:))]
         fn __presses_changed(&self, presses: &NSSet<UIPress>, event: Option<&UIPressesEvent>) {
+            let _native_entry = crate::native_operation::refused();
+            self.ivars().target.mark_hardware_observed();
             // SAFETY: the arguments are the ones UIKit passed for this selector.
             let () = unsafe { msg_send![super(self), pressesChanged: presses, withEvent: event] };
         }
 
         #[unsafe(method(pressesEnded:withEvent:))]
         fn __presses_ended(&self, presses: &NSSet<UIPress>, event: Option<&UIPressesEvent>) {
+            let _native_entry = crate::native_operation::refused();
+            self.ivars().target.mark_hardware_observed();
             self.presses_ended(presses, event, false);
         }
 
         #[unsafe(method(pressesCancelled:withEvent:))]
         fn __presses_cancelled(&self, presses: &NSSet<UIPress>, event: Option<&UIPressesEvent>) {
+            let _native_entry = crate::native_operation::refused();
+            self.ivars().target.mark_hardware_observed();
             self.presses_ended(presses, event, true);
         }
 
@@ -190,11 +211,13 @@ define_class!(
         // from the run loop, outside GPUI's updates and the window's state.
         #[unsafe(method(herdrFlushInputState:))]
         fn __flush_input_state(&self, _: Option<&AnyObject>) {
+            let _native_entry = crate::native_operation::refused();
             self.flush();
         }
 
         #[unsafe(method(herdrRepeatKey:))]
         fn __repeat_key(&self, _: Option<&AnyObject>) {
+            let _native_entry = crate::native_operation::refused();
             self.repeat_key();
         }
     }
@@ -204,41 +227,49 @@ define_class!(
     unsafe impl UITextInputTraits for GPUITextInputView {
         #[unsafe(method(autocapitalizationType))]
         fn __autocapitalization_type(&self) -> UITextAutocapitalizationType {
+            let _native_entry = crate::native_operation::refused();
             self.ivars().traits.get().autocapitalization
         }
 
         #[unsafe(method(autocorrectionType))]
         fn __autocorrection_type(&self) -> UITextAutocorrectionType {
+            let _native_entry = crate::native_operation::refused();
             self.ivars().traits.get().autocorrection
         }
 
         #[unsafe(method(spellCheckingType))]
         fn __spell_checking_type(&self) -> UITextSpellCheckingType {
+            let _native_entry = crate::native_operation::refused();
             self.ivars().traits.get().spell_checking
         }
 
         #[unsafe(method(inlinePredictionType))]
         fn __inline_prediction_type(&self) -> UITextInlinePredictionType {
+            let _native_entry = crate::native_operation::refused();
             self.ivars().traits.get().inline_prediction
         }
 
         #[unsafe(method(smartQuotesType))]
         fn __smart_quotes_type(&self) -> UITextSmartQuotesType {
+            let _native_entry = crate::native_operation::refused();
             UITextSmartQuotesType::No
         }
 
         #[unsafe(method(smartDashesType))]
         fn __smart_dashes_type(&self) -> UITextSmartDashesType {
+            let _native_entry = crate::native_operation::refused();
             UITextSmartDashesType::No
         }
 
         #[unsafe(method(smartInsertDeleteType))]
         fn __smart_insert_delete_type(&self) -> UITextSmartInsertDeleteType {
+            let _native_entry = crate::native_operation::refused();
             UITextSmartInsertDeleteType::No
         }
 
         #[unsafe(method(returnKeyType))]
         fn __return_key_type(&self) -> UIReturnKeyType {
+            let _native_entry = crate::native_operation::refused();
             self.ivars().traits.get().return_key
         }
     }
@@ -248,16 +279,19 @@ define_class!(
         // key must keep sending backspace, so any focused text element counts.
         #[unsafe(method(hasText))]
         fn __has_text(&self) -> bool {
+            let _native_entry = crate::native_operation::refused();
             self.with_handler(|_| ()).is_some()
         }
 
         #[unsafe(method(insertText:))]
         fn __insert_text(&self, text: &NSString) {
+            let _native_entry = crate::native_operation::refused();
             self.insert_text(&text.to_string());
         }
 
         #[unsafe(method(deleteBackward))]
         fn __delete_backward(&self) {
+            let _native_entry = crate::native_operation::refused();
             self.delete_backward();
         }
     }
@@ -265,6 +299,7 @@ define_class!(
     unsafe impl UITextInput for GPUITextInputView {
         #[unsafe(method_id(textInRange:))]
         fn __text_in_range(&self, range: &UITextRange) -> Option<Retained<NSString>> {
+            let _native_entry = crate::native_operation::refused();
             positions::range(range)
                 .and_then(|range| self.text_in_range(range))
                 .map(|text| NSString::from_str(&text))
@@ -272,6 +307,7 @@ define_class!(
 
         #[unsafe(method(replaceRange:withText:))]
         fn __replace_range(&self, range: &UITextRange, text: &NSString) {
+            let _native_entry = crate::native_operation::refused();
             if let Some(range) = positions::range(range) {
                 self.replace_range(range, &text.to_string());
             }
@@ -279,12 +315,14 @@ define_class!(
 
         #[unsafe(method_id(selectedTextRange))]
         fn __selected_text_range(&self) -> Option<Retained<UITextRange>> {
+            let _native_entry = crate::native_operation::refused();
             let selection = self.read_snapshot().selection.map(|(range, _)| range);
             selection.map(|range| TextRange::text_range(self.mtm(), range))
         }
 
         #[unsafe(method(setSelectedTextRange:))]
         fn __set_selected_text_range(&self, range: Option<&UITextRange>) {
+            let _native_entry = crate::native_operation::refused();
             if let Some(range) = range.and_then(positions::range) {
                 self.select_range(range);
             }
@@ -292,6 +330,7 @@ define_class!(
 
         #[unsafe(method_id(markedTextRange))]
         fn __marked_text_range(&self) -> Option<Retained<UITextRange>> {
+            let _native_entry = crate::native_operation::refused();
             let marked = self.read_snapshot().marked;
             marked.map(|range| TextRange::text_range(self.mtm(), range))
         }
@@ -300,32 +339,38 @@ define_class!(
         // back what it set.
         #[unsafe(method_id(markedTextStyle))]
         fn __marked_text_style(&self) -> Option<Retained<AnyObject>> {
+            let _native_entry = crate::native_operation::refused();
             self.ivars().marked_text_style.borrow().clone()
         }
 
         #[unsafe(method(setMarkedTextStyle:))]
         fn __set_marked_text_style(&self, style: Option<&AnyObject>) {
+            let _native_entry = crate::native_operation::refused();
             *self.ivars().marked_text_style.borrow_mut() = style.map(AnyObject::retain);
         }
 
         #[unsafe(method(setMarkedText:selectedRange:))]
         fn __set_marked_text(&self, text: Option<&NSString>, selected: NSRange) {
+            let _native_entry = crate::native_operation::refused();
             let text = text.map(NSString::to_string).unwrap_or_default();
             self.set_marked_text(&text, utf16::range_from_ns(selected.location, selected.length));
         }
 
         #[unsafe(method(unmarkText))]
         fn __unmark_text(&self) {
+            let _native_entry = crate::native_operation::refused();
             self.unmark_text();
         }
 
         #[unsafe(method_id(beginningOfDocument))]
         fn __beginning_of_document(&self) -> Retained<UITextPosition> {
+            let _native_entry = crate::native_operation::refused();
             TextPosition::position(self.mtm(), 0)
         }
 
         #[unsafe(method_id(endOfDocument))]
         fn __end_of_document(&self) -> Retained<UITextPosition> {
+            let _native_entry = crate::native_operation::refused();
             TextPosition::position(self.mtm(), self.read_snapshot().document_len())
         }
 
@@ -335,6 +380,7 @@ define_class!(
             from: &UITextPosition,
             to: &UITextPosition,
         ) -> Option<Retained<UITextRange>> {
+            let _native_entry = crate::native_operation::refused();
             positions::offset(from)
                 .zip(positions::offset(to))
                 .map(|(from, to)| TextRange::text_range(self.mtm(), utf16::between(from, to)))
@@ -346,6 +392,7 @@ define_class!(
             position: &UITextPosition,
             offset: NSInteger,
         ) -> Option<Retained<UITextPosition>> {
+            let _native_entry = crate::native_operation::refused();
             positions::offset(position)
                 .and_then(|from| self.offset_from(from, offset))
                 .map(|offset| TextPosition::position(self.mtm(), offset))
@@ -358,6 +405,7 @@ define_class!(
             direction: UITextLayoutDirection,
             offset: NSInteger,
         ) -> Option<Retained<UITextPosition>> {
+            let _native_entry = crate::native_operation::refused();
             let direction = self.logical(direction);
             positions::offset(position)
                 .and_then(|from| self.position_in_direction(from, direction, offset))
@@ -370,12 +418,14 @@ define_class!(
             position: &UITextPosition,
             other: &UITextPosition,
         ) -> NSComparisonResult {
+            let _native_entry = crate::native_operation::refused();
             let (position, other) = (positions::offset(position), positions::offset(other));
             NSComparisonResult::from(position.cmp(&other))
         }
 
         #[unsafe(method(offsetFromPosition:toPosition:))]
         fn __offset_between(&self, from: &UITextPosition, to: &UITextPosition) -> NSInteger {
+            let _native_entry = crate::native_operation::refused();
             positions::offset(from)
                 .zip(positions::offset(to))
                 .map_or(0, |(from, to)| utf16::distance(from, to))
@@ -383,6 +433,7 @@ define_class!(
 
         #[unsafe(method_id(inputDelegate))]
         fn __input_delegate(&self) -> Option<Retained<ProtocolObject<dyn UITextInputDelegate>>> {
+            let _native_entry = crate::native_operation::refused();
             self.ivars().input_delegate.borrow().load()
         }
 
@@ -392,6 +443,7 @@ define_class!(
             &self,
             delegate: Option<&ProtocolObject<dyn UITextInputDelegate>>,
         ) {
+            let _native_entry = crate::native_operation::refused();
             *self.ivars().input_delegate.borrow_mut() = delegate.map(Weak::new).unwrap_or_default();
         }
 
@@ -399,6 +451,7 @@ define_class!(
         // its text input, and keeping it would risk a retain cycle.
         #[unsafe(method_id(tokenizer))]
         fn __tokenizer(&self) -> Retained<ProtocolObject<dyn UITextInputTokenizer>> {
+            let _native_entry = crate::native_operation::refused();
             let responder: &UIResponder = self;
             // SAFETY: `responder` is this view, which implements UITextInput.
             let tokenizer = unsafe {
@@ -416,6 +469,7 @@ define_class!(
             range: &UITextRange,
             direction: UITextLayoutDirection,
         ) -> Option<Retained<UITextPosition>> {
+            let _native_entry = crate::native_operation::refused();
             let direction = self.logical(direction);
             positions::range(range)
                 .map(|range| positions::farthest(range, direction))
@@ -428,6 +482,7 @@ define_class!(
             position: &UITextPosition,
             direction: UITextLayoutDirection,
         ) -> Option<Retained<UITextRange>> {
+            let _native_entry = crate::native_operation::refused();
             let direction = self.logical(direction);
             positions::offset(position)
                 .map(|offset| self.extended_range(offset, direction))
@@ -442,6 +497,7 @@ define_class!(
             _position: &UITextPosition,
             _direction: UITextStorageDirection,
         ) -> NSWritingDirection {
+            let _native_entry = crate::native_operation::refused();
             layout_direction::current(self.mtm()).writing_direction()
         }
 
@@ -452,15 +508,18 @@ define_class!(
             _direction: NSWritingDirection,
             _range: &UITextRange,
         ) {
+            let _native_entry = crate::native_operation::refused();
         }
 
         #[unsafe(method(firstRectForRange:))]
         fn __first_rect(&self, range: &UITextRange) -> CGRect {
+            let _native_entry = crate::native_operation::refused();
             positions::range(range).map_or(CGRect::ZERO, |range| self.first_rect(range))
         }
 
         #[unsafe(method(caretRectForPosition:))]
         fn __caret_rect(&self, position: &UITextPosition) -> CGRect {
+            let _native_entry = crate::native_operation::refused();
             positions::offset(position).map_or(CGRect::ZERO, |offset| self.caret_rect(offset))
         }
 
@@ -468,11 +527,13 @@ define_class!(
         // highlight.
         #[unsafe(method_id(selectionRectsForRange:))]
         fn __selection_rects(&self, _range: &UITextRange) -> Retained<NSArray<UITextSelectionRect>> {
+            let _native_entry = crate::native_operation::refused();
             NSArray::from_retained_slice(&[])
         }
 
         #[unsafe(method_id(closestPositionToPoint:))]
         fn __closest_position(&self, point: CGPoint) -> Option<Retained<UITextPosition>> {
+            let _native_entry = crate::native_operation::refused();
             self.closest_offset(point)
                 .map(|offset| TextPosition::position(self.mtm(), offset))
         }
@@ -483,6 +544,7 @@ define_class!(
             point: CGPoint,
             range: &UITextRange,
         ) -> Option<Retained<UITextPosition>> {
+            let _native_entry = crate::native_operation::refused();
             positions::range(range)
                 .zip(self.closest_offset(point))
                 .map(|(range, offset)| offset.clamp(range.start, range.end))
@@ -491,6 +553,7 @@ define_class!(
 
         #[unsafe(method_id(characterRangeAtPoint:))]
         fn __character_range_at_point(&self, point: CGPoint) -> Option<Retained<UITextRange>> {
+            let _native_entry = crate::native_operation::refused();
             self.closest_offset(point)
                 .map(|offset| self.extended_range(offset, UITextLayoutDirection::Right))
                 .map(|range| TextRange::text_range(self.mtm(), range))
@@ -499,12 +562,14 @@ define_class!(
         // Geometry is in GPUI window coordinates, which are the GPUIView's.
         #[unsafe(method_id(textInputView))]
         fn __text_input_view(&self) -> Retained<UIView> {
+            let _native_entry = crate::native_operation::refused();
             self.superview()
                 .unwrap_or_else(|| Retained::into_super(self.retain()))
         }
 
         #[unsafe(method(insertDictationResult:))]
         fn __insert_dictation_result(&self, phrases: &NSArray<UIDictationPhrase>) {
+            let _native_entry = crate::native_operation::refused();
             let text: String = phrases.iter().map(|phrase| phrase.text().to_string()).collect();
             self.insert_dictation(&text);
         }

@@ -76,3 +76,4 @@ fn gpui_counts_as_running_during_a_callback() {
     assert_eq!(slot.call(|callback| callback()), Some(true));
     assert!(!crate::gpui_call::is_running());
 }
+mod native_retirement;

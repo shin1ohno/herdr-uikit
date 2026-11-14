@@ -40,9 +40,12 @@ mod native_edit_availability;
 mod native_edit_menu;
 #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
 pub mod native_edit_observer;
+mod native_operation;
+mod native_retirement_request;
 mod platform;
 mod renderer;
 mod scene_fallback;
+mod text_input_retirement;
 mod text_system;
 mod window;
 mod window_controls;
@@ -57,6 +60,12 @@ pub use native_edit_menu::{
     RevokeReason, dismiss_native_edit_menu, native_edit_menu_status, native_edit_menu_token,
     present_native_edit_menu,
 };
+pub use native_retirement_request::{
+    NativeInputOrigin, NativeRetirementCancellation, NativeRetirementInterruption,
+    NativeRetirementOutcome, NativeRetirementRequest, NativeRetirementRequestError,
+    NativeRetirementRequestStatus, PrepareDecision, PreparedNativeRetirement, RequestKey,
+    native_input_origin, request_native_edit_retirement,
+};
 pub use platform::IosPlatform;
 #[cfg(feature = "test-support")]
 pub use platform::notifications::NotificationResponseFixture;
@@ -65,6 +74,14 @@ pub use platform::notifications::{
     post_notification, post_notification_when, remove_notifications,
     request_notification_authorization,
 };
+pub use text_input_retirement::{
+    RetiredTextInputSession, TextInputRetirement, TextInputRetirementError,
+    TextInputRetirementStatus, TextInputSessionState, retire_text_input_session,
+    text_input_session_state,
+};
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub use window::retirement_probe;
 pub use window_controls::window_control_insets;
 
 /// The GPUI application on iPadOS, the counterpart of

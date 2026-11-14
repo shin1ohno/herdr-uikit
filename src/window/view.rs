@@ -56,6 +56,7 @@ define_class!(
     impl GpuiView {
         #[unsafe(method(layoutSubviews))]
         fn layout_subviews(&self) {
+            let _native_entry = crate::native_operation::refused();
             // SAFETY: `layoutSubviews` takes no arguments and returns nothing.
             let () = unsafe { msg_send![super(self), layoutSubviews] };
             if let Some(window) = self.owner() {
@@ -65,6 +66,7 @@ define_class!(
 
         #[unsafe(method(safeAreaInsetsDidChange))]
         fn safe_area_insets_did_change(&self) {
+            let _native_entry = crate::native_operation::refused();
             // SAFETY: as for `layoutSubviews`.
             let () = unsafe { msg_send![super(self), safeAreaInsetsDidChange] };
             if let Some(window) = self.owner() {
@@ -77,6 +79,7 @@ define_class!(
         // Layout also re-reads traits, which iPadOS 18 tracks on its own.
         #[unsafe(method(traitCollectionDidChange:))]
         fn trait_collection_did_change(&self, previous: Option<&UITraitCollection>) {
+            let _native_entry = crate::native_operation::refused();
             // SAFETY: the argument is the one UIKit passed in.
             let () = unsafe { msg_send![super(self), traitCollectionDidChange: previous] };
             if let Some(window) = self.owner() {
@@ -86,11 +89,13 @@ define_class!(
 
         #[unsafe(method(canBecomeFirstResponder))]
         fn can_become_first_responder(&self) -> bool {
+            let _native_entry = crate::native_operation::refused();
             true
         }
 
         #[unsafe(method(canPerformAction:withSender:))]
         fn can_perform_action(&self, action: Sel, sender: Option<&AnyObject>) -> bool {
+            let _native_entry = crate::native_operation::refused();
             if [sel!(copy:), sel!(cut:), sel!(paste:), sel!(selectAll:)].contains(&action) {
                 self.owner().is_some_and(|window| window.text_input.editing_enabled(action))
             } else {
@@ -101,6 +106,7 @@ define_class!(
 
         #[unsafe(method(resignFirstResponder))]
         fn resign_first_responder(&self) -> bool {
+            let _native_entry = crate::native_operation::refused();
             // SAFETY: same signature as UIResponder's method.
             let result: bool = unsafe { msg_send![super(self), resignFirstResponder] };
             if result && let Some(window) = self.owner() {
@@ -111,43 +117,49 @@ define_class!(
 
         #[unsafe(method(copy:))]
         fn copy(&self, sender: Option<&AnyObject>) {
-            if let Some(window) = self.owner() { window.text_input.perform_edit_action(sel!(copy:), sender); }
+            self.perform_native_edit_action(sel!(copy:), sender);
         }
         #[unsafe(method(cut:))]
         fn cut(&self, sender: Option<&AnyObject>) {
-            if let Some(window) = self.owner() { window.text_input.perform_edit_action(sel!(cut:), sender); }
+            self.perform_native_edit_action(sel!(cut:), sender);
         }
         #[unsafe(method(paste:))]
         fn paste(&self, sender: Option<&AnyObject>) {
-            if let Some(window) = self.owner() { window.text_input.perform_edit_action(sel!(paste:), sender); }
+            self.perform_native_edit_action(sel!(paste:), sender);
         }
         #[unsafe(method(selectAll:))]
         fn select_all(&self, sender: Option<&AnyObject>) {
-            if let Some(window) = self.owner() { window.text_input.perform_edit_action(sel!(selectAll:), sender); }
+            self.perform_native_edit_action(sel!(selectAll:), sender);
         }
 
         #[unsafe(method(touchesBegan:withEvent:))]
         fn touches_began(&self, touches: &NSSet<UITouch>, event: Option<&UIEvent>) {
+            let _native_entry = crate::native_operation::refused();
             self.touches(touches, event, TouchStage::Began);
         }
 
         #[unsafe(method(touchesMoved:withEvent:))]
         fn touches_moved(&self, touches: &NSSet<UITouch>, event: Option<&UIEvent>) {
+            let _native_entry = crate::native_operation::refused();
             self.touches(touches, event, TouchStage::Moved);
         }
 
         #[unsafe(method(touchesEnded:withEvent:))]
         fn touches_ended(&self, touches: &NSSet<UITouch>, event: Option<&UIEvent>) {
+            let _native_entry = crate::native_operation::refused();
             self.touches(touches, event, TouchStage::Ended);
         }
 
         #[unsafe(method(touchesCancelled:withEvent:))]
         fn touches_cancelled(&self, touches: &NSSet<UITouch>, event: Option<&UIEvent>) {
+            let _native_entry = crate::native_operation::refused();
             self.touches(touches, event, TouchStage::Cancelled);
         }
 
         #[unsafe(method(pressesBegan:withEvent:))]
         fn presses_began(&self, presses: &NSSet<UIPress>, event: Option<&UIPressesEvent>) {
+            let _native_entry = crate::native_operation::refused();
+            if let Some(window) = self.owner() { window.state.borrow_mut().native_hardware_observed = true; }
             match self.press_target() {
                 Some(target) => {
                     let _forwarding = Forwarding::new(&self.ivars().forwarding_presses);
@@ -164,6 +176,8 @@ define_class!(
 
         #[unsafe(method(pressesChanged:withEvent:))]
         fn presses_changed(&self, presses: &NSSet<UIPress>, event: Option<&UIPressesEvent>) {
+            let _native_entry = crate::native_operation::refused();
+            if let Some(window) = self.owner() { window.state.borrow_mut().native_hardware_observed = true; }
             match self.press_target() {
                 Some(target) => {
                     let _forwarding = Forwarding::new(&self.ivars().forwarding_presses);
@@ -179,6 +193,8 @@ define_class!(
 
         #[unsafe(method(pressesEnded:withEvent:))]
         fn presses_ended(&self, presses: &NSSet<UIPress>, event: Option<&UIPressesEvent>) {
+            let _native_entry = crate::native_operation::refused();
+            if let Some(window) = self.owner() { window.state.borrow_mut().native_hardware_observed = true; }
             match self.press_target() {
                 Some(target) => {
                     let _forwarding = Forwarding::new(&self.ivars().forwarding_presses);
@@ -194,6 +210,8 @@ define_class!(
 
         #[unsafe(method(pressesCancelled:withEvent:))]
         fn presses_cancelled(&self, presses: &NSSet<UIPress>, event: Option<&UIPressesEvent>) {
+            let _native_entry = crate::native_operation::refused();
+            if let Some(window) = self.owner() { window.state.borrow_mut().native_hardware_observed = true; }
             match self.press_target() {
                 Some(target) => {
                     let _forwarding = Forwarding::new(&self.ivars().forwarding_presses);
@@ -211,6 +229,7 @@ define_class!(
         // text input view does not perform it, so it reaches this view.
         #[unsafe(method(herdrMenuAction:))]
         fn menu_action(&self, sender: Option<&AnyObject>) {
+            let _native_entry = crate::native_operation::refused();
             let Some(performed) = Performed::new(sender) else {
                 return;
             };
@@ -225,6 +244,7 @@ define_class!(
 
         #[unsafe(method(validateCommand:))]
         fn validate_command(&self, command: &UICommand) {
+            let _native_entry = crate::native_operation::refused();
             // SAFETY: the argument is the command UIKit passed; UIResponder's
             // implementation returns nothing.
             let () = unsafe { msg_send![super(self), validateCommand: command] };
@@ -234,6 +254,7 @@ define_class!(
 
         #[unsafe(method(handleHover:))]
         fn handle_hover(&self, recognizer: &UIHoverGestureRecognizer) {
+            let _native_entry = crate::native_operation::refused();
             if let Some(window) = self.owner() {
                 window.handle_hover(recognizer);
             }
@@ -241,6 +262,7 @@ define_class!(
 
         #[unsafe(method(handleScroll:))]
         fn handle_scroll(&self, recognizer: &UIPanGestureRecognizer) {
+            let _native_entry = crate::native_operation::refused();
             if let Some(window) = self.owner() {
                 window.handle_scroll(recognizer);
             }
@@ -248,6 +270,7 @@ define_class!(
 
         #[unsafe(method(keyboardWillChangeFrame:))]
         fn keyboard_will_change_frame(&self, notification: &NSNotification) {
+            let _native_entry = crate::native_operation::refused();
             if let Some(window) = self.owner() {
                 window.keyboard_will_change_frame(notification);
             }
@@ -255,6 +278,7 @@ define_class!(
 
         #[unsafe(method(keyboardWillShow:))]
         fn keyboard_will_show(&self, notification: &NSNotification) {
+            let _native_entry = crate::native_operation::refused();
             if let Some(window) = self.owner() {
                 window.keyboard_visibility_changed(notification, KeyboardEvent::WillShow);
             }
@@ -262,6 +286,7 @@ define_class!(
 
         #[unsafe(method(keyboardDidShow:))]
         fn keyboard_did_show(&self, notification: &NSNotification) {
+            let _native_entry = crate::native_operation::refused();
             if let Some(window) = self.owner() {
                 window.keyboard_visibility_changed(notification, KeyboardEvent::DidShow);
             }
@@ -269,6 +294,7 @@ define_class!(
 
         #[unsafe(method(keyboardWillHide:))]
         fn keyboard_will_hide(&self, notification: &NSNotification) {
+            let _native_entry = crate::native_operation::refused();
             if let Some(window) = self.owner() {
                 window.keyboard_visibility_changed(notification, KeyboardEvent::WillHide);
             }
@@ -276,6 +302,7 @@ define_class!(
 
         #[unsafe(method(keyboardDidHide:))]
         fn keyboard_did_hide(&self, notification: &NSNotification) {
+            let _native_entry = crate::native_operation::refused();
             if let Some(window) = self.owner() {
                 window.keyboard_visibility_changed(notification, KeyboardEvent::DidHide);
             }
@@ -283,6 +310,7 @@ define_class!(
 
         #[unsafe(method(sceneWillEnterForeground:))]
         fn scene_will_enter_foreground(&self, _notification: &NSNotification) {
+            let _native_entry = crate::native_operation::refused();
             if let Some(window) = self.owner() {
                 window.scene_visibility_changed(true);
             }
@@ -290,6 +318,7 @@ define_class!(
 
         #[unsafe(method(sceneDidEnterBackground:))]
         fn scene_did_enter_background(&self, _notification: &NSNotification) {
+            let _native_entry = crate::native_operation::refused();
             if let Some(window) = self.owner() {
                 window.scene_visibility_changed(false);
             }
@@ -298,6 +327,16 @@ define_class!(
 );
 
 impl GpuiView {
+    fn perform_native_edit_action(&self, selector: Sel, sender: Option<&AnyObject>) {
+        let captured = objc2::Message::retain(self);
+        crate::native_operation::NativeOperation::edit(|operation| {
+            if let Some(window) = captured.owner() {
+                window
+                    .text_input
+                    .perform_edit_action(selector, sender, operation);
+            }
+        });
+    }
     pub(super) fn new(
         mtm: MainThreadMarker,
         window: Weak<Window>,

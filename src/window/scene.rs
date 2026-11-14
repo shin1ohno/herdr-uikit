@@ -295,9 +295,10 @@ pub(super) fn destroy(scene: &UIWindowScene, mtm: MainThreadMarker) {
 
 /// Closes a scene that is no longer wanted. The scene is
 /// still connecting, so it is asked to go on the next main-queue turn.
-fn destroy_unwanted(scene: &UIWindowScene, mtm: MainThreadMarker) {
+pub(super) fn destroy_unwanted(scene: &UIWindowScene, mtm: MainThreadMarker) {
     let scene = MainThreadBound::new(scene.retain(), mtm);
     DispatchQueue::main().exec_async(move || {
+        let _raw_destroy_entry = crate::native_operation::raw("scene-destroy");
         if let Some(mtm) = MainThreadMarker::new() {
             destroy(&scene.into_inner(mtm), mtm);
         }
@@ -320,10 +321,11 @@ fn scene_request_refused(id: RequestId, _mtm: MainThreadMarker) {
 /// say which thread calls the handler, so the window is reached on the next
 /// main-queue turn, which also puts it after GPUI has registered the window's
 /// callbacks if UIKit refuses while `IosWindow::open` is still running.
-fn new_scene_refused(id: RequestId) -> RcBlock<dyn Fn(NonNull<NSError>)> {
+pub(super) fn new_scene_refused(id: RequestId) -> RcBlock<dyn Fn(NonNull<NSError>)> {
     RcBlock::new(move |error: NonNull<NSError>| {
         log_refusal(error);
         DispatchQueue::main().exec_async(move || {
+            let _raw_refusal_entry = crate::native_operation::raw("scene-refusal");
             if let Some(mtm) = MainThreadMarker::new() {
                 scene_request_refused(id, mtm);
             }
@@ -396,7 +398,7 @@ pub(crate) fn with_observation_registration<R>(
     f: impl FnOnce(&crate::native_edit_observer::Registration) -> R,
 ) -> Result<R, crate::native_edit_observer::ObserverError> {
     let window = observation_window(handle)?;
-    Ok(f(window.text_input.observation_registration()))
+    Ok(window.text_input.with_observation_registration(f))
 }
 
 #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]

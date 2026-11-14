@@ -47,6 +47,7 @@ define_class!(
             request: &UIPointerRegionRequest,
             default_region: &UIPointerRegion,
         ) -> Option<Retained<UIPointerRegion>> {
+            let _native_entry = crate::native_operation::refused();
             self.region_for(interaction, request, default_region)
         }
 
@@ -56,6 +57,7 @@ define_class!(
             interaction: &UIPointerInteraction,
             _region: &UIPointerRegion,
         ) -> Option<Retained<UIPointerStyle>> {
+            let _native_entry = crate::native_operation::refused();
             self.style_for(interaction)
         }
     }

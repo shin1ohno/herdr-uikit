@@ -47,6 +47,7 @@ define_class!(
             _session: &UISceneSession,
             options: &UISceneConnectionOptions,
         ) {
+            let _native_entry = crate::native_operation::refused();
             let Some((window_scene, shared)) = hosted(scene) else {
                 return;
             };
@@ -71,6 +72,7 @@ define_class!(
 
         #[unsafe(method(sceneDidDisconnect:))]
         fn did_disconnect(&self, scene: &UIScene) {
+            let _native_entry = crate::native_operation::refused();
             let Some((window_scene, shared)) = hosted(scene) else {
                 return;
             };
@@ -83,6 +85,7 @@ define_class!(
 
         #[unsafe(method(sceneWillEnterForeground:))]
         fn will_enter_foreground(&self, scene: &UIScene) {
+            let _native_entry = crate::native_operation::refused();
             if let Some((_, shared)) = hosted(scene) {
                 shared.scene_changed(shared::scene_key(scene), Some(SceneState::Foreground));
             }
@@ -90,6 +93,7 @@ define_class!(
 
         #[unsafe(method(sceneDidBecomeActive:))]
         fn did_become_active(&self, scene: &UIScene) {
+            let _native_entry = crate::native_operation::refused();
             let Some((window_scene, shared)) = hosted(scene) else {
                 return;
             };
@@ -99,6 +103,7 @@ define_class!(
 
         #[unsafe(method(sceneWillResignActive:))]
         fn will_resign_active(&self, scene: &UIScene) {
+            let _native_entry = crate::native_operation::refused();
             let Some((window_scene, shared)) = hosted(scene) else {
                 return;
             };
@@ -108,6 +113,7 @@ define_class!(
 
         #[unsafe(method(sceneDidEnterBackground:))]
         fn did_enter_background(&self, scene: &UIScene) {
+            let _native_entry = crate::native_operation::refused();
             if let Some((_, shared)) = hosted(scene) {
                 shared.scene_changed(shared::scene_key(scene), Some(SceneState::Background));
             }
@@ -115,6 +121,7 @@ define_class!(
 
         #[unsafe(method(scene:openURLContexts:))]
         fn open_url_contexts(&self, scene: &UIScene, contexts: &NSSet<UIOpenURLContext>) {
+            let _native_entry = crate::native_operation::refused();
             if let Some((_, shared)) = hosted(scene) {
                 shared.deliver_urls(urls(contexts));
             }
@@ -130,6 +137,7 @@ define_class!(
             scene: &UIWindowScene,
             _previous: &UIWindowSceneGeometry,
         ) {
+            let _native_entry = crate::native_operation::refused();
             window::scene_geometry_changed(scene, self.mtm());
             shared::later(|shared| {
                 shared.displays_changed.call(|callback| callback());

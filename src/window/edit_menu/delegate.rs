@@ -36,6 +36,7 @@ define_class!(
             configuration: &UIEditMenuConfiguration,
             suggested: &NSArray<UIMenuElement>,
         ) -> Option<Retained<UIMenu>> {
+            let _native_entry = crate::native_operation::refused();
             Some(self.menu_for(configuration, suggested))
         }
     }

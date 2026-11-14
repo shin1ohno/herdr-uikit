@@ -26,6 +26,7 @@
 //! | `direction` | The app's layout direction on the views UIKit sees |
 //! | `platform_window` | `gpui::PlatformWindow` over the above |
 
+mod client_lifetime;
 mod convert;
 mod direction;
 pub(crate) mod edit_menu;
@@ -35,9 +36,13 @@ mod input_target;
 mod keyboard;
 mod layout;
 mod lifecycle;
+mod native_retirement_request;
 mod platform_window;
 mod pointer;
 mod requests;
+mod retirement;
+#[cfg(feature = "test-support")]
+pub mod retirement_probe;
 mod scene;
 mod state;
 mod text_input;
@@ -58,12 +63,17 @@ use objc2_ui_kit::UIApplication;
 
 pub(crate) use self::direction::layout_direction_changed;
 pub(crate) use self::error::Error;
+pub(crate) use self::native_retirement_request::{
+    complete_native_retirement, interrupt_native_retirement, legacy_interrupt_native_retirement,
+    native_input_origin, request_native_edit_retirement,
+};
 pub(crate) use self::pointer::set_cursor_style;
+pub(crate) use self::retirement::{retire_text_input_session, text_input_session_state};
 pub(crate) use self::scene::{
     active_window, scene_activation_changed, scene_connected, scene_disconnected,
     scene_geometry_changed, set_native_edit_availability, window_control_insets, window_stack,
 };
-use self::state::Window;
+pub(crate) use self::state::Window;
 pub(crate) use self::text_input::{named_key_char, us_shifted};
 use crate::renderer;
 

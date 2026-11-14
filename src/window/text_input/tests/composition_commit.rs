@@ -6,9 +6,9 @@ use gpui::{
 use std::ops::Range;
 
 #[derive(Default)]
-struct Terminal {
-    marked: String,
-    commits: Vec<String>,
+pub(super) struct Terminal {
+    pub(super) marked: String,
+    pub(super) commits: Vec<String>,
 }
 impl Render for Terminal {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
@@ -23,9 +23,10 @@ impl EntityInputHandler for Terminal {
         _: &mut Window,
         _: &mut Context<Self>,
     ) -> Option<String> {
-        assert_eq!(range, 0..self.marked.encode_utf16().count());
-        *adjusted = Some(range);
-        Some(self.marked.clone())
+        let units: Vec<_> = self.marked.encode_utf16().collect();
+        let range = range.start.min(units.len())..range.end.min(units.len());
+        *adjusted = Some(range.clone());
+        String::from_utf16(units.get(range)?).ok()
     }
     fn selected_text_range(
         &mut self,
