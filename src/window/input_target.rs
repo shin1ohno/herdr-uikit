@@ -103,11 +103,23 @@ impl InputTarget {
     /// Sends `input` through the window's event callback. Returns whether
     /// GPUI handled it (`DispatchEventResult::propagate == false`).
     pub(crate) fn dispatch(&self, input: PlatformInput) -> bool {
+        self.dispatch_via(input, |input| self.dispatch_inner(input))
+    }
+    /// The generic ingress prologue; `deliver` stands in for the window so the
+    /// observation scope can be tested without a live window.
+    fn dispatch_via(
+        &self,
+        input: PlatformInput,
+        deliver: impl FnOnce(PlatformInput) -> bool,
+    ) -> bool {
         let _entry = crate::native_operation::refused();
         if matches!(&input, PlatformInput::KeyDown(_) | PlatformInput::KeyUp(_)) {
             self.mark_hardware_observed();
         }
-        self.dispatch_inner(input)
+        // Generic ingress (including synthetic keys) never inherits a native key.
+        #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+        let _observation = crate::native_edit_observer::KeyScope::enter(None);
+        deliver(input)
     }
     /// The native Edit producer without observation; the observed build uses
     /// `dispatch_native_edit`.
@@ -358,3 +370,6 @@ impl Window {
         Some(result)
     }
 }
+
+#[cfg(all(test, target_os = "ios", target_abi = "sim", feature = "test-support"))]
+mod key_scope_tests;

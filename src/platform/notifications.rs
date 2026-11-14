@@ -158,6 +158,7 @@ pub fn post_notification_when(
         let notification = notification.clone();
         let ticket = ticket.clone();
         dispatch2::DispatchQueue::main().exec_async(move || {
+            let _raw_entry = crate::native_operation::raw("notification-callback");
             if !ticket.current() {
                 PRESENTATIONS.finish(&notification.tag, &ticket);
                 POSTING.store(false, Ordering::Release);
@@ -187,6 +188,7 @@ pub fn post_notification_when(
                         let tag = notification.tag.to_string();
                         let ticket = ticket.clone();
                         dispatch2::DispatchQueue::main().exec_async(move || {
+                            let _raw_entry = crate::native_operation::raw("notification-callback");
                             if failed {
                                 RESPONSES.forget(&tag, &ticket);
                             }

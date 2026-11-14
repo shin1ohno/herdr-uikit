@@ -104,6 +104,8 @@ fn complete() {
 }
 
 #[cfg(test)]
+mod entry_guard_tests;
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 pub(crate) use state::loan_count_for_test;
