@@ -16,6 +16,9 @@ use super::view_class::GPUITextInputView;
 impl GPUITextInputView {
     /// Queues `herdrFlushInputState:` once per run loop turn.
     pub(super) fn schedule_flush(&self) {
+        if !self.ivars().target.client.live() {
+            return;
+        }
         if self.ivars().flush_scheduled.replace(true) {
             return;
         }

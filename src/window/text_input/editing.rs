@@ -14,9 +14,23 @@ use super::utf16;
 use super::view_class::GPUITextInputView;
 
 impl GPUITextInputView {
+    fn trace_composition_callback(&self, operation: &'static str) {
+        if std::env::var_os("HERDR_IOS_COMPOSITION_DIAGNOSTICS").is_some() {
+            let client = &self.ivars().target.client;
+            tracing::debug!(
+                client = client.identity,
+                retired = !client.live(),
+                operation,
+                first_responder = self.isFirstResponder(),
+                "native text callback origin"
+            );
+        }
+    }
+
     /// `insertText:` from the software keyboard, a hardware key GPUI did not
     /// handle, or an IME committing its composition.
     pub(super) fn insert_text(&self, text: &str) {
+        self.trace_composition_callback("insert_text");
         if keymap::is_lone_control(text) {
             self.insert_control(text);
             return;
@@ -27,6 +41,7 @@ impl GPUITextInputView {
 
     /// Dictation's text is always text, even a single line break.
     pub(super) fn insert_dictation(&self, text: &str) {
+        self.trace_composition_callback("insert_dictation");
         self.with_handler(|handler| handler.replace_text_in_range(None, text));
         self.refresh_snapshot();
     }
@@ -59,6 +74,7 @@ impl GPUITextInputView {
     /// delete; otherwise backspace goes to GPUI as a key, so a terminal sends
     /// it to the program, and only an unhandled one deletes in the handler.
     pub(super) fn delete_backward(&self) {
+        self.trace_composition_callback("delete_backward");
         // A hardware backspace GPUI already declined.
         if self.ivars().keys.borrow().is_forwarded("backspace") {
             self.delete_in_handler();
@@ -104,6 +120,7 @@ impl GPUITextInputView {
     /// marked text, or the selection when there is none. `selected` is
     /// relative to the new marked text, as GPUI expects.
     pub(super) fn set_marked_text(&self, text: &str, selected: Option<Range<usize>>) {
+        self.trace_composition_callback("set_marked_text");
         let selected = selected.map(|range| utf16::clamp(range, utf16::len(text)));
         self.with_handler(|handler| {
             if !text.is_empty() {
@@ -119,6 +136,7 @@ impl GPUITextInputView {
     }
 
     pub(super) fn unmark_text(&self) {
+        self.trace_composition_callback("unmark_text");
         self.with_handler(unmark_text);
         self.refresh_snapshot();
     }
@@ -126,12 +144,14 @@ impl GPUITextInputView {
     /// `replaceRange:withText:`, used by autocorrection, text replacement,
     /// and the keyboard's suggestions.
     pub(super) fn replace_range(&self, range: Range<usize>, text: &str) {
+        self.trace_composition_callback("replace_range");
         self.with_handler(|handler| handler.replace_text_in_range(Some(range), text));
         self.refresh_snapshot();
     }
 
     /// `setSelectedTextRange:`, from UIKit's own caret movement.
     pub(super) fn select_range(&self, range: Range<usize>) {
+        self.trace_composition_callback("select_range");
         self.with_handler(|handler| handler.set_selected_text_range(range));
         self.refresh_snapshot();
     }

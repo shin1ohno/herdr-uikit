@@ -44,3 +44,9 @@ fn expected(key: &str, key_char: Option<&str>, modifiers: Modifiers) -> Option<K
 
 #[cfg(feature = "test-support")]
 mod composition_selection;
+
+#[cfg(feature = "test-support")]
+mod retirement;
+
+#[cfg(feature = "test-support")]
+pub(super) mod native_queries;

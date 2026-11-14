@@ -85,10 +85,22 @@ impl GPUITextInputView {
         }
     }
 
+    pub(super) fn perform_native_edit_action(
+        &self,
+        selector: Sel,
+        sender: Option<&objc2::runtime::AnyObject>,
+    ) {
+        let captured = objc2::Message::retain(self);
+        crate::native_operation::NativeOperation::edit(|operation| {
+            captured.perform_edit_action(selector, sender, operation)
+        });
+    }
+
     pub(super) fn perform_edit_action(
         &self,
         selector: Sel,
         sender: Option<&objc2::runtime::AnyObject>,
+        operation: &crate::native_operation::NativeOperation,
     ) {
         #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
         let _outside_key_scope = observer::KeyScope::enter(None);
@@ -105,6 +117,9 @@ impl GPUITextInputView {
                 None => observer::Action::Unknown,
             },
         );
+        if crate::native_operation::hardware_event() {
+            self.ivars().target.mark_hardware_observed();
+        }
         let decision = self.edit_decision(selector);
         let checked = dispatch_checked_selector_inner(
             selector,
@@ -116,11 +131,11 @@ impl GPUITextInputView {
                 {
                     self.ivars()
                         .target
-                        .dispatch_native_edit(input, invocation.key())
+                        .dispatch_native_edit(operation, input, invocation.key())
                 }
                 #[cfg(not(all(target_os = "ios", target_abi = "sim", feature = "test-support")))]
                 {
-                    self.ivars().target.dispatch(input)
+                    self.ivars().target.dispatch_edit(operation, input)
                 }
             },
             || {
@@ -132,15 +147,19 @@ impl GPUITextInputView {
                 }
                 // SAFETY: as above; this is an explicit user paste action.
                 if let Some(text) = unsafe { pasteboard.string() } {
-                    self.with_handler(|handler| {
-                        handler.replace_text_in_range(None, &text.to_string());
-                    });
+                    self.ivars().target.with_edit_handler(
+                        operation,
+                        crate::native_operation::Phase::PasteFallback,
+                        |handler| {
+                            handler.replace_text_in_range(None, &text.to_string());
+                        },
+                    );
                 }
             },
             #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
             invocation.key(),
         );
-        self.refresh_snapshot();
+        self.refresh_edit_snapshot(operation);
         #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
         match checked {
             CheckedDispatch::RejectedDelivery => {

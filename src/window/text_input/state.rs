@@ -82,7 +82,7 @@ impl Acquire {
     }
 }
 
-pub(super) struct Ivars {
+pub(in crate::window) struct Ivars {
     #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
     pub(super) observation: crate::native_edit_observer::Registration,
     pub(super) target: InputTarget,

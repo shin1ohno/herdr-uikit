@@ -158,6 +158,7 @@ pub fn post_notification_when(
         let notification = notification.clone();
         let ticket = ticket.clone();
         dispatch2::DispatchQueue::main().exec_async(move || {
+            let _raw_entry = crate::native_operation::raw("notification-callback");
             if !ticket.current() {
                 PRESENTATIONS.finish(&notification.tag, &ticket);
                 POSTING.store(false, Ordering::Release);
@@ -187,6 +188,7 @@ pub fn post_notification_when(
                         let tag = notification.tag.to_string();
                         let ticket = ticket.clone();
                         dispatch2::DispatchQueue::main().exec_async(move || {
+                            let _raw_entry = crate::native_operation::raw("notification-callback");
                             if failed {
                                 RESPONSES.forget(&tag, &ticket);
                             }
@@ -257,6 +259,7 @@ define_class!(
             notification: &UNNotification,
             completion: &DynBlock<dyn Fn(UNNotificationPresentationOptions)>,
         ) {
+            let _native_entry = crate::native_operation::refused();
             let tag = notification.request().identifier().to_string();
             // The final decision uses the retained context, not add-request success.
             // Unknown, removed, disconnected or invalidated tags never present.
@@ -270,6 +273,7 @@ define_class!(
             response: &UNNotificationResponse,
             completion: &DynBlock<dyn Fn()>,
         ) {
+            let _native_entry = crate::native_operation::refused();
             let tag = response.notification().request().identifier().to_string();
             let action = response.actionIdentifier().to_string();
             if tag.len() <= 128 && action.len() <= 128 {

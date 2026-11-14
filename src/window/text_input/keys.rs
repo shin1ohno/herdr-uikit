@@ -159,6 +159,9 @@ impl KeyFacts {
 
 impl GPUITextInputView {
     pub(super) fn presses_began(&self, presses: &NSSet<UIPress>, event: Option<&UIPressesEvent>) {
+        if !self.ivars().target.client.live() {
+            return;
+        }
         let mtm = self.mtm();
         for press in presses.iter() {
             let Some(key) = press.key(mtm) else {
@@ -221,6 +224,9 @@ impl GPUITextInputView {
         event: Option<&UIPressesEvent>,
         cancelled: bool,
     ) {
+        if !self.ivars().target.client.live() {
+            return;
+        }
         let phase = if cancelled {
             Phase::Cancelled
         } else {
@@ -299,6 +305,13 @@ impl GPUITextInputView {
     /// the timer would never stop. A repeat UIKit performs reaches GPUI as a
     /// held key instead.
     pub(super) fn menu_shortcut(&self, shortcut: &Shortcut) -> bool {
+        let _entry = crate::native_operation::refused();
+        if !matches!(application::event_source(), EventSource::Other) {
+            self.ivars().target.mark_hardware_observed();
+        }
+        if !self.ivars().target.client.live() {
+            return false;
+        }
         let source = application::event_source();
         let keystroke = &shortcut.keystroke;
         if keystroke.key == "escape" {
@@ -396,6 +409,10 @@ impl GPUITextInputView {
 
     /// The repeat timer: one held `KeyDown`, then the next tick.
     pub(super) fn repeat_key(&self) {
+        self.ivars().target.mark_hardware_observed();
+        if !self.ivars().target.client.live() {
+            return;
+        }
         let keystroke = self
             .ivars()
             .keys

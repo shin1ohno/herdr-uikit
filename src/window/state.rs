@@ -33,7 +33,7 @@ use super::{
 };
 use crate::{display_link::DisplayLink, renderer::Renderer};
 
-pub(super) struct Window {
+pub(crate) struct Window {
     pub(super) callbacks: Callbacks,
     pub(super) controller: Retained<UIViewController>,
     /// `None` only until `open` installs it, and again after close.
@@ -53,6 +53,9 @@ pub(super) struct Window {
 }
 
 pub(super) struct State {
+    pub(super) native_request_serial: u64,
+    pub(super) native_request_pending: Option<u64>,
+    pub(super) native_hardware_observed: bool,
     pub(super) appearance: WindowAppearance,
     pub(super) background_appearance: WindowBackgroundAppearance,
     /// The window's frame in its scene, in points; the size is the content
@@ -101,6 +104,9 @@ pub(super) struct State {
 impl State {
     pub(super) fn new(bounds: Bounds<Pixels>, scale_factor: f32, title: String) -> Self {
         Self {
+            native_request_serial: 0,
+            native_request_pending: None,
+            native_hardware_observed: false,
             appearance: WindowAppearance::default(),
             background_appearance: WindowBackgroundAppearance::Opaque,
             bounds,
@@ -165,11 +171,10 @@ pub(super) struct Callbacks {
 /// Runs the callback in `slot`, if GPUI registered one, with no borrow held.
 /// A callback GPUI registered while this one ran replaces it.
 pub(super) fn call<F: ?Sized, R>(slot: &Slot<F>, f: impl FnOnce(&mut F) -> R) -> Option<R> {
+    let _loan = crate::native_operation::loan();
     let mut callback = slot.borrow_mut().take()?;
-    let result = {
-        let _in_gpui = crate::gpui_call::InGpui::enter();
-        f(&mut callback)
-    };
+    let _in_gpui = crate::gpui_call::InGpui::enter();
+    let result = f(&mut callback);
     slot.borrow_mut().get_or_insert(callback);
     Some(result)
 }

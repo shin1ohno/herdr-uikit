@@ -259,6 +259,7 @@ impl Window {
     fn run_close_callback(&self) {
         let close = self.callbacks.close.borrow_mut().take();
         if let Some(close) = close {
+            let _in_gpui = crate::gpui_call::InGpui::enter();
             close();
         }
     }
@@ -281,7 +282,8 @@ impl Window {
             state.ui_window.take()
         };
         #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
-        self.text_input.observation_registration().remove();
+        self.text_input
+            .with_observation_registration(|registration| registration.remove());
         pointer::clear_window(self);
         self.pointer.detach();
         self.stop_display_link();

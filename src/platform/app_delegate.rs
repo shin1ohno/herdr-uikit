@@ -46,6 +46,7 @@ define_class!(
     impl AppDelegate {
         #[unsafe(method(buildMenuWithBuilder:))]
         fn build_menu(&self, builder: &ProtocolObject<dyn UIMenuBuilder>) {
+            let _native_entry = crate::native_operation::refused();
             // SAFETY: the argument is the builder UIKit passed for this
             // selector; UIResponder's implementation returns nothing.
             let () = unsafe { msg_send![super(self), buildMenuWithBuilder: builder] };
@@ -61,6 +62,7 @@ define_class!(
         // so the command can only dispatch its action.
         #[unsafe(method(herdrMenuAction:))]
         fn menu_action(&self, sender: Option<&AnyObject>) {
+            let _native_entry = crate::native_operation::refused();
             if let Some(performed) = Performed::new(sender) {
                 performed.dispatch_action();
             }
@@ -68,6 +70,7 @@ define_class!(
 
         #[unsafe(method(validateCommand:))]
         fn validate_command(&self, command: &UICommand) {
+            let _native_entry = crate::native_operation::refused();
             // SAFETY: as in `buildMenuWithBuilder:`, for the command.
             let () = unsafe { msg_send![super(self), validateCommand: command] };
             menus::validate(command);
@@ -75,6 +78,7 @@ define_class!(
 
         #[unsafe(method(canPerformAction:withSender:))]
         fn can_perform_action(&self, action: Sel, sender: Option<&AnyObject>) -> bool {
+            let _native_entry = crate::native_operation::refused();
             // define_class! converts the returned value, so this is one
             // expression rather than an early `return`.
             action == menus::action_selector()
@@ -96,6 +100,7 @@ define_class!(
             _application: &UIApplication,
             _options: Option<&NSDictionary<UIApplicationLaunchOptionsKey, AnyObject>>,
         ) -> bool {
+            let _native_entry = crate::native_operation::refused();
             // GPUI launches when the first scene connects, so it has a scene
             // to open its first window in.
             true
@@ -108,11 +113,13 @@ define_class!(
             session: &UISceneSession,
             _options: &UISceneConnectionOptions,
         ) -> Retained<UISceneConfiguration> {
+            let _native_entry = crate::native_operation::refused();
             scene_configuration(session, self.mtm())
         }
 
         #[unsafe(method(applicationDidReceiveMemoryWarning:))]
         fn did_receive_memory_warning(&self, _application: &UIApplication) {
+            let _native_entry = crate::native_operation::refused();
             shared::later(|shared| {
                 shared.memory_warning.call(|callback| callback());
             });
@@ -120,6 +127,7 @@ define_class!(
 
         #[unsafe(method(applicationWillTerminate:))]
         fn will_terminate(&self, _application: &UIApplication) {
+            let _native_entry = crate::native_operation::refused();
             // The process ends when this returns, so GPUI shuts down now
             // rather than from the main queue.
             if let Some(shared) = shared::current() {
