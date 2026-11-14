@@ -71,6 +71,35 @@ impl InputTarget {
         })
     }
 
+    pub(super) fn menu_switch(
+        &self,
+    ) -> Option<super::edit_menu::responder_switch::ResponderSwitch<Rc<Window>>> {
+        Some(super::edit_menu::responder_switch::ResponderSwitch::new(
+            self.window.upgrade()?,
+        ))
+    }
+    #[cfg(target_abi = "sim")]
+    pub(super) fn menu_restart(&self) {
+        if let Some(window) = self.window.upgrade() {
+            window.edit_menu.observation.borrow_mut().restart = true;
+        }
+    }
+    pub(super) fn menu_resigned(&self) {
+        if let Some(window) = self.window.upgrade() {
+            window.edit_menu.resigned();
+        }
+    }
+    pub(super) fn menu_delivery(
+        &self,
+        sender: Option<&objc2::runtime::AnyObject>,
+    ) -> super::edit_menu::state::Delivery {
+        let sender = super::edit_menu::classify(sender);
+        self.window
+            .upgrade()
+            .map_or(super::edit_menu::state::Delivery::Reject, |w| {
+                w.edit_menu.state.borrow().delivery(sender)
+            })
+    }
     /// Sends `input` through the window's event callback. Returns whether
     /// GPUI handled it (`DispatchEventResult::propagate == false`).
     pub(crate) fn dispatch(&self, input: PlatformInput) -> bool {
@@ -80,6 +109,9 @@ impl InputTarget {
         }
         self.dispatch_inner(input)
     }
+    /// The native Edit producer without observation; the observed build uses
+    /// `dispatch_native_edit`.
+    #[cfg(not(all(target_os = "ios", target_abi = "sim", feature = "test-support")))]
     pub(crate) fn dispatch_edit(
         &self,
         op: &crate::native_operation::NativeOperation,
@@ -97,6 +129,27 @@ impl InputTarget {
         };
         self.live_window()
             .is_some_and(|window| window.dispatch_inner(input))
+    }
+
+    /// Only the canonical native edit producer supplies an observation key.
+    #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+    pub(crate) fn dispatch_native_edit(
+        &self,
+        op: &crate::native_operation::NativeOperation,
+        input: PlatformInput,
+        key: Option<crate::native_edit_observer::ObservationKey>,
+    ) -> bool {
+        op.phase(
+            self.origin(),
+            crate::native_operation::Phase::EditDispatch,
+            || {
+                let Some(_callback) = self.client.enter() else {
+                    return false;
+                };
+                self.live_window()
+                    .is_some_and(|window| window.dispatch_native_edit(input, key))
+            },
+        )
     }
 
     /// Runs `f` with the focused element's input handler, if GPUI has
@@ -237,8 +290,28 @@ impl Window {
         if matches!(&input, PlatformInput::KeyDown(_) | PlatformInput::KeyUp(_)) {
             self.state.borrow_mut().native_hardware_observed = true;
         }
+        // Generic ingress (including synthetic keys) never inherits a native key.
+        #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+        let _observation = crate::native_edit_observer::KeyScope::enter(None);
         self.dispatch_inner(input)
     }
+
+    #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+    fn dispatch_native_edit(
+        &self,
+        input: PlatformInput,
+        key: Option<crate::native_edit_observer::ObservationKey>,
+    ) -> bool {
+        let key = if matches!(&input, PlatformInput::KeyDown(_) | PlatformInput::KeyUp(_)) {
+            key
+        } else {
+            None
+        };
+        let _observation = crate::native_edit_observer::KeyScope::enter(key);
+        self.dispatch_inner(input)
+    }
+
+    // The two ingress methods establish provenance before reaching callbacks.
     fn dispatch_inner(&self, input: PlatformInput) -> bool {
         {
             let mut state = self.state.borrow_mut();

@@ -37,6 +37,9 @@ mod layout_direction;
 mod menu;
 mod native_edit_action;
 mod native_edit_availability;
+mod native_edit_menu;
+#[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+pub mod native_edit_observer;
 mod native_operation;
 mod native_retirement_request;
 mod platform;
@@ -52,6 +55,11 @@ pub use error::{Error, Result};
 pub use layout_direction::{LayoutDirection, layout_direction, set_layout_direction};
 pub use native_edit_action::{NativeEditAction, native_edit_action};
 pub use native_edit_availability::{NativeEditAvailability, set_native_edit_availability};
+pub use native_edit_menu::{
+    EDIT_MENU_IDENTIFIER_PREFIX, EDIT_MENU_PROPERTY_KEY, NativeEditMenuStatus, NativeEditMenuToken,
+    RevokeReason, dismiss_native_edit_menu, native_edit_menu_status, native_edit_menu_token,
+    present_native_edit_menu,
+};
 pub use native_retirement_request::{
     NativeInputOrigin, NativeRetirementCancellation, NativeRetirementInterruption,
     NativeRetirementOutcome, NativeRetirementRequest, NativeRetirementRequestError,
@@ -59,6 +67,13 @@ pub use native_retirement_request::{
     native_input_origin, request_native_edit_retirement,
 };
 pub use platform::IosPlatform;
+#[cfg(feature = "test-support")]
+pub use platform::notifications::NotificationResponseFixture;
+pub use platform::notifications::{
+    Authorization, NotificationError, NotificationResult, notification_authorization,
+    post_notification, post_notification_when, remove_notifications,
+    request_notification_authorization,
+};
 pub use text_input_retirement::{
     RetiredTextInputSession, TextInputRetirement, TextInputRetirementError,
     TextInputRetirementStatus, TextInputSessionState, retire_text_input_session,
@@ -74,3 +89,15 @@ pub use window_controls::window_control_insets;
 pub fn application() -> gpui::Application {
     gpui::Application::with_platform(std::rc::Rc::new(IosPlatform::new()))
 }
+
+/// Simulator contract runner: called from a harness-free main-thread test binary.
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub fn test_native_edit_menu_contract() {
+    window::edit_menu::tests::run();
+}
+
+#[cfg(target_abi = "sim")]
+pub use native_edit_menu::{
+    NativeEditMenuSwitchObservation, take_native_edit_menu_switch_observations,
+};

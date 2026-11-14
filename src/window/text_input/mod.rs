@@ -24,7 +24,7 @@
 //! its state, which needs the input handler GPUI is holding at that moment.
 
 mod accessibility;
-mod actions;
+pub(super) mod actions;
 mod editing;
 mod geometry;
 mod keymap;
@@ -129,10 +129,24 @@ impl TextInputView {
     pub(super) fn perform_edit_action(
         &self,
         selector: Sel,
+        sender: Option<&objc2::runtime::AnyObject>,
         operation: &crate::native_operation::NativeOperation,
     ) {
         let captured = self.current();
-        captured.perform_edit_action(selector, operation);
+        #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+        let _origin = crate::native_edit_observer::DrawingScope::enter();
+        captured.perform_edit_action(selector, sender, operation);
+    }
+
+    /// Runs `f` with the current view's observation registration. A retired
+    /// view takes its registration with it, so the successor starts unregistered.
+    #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+    pub(crate) fn with_observation_registration<R>(
+        &self,
+        f: impl FnOnce(&crate::native_edit_observer::Registration) -> R,
+    ) -> R {
+        let current = self.current();
+        f(&current.ivars().observation)
     }
 
     pub(super) fn validate_edit_command(&self, command: &objc2_ui_kit::UICommand) {
@@ -161,10 +175,17 @@ impl TextInputView {
 
     /// Marks an intentional native resignation before UIKit can synchronously
     /// deliver its hide notifications or responder callback.
-    pub(super) fn resign(&self, reason: ResignReason) {
-        if self.current().isFirstResponder() {
-            self.current().ivars().target.expect_keyboard_hide(reason);
-            self.current().resignFirstResponder();
+    pub(super) fn resign(
+        &self,
+        reason: ResignReason,
+        switch: &super::edit_menu::responder_switch::ResponderSwitch<
+            impl super::edit_menu::responder_switch::SwitchOwner,
+        >,
+    ) {
+        let current = self.current();
+        if current.isFirstResponder() {
+            current.ivars().target.expect_keyboard_hide(reason);
+            switch.resign(&**current);
         }
     }
 

@@ -104,21 +104,32 @@ define_class!(
             }
         }
 
+        #[unsafe(method(resignFirstResponder))]
+        fn resign_first_responder(&self) -> bool {
+            let _native_entry = crate::native_operation::refused();
+            // SAFETY: same signature as UIResponder's method.
+            let result: bool = unsafe { msg_send![super(self), resignFirstResponder] };
+            if result && let Some(window) = self.owner() {
+                window.edit_menu.resigned();
+            }
+            result
+        }
+
         #[unsafe(method(copy:))]
-        fn copy(&self, _: Option<&AnyObject>) {
-            self.perform_native_edit_action(sel!(copy:));
+        fn copy(&self, sender: Option<&AnyObject>) {
+            self.perform_native_edit_action(sel!(copy:), sender);
         }
         #[unsafe(method(cut:))]
-        fn cut(&self, _: Option<&AnyObject>) {
-            self.perform_native_edit_action(sel!(cut:));
+        fn cut(&self, sender: Option<&AnyObject>) {
+            self.perform_native_edit_action(sel!(cut:), sender);
         }
         #[unsafe(method(paste:))]
-        fn paste(&self, _: Option<&AnyObject>) {
-            self.perform_native_edit_action(sel!(paste:));
+        fn paste(&self, sender: Option<&AnyObject>) {
+            self.perform_native_edit_action(sel!(paste:), sender);
         }
         #[unsafe(method(selectAll:))]
-        fn select_all(&self, _: Option<&AnyObject>) {
-            self.perform_native_edit_action(sel!(selectAll:));
+        fn select_all(&self, sender: Option<&AnyObject>) {
+            self.perform_native_edit_action(sel!(selectAll:), sender);
         }
 
         #[unsafe(method(touchesBegan:withEvent:))]
@@ -316,11 +327,13 @@ define_class!(
 );
 
 impl GpuiView {
-    fn perform_native_edit_action(&self, selector: Sel) {
+    fn perform_native_edit_action(&self, selector: Sel, sender: Option<&AnyObject>) {
         let captured = objc2::Message::retain(self);
         crate::native_operation::NativeOperation::edit(|operation| {
             if let Some(window) = captured.owner() {
-                window.text_input.perform_edit_action(selector, operation);
+                window
+                    .text_input
+                    .perform_edit_action(selector, sender, operation);
             }
         });
     }

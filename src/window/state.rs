@@ -45,6 +45,7 @@ pub(crate) struct Window {
     pub(super) metal_layer: Option<Retained<CALayer>>,
     pub(super) mtm: MainThreadMarker,
     pub(super) pointer: Pointer,
+    pub(super) edit_menu: super::edit_menu::EditMenu,
     pub(super) renderer: RefCell<Renderer>,
     pub(super) state: RefCell<State>,
     pub(super) text_input: TextInputView,

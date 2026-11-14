@@ -29,6 +29,7 @@
 mod client_lifetime;
 mod convert;
 mod direction;
+pub(crate) mod edit_menu;
 mod error;
 mod frame;
 mod input_target;
@@ -128,3 +129,6 @@ impl Drop for IosWindow {
         self.window.close();
     }
 }
+
+#[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+pub(crate) use scene::{invoke_observation_selector, with_observation_registration};
