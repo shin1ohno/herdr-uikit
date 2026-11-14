@@ -25,6 +25,17 @@ pub(crate) struct InputTarget {
 }
 
 impl InputTarget {
+    pub(crate) fn origin(&self) -> crate::NativeInputOrigin {
+        crate::NativeInputOrigin {
+            window: self.window.clone(),
+            client: self.client.identity,
+        }
+    }
+    pub(crate) fn mark_hardware_observed(&self) {
+        if let Some(window) = self.window.upgrade() {
+            window.state.borrow_mut().native_hardware_observed = true;
+        }
+    }
     pub(super) fn new(window: Weak<Window>) -> Self {
         Self {
             window,
@@ -65,16 +76,99 @@ impl InputTarget {
         })
     }
 
+    pub(super) fn menu_switch(
+        &self,
+    ) -> Option<super::edit_menu::responder_switch::ResponderSwitch<Rc<Window>>> {
+        Some(super::edit_menu::responder_switch::ResponderSwitch::new(
+            self.window.upgrade()?,
+        ))
+    }
+    #[cfg(target_abi = "sim")]
+    pub(super) fn menu_restart(&self) {
+        if let Some(window) = self.window.upgrade() {
+            window.edit_menu.observation.borrow_mut().restart = true;
+        }
+    }
+    pub(super) fn menu_resigned(&self) {
+        if let Some(window) = self.window.upgrade() {
+            window.edit_menu.resigned();
+        }
+    }
+    pub(super) fn menu_delivery(
+        &self,
+        sender: Option<&objc2::runtime::AnyObject>,
+    ) -> super::edit_menu::state::Delivery {
+        let sender = super::edit_menu::classify(sender);
+        self.window
+            .upgrade()
+            .map_or(super::edit_menu::state::Delivery::Reject, |w| {
+                w.edit_menu.state.borrow().delivery(sender)
+            })
+    }
     /// Sends `input` through the window's event callback. Returns whether
     /// GPUI handled it (`DispatchEventResult::propagate == false`).
     pub(crate) fn dispatch(&self, input: PlatformInput) -> bool {
+        self.dispatch_via(input, |input| self.dispatch_inner(input))
+    }
+    /// The generic ingress prologue; `deliver` stands in for the window so the
+    /// observation scope can be tested without a live window.
+    fn dispatch_via(
+        &self,
+        input: PlatformInput,
+        deliver: impl FnOnce(PlatformInput) -> bool,
+    ) -> bool {
+        let _entry = crate::native_operation::refused();
+        if matches!(&input, PlatformInput::KeyDown(_) | PlatformInput::KeyUp(_)) {
+            self.mark_hardware_observed();
+        }
+        // Generic ingress (including synthetic keys) never inherits a native key.
+        #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+        let _observation = crate::native_edit_observer::KeyScope::enter(None);
+        deliver(input)
+    }
+    /// The native Edit producer without observation; the observed build uses
+    /// `dispatch_native_edit`.
+    #[cfg(not(all(target_os = "ios", target_abi = "sim", feature = "test-support")))]
+    pub(crate) fn dispatch_edit(
+        &self,
+        op: &crate::native_operation::NativeOperation,
+        input: PlatformInput,
+    ) -> bool {
+        op.phase(
+            self.origin(),
+            crate::native_operation::Phase::EditDispatch,
+            || self.dispatch_inner(input),
+        )
+    }
+    fn dispatch_inner(&self, input: PlatformInput) -> bool {
         let Some(_callback) = self.client.enter() else {
             return false;
         };
         #[cfg(feature = "test-support")]
         let _depth = super::retirement_probe::NativeCutCounter::DispatchDepth.scope();
         self.live_window()
-            .is_some_and(|window| window.dispatch(input))
+            .is_some_and(|window| window.dispatch_inner(input))
+    }
+
+    /// Only the canonical native edit producer supplies an observation key.
+    #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+    pub(crate) fn dispatch_native_edit(
+        &self,
+        op: &crate::native_operation::NativeOperation,
+        input: PlatformInput,
+        key: Option<crate::native_edit_observer::ObservationKey>,
+    ) -> bool {
+        op.phase(
+            self.origin(),
+            crate::native_operation::Phase::EditDispatch,
+            || {
+                let Some(_callback) = self.client.enter() else {
+                    return false;
+                };
+                self.live_window()
+                    .is_some_and(|window| window.dispatch_native_edit(input, key))
+            },
+        )
     }
 
     /// Runs `f` with the focused element's input handler, if GPUI has
@@ -83,6 +177,22 @@ impl InputTarget {
         &self,
         f: impl FnOnce(&mut PlatformInputHandler) -> R,
     ) -> Option<R> {
+        let _entry = crate::native_operation::refused();
+        self.with_input_handler_inner(f)
+    }
+    pub(crate) fn with_edit_handler<R>(
+        &self,
+        op: &crate::native_operation::NativeOperation,
+        phase: crate::native_operation::Phase,
+        f: impl FnOnce(&mut PlatformInputHandler) -> R,
+    ) -> Option<R> {
+        op.phase(self.origin(), phase, || self.with_input_handler_inner(f))
+    }
+    fn with_input_handler_inner<R>(
+        &self,
+        f: impl FnOnce(&mut PlatformInputHandler) -> R,
+    ) -> Option<R> {
+        let _loan = crate::native_operation::loan();
         let _callback = self.client.enter()?;
         #[cfg(feature = "test-support")]
         let _depth = super::retirement_probe::NativeCutCounter::HandlerDepth.scope();
@@ -94,7 +204,7 @@ impl InputTarget {
             slot.borrow_mut().get_or_insert(handler);
             return Some(result);
         }
-        self.live_window()?.with_input_handler(f)
+        self.live_window()?.with_input_handler_inner(f)
     }
 
     /// The window's scale factor, to convert between points and GPUI pixels.
@@ -197,6 +307,33 @@ impl Window {
     /// state is recorded first, so `PlatformWindow::modifiers` agrees with the
     /// event GPUI is handling.
     pub(super) fn dispatch(&self, input: PlatformInput) -> bool {
+        let _entry = crate::native_operation::refused();
+        if matches!(&input, PlatformInput::KeyDown(_) | PlatformInput::KeyUp(_)) {
+            self.state.borrow_mut().native_hardware_observed = true;
+        }
+        // Generic ingress (including synthetic keys) never inherits a native key.
+        #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+        let _observation = crate::native_edit_observer::KeyScope::enter(None);
+        self.dispatch_inner(input)
+    }
+
+    #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+    fn dispatch_native_edit(
+        &self,
+        input: PlatformInput,
+        key: Option<crate::native_edit_observer::ObservationKey>,
+    ) -> bool {
+        let key = if matches!(&input, PlatformInput::KeyDown(_) | PlatformInput::KeyUp(_)) {
+            key
+        } else {
+            None
+        };
+        let _observation = crate::native_edit_observer::KeyScope::enter(key);
+        self.dispatch_inner(input)
+    }
+
+    // The two ingress methods establish provenance before reaching callbacks.
+    fn dispatch_inner(&self, input: PlatformInput) -> bool {
         {
             let mut state = self.state.borrow_mut();
             if state.closed {
@@ -222,6 +359,14 @@ impl Window {
         &self,
         f: impl FnOnce(&mut PlatformInputHandler) -> R,
     ) -> Option<R> {
+        let _entry = crate::native_operation::refused();
+        self.with_input_handler_inner(f)
+    }
+    fn with_input_handler_inner<R>(
+        &self,
+        f: impl FnOnce(&mut PlatformInputHandler) -> R,
+    ) -> Option<R> {
+        let _loan = crate::native_operation::loan();
         let mut handler = self.state.borrow_mut().input_handler.take()?;
         #[cfg(feature = "test-support")]
         let _restore = super::retirement_probe::NativeCutCounter::HandlerRestores.restore_scope();
@@ -236,3 +381,6 @@ impl Window {
         Some(result)
     }
 }
+
+#[cfg(all(test, target_os = "ios", target_abi = "sim", feature = "test-support"))]
+mod key_scope_tests;

@@ -39,6 +39,7 @@ define_class!(
         // one `NSNotification` argument and expects no result.
         #[unsafe(method(thermalStateDidChange:))]
         fn thermal_state_did_change(&self, _notification: &NSNotification) {
+            let _native_entry = crate::native_operation::refused();
             shared::later(|shared| {
                 shared.thermal_state_change.call(|callback| callback());
             });

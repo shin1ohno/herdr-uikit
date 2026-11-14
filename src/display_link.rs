@@ -158,6 +158,7 @@ define_class!(
     impl DisplayLinkTarget {
         #[unsafe(method(step:))]
         fn step(&self, _link: &CADisplayLink) {
+            let _native_entry = crate::native_operation::refused();
             // The callback may drop its `DisplayLink`, which invalidates the
             // link and releases this target; holding a reference keeps the
             // callback alive until it returns.

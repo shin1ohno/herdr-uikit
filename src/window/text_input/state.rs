@@ -83,6 +83,8 @@ impl Acquire {
 }
 
 pub(in crate::window) struct Ivars {
+    #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+    pub(super) observation: crate::native_edit_observer::Registration,
     pub(super) target: InputTarget,
     /// The mode the window last asked for; `None` until it asks.
     pub(super) mode: Cell<Option<Mode>>,
@@ -110,6 +112,8 @@ impl Ivars {
     pub(super) fn new(target: InputTarget, key_only_input_view: Retained<UIView>) -> Self {
         Self {
             target,
+            #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+            observation: crate::native_edit_observer::Registration::default(),
             mode: Cell::new(None),
             applied_mode: Cell::new(None),
             acquire: Cell::new(Acquire::default()),

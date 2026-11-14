@@ -72,6 +72,22 @@ impl GPUITextInputView {
         *self.ivars().snapshot.borrow_mut() = snapshot;
     }
 
+    pub(super) fn refresh_edit_snapshot(
+        &self,
+        operation: &crate::native_operation::NativeOperation,
+    ) {
+        let snapshot = self
+            .ivars()
+            .target
+            .with_edit_handler(
+                operation,
+                crate::native_operation::Phase::ObserveSnapshot,
+                TextState::sample,
+            )
+            .unwrap_or_default();
+        *self.ivars().snapshot.borrow_mut() = snapshot;
+    }
+
     /// The queued flush: the mode, then the traits, then any text change.
     pub(super) fn flush(&self) {
         #[cfg(feature = "test-support")]
@@ -104,6 +120,9 @@ impl GPUITextInputView {
         if !ivars.target.text_input_can_acquire() {
             return;
         }
+        let Some(switch) = ivars.target.menu_switch() else {
+            return;
+        };
         if self.isFirstResponder() {
             let acquire = ivars.acquire.get();
             let requested = acquire == Acquire::Requested;
@@ -112,8 +131,10 @@ impl GPUITextInputView {
                 // with its own hide key while this view remains responder.
                 // Only an explicit request restarts that native acquisition.
                 tracing::debug!("restarting text responder for a minimized keyboard");
+                #[cfg(target_abi = "sim")]
+                ivars.target.menu_restart();
                 ivars.target.expect_keyboard_hide(ResignReason::Restart);
-                self.resignFirstResponder();
+                switch.resign(&**self);
                 ivars.acquire.set(Acquire::Requested);
             } else {
                 ivars.acquire.set(Acquire::Settled);
@@ -138,7 +159,7 @@ impl GPUITextInputView {
             return;
         }
         // Becoming first responder reads `inputView` afresh.
-        let became = self.becomeFirstResponder();
+        let became = switch.acquire(&**self);
         if became {
             ivars.target.text_input_did_acquire();
             ivars.applied_mode.set(Some(mode));

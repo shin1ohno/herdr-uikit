@@ -24,7 +24,7 @@
 //! its state, which needs the input handler GPUI is holding at that moment.
 
 mod accessibility;
-mod actions;
+pub(super) mod actions;
 mod editing;
 mod geometry;
 mod keymap;
@@ -56,6 +56,7 @@ use crate::menu::Shortcut;
 use state::Mode;
 use traits::Traits;
 use view_class::GPUITextInputView;
+pub(super) use view_class::GPUITextInputView as NativeEndpoint;
 
 /// The window's handle to its text input view.
 pub(crate) struct TextInputView {
@@ -64,6 +65,44 @@ pub(crate) struct TextInputView {
 }
 
 impl TextInputView {
+    pub(super) fn captured_native(&self) -> Retained<NativeEndpoint> {
+        self.current()
+    }
+    pub(super) fn is_captured_current(&self, old: &NativeEndpoint) -> bool {
+        std::ptr::eq(&*self.current(), old)
+    }
+    pub(super) fn replace_reserved_native(
+        &self,
+        old: Retained<NativeEndpoint>,
+    ) -> crate::NativeRetirementRequestStatus {
+        use crate::{NativeRetirementRequestStatus as Status, TextInputRetirementStatus as Legacy};
+        let Some(next) = old.ivars().target.successor() else {
+            return Status::InvalidatedAfterFence;
+        };
+        let successor = next.origin();
+        let receipt = crate::TextInputRetirement {
+            sessions: crate::RetiredTextInputSession {
+                retired: old.ivars().target.client.identity,
+                replacement: successor.client,
+            },
+            status: std::rc::Rc::new(Cell::new(Legacy::Pending)),
+        };
+        self.finish_retirement(old, next, &receipt);
+        // The new request's Window reservation remains held through terminal
+        // completion, even though legacy finish releases its own replacing flag.
+        match receipt.status() {
+            Legacy::Replaced {
+                first_responder,
+                responder_requested,
+            } => Status::Replaced {
+                successor,
+                first_responder,
+                responder_requested,
+            },
+            _ => Status::InvalidatedAfterFence,
+        }
+    }
+
     fn current(&self) -> Retained<GPUITextInputView> {
         self.view.borrow().clone()
     }
@@ -87,8 +126,27 @@ impl TextInputView {
         self.current().editing_enabled(selector)
     }
 
-    pub(super) fn perform_edit_action(&self, selector: Sel) {
-        self.current().perform_edit_action(selector);
+    pub(super) fn perform_edit_action(
+        &self,
+        selector: Sel,
+        sender: Option<&objc2::runtime::AnyObject>,
+        operation: &crate::native_operation::NativeOperation,
+    ) {
+        let captured = self.current();
+        #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+        let _origin = crate::native_edit_observer::DrawingScope::enter();
+        captured.perform_edit_action(selector, sender, operation);
+    }
+
+    /// Runs `f` with the current view's observation registration. A retired
+    /// view takes its registration with it, so the successor starts unregistered.
+    #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+    pub(crate) fn with_observation_registration<R>(
+        &self,
+        f: impl FnOnce(&crate::native_edit_observer::Registration) -> R,
+    ) -> R {
+        let current = self.current();
+        f(&current.ivars().observation)
     }
 
     pub(super) fn validate_edit_command(&self, command: &objc2_ui_kit::UICommand) {
@@ -117,10 +175,17 @@ impl TextInputView {
 
     /// Marks an intentional native resignation before UIKit can synchronously
     /// deliver its hide notifications or responder callback.
-    pub(super) fn resign(&self, reason: ResignReason) {
-        if self.current().isFirstResponder() {
-            self.current().ivars().target.expect_keyboard_hide(reason);
-            self.current().resignFirstResponder();
+    pub(super) fn resign(
+        &self,
+        reason: ResignReason,
+        switch: &super::edit_menu::responder_switch::ResponderSwitch<
+            impl super::edit_menu::responder_switch::SwitchOwner,
+        >,
+    ) {
+        let current = self.current();
+        if current.isFirstResponder() {
+            current.ivars().target.expect_keyboard_hide(reason);
+            switch.resign(&**current);
         }
     }
 
@@ -156,6 +221,18 @@ impl TextInputView {
     /// The window forwards `PlatformWindow::set_text_input_configuration`.
     pub(crate) fn set_text_input_configuration(&self, configuration: &TextInputConfiguration) {
         self.current().request_traits(Traits::from(configuration));
+    }
+}
+
+impl NativeEndpoint {
+    pub(in crate::window) fn native_target(&self) -> &InputTarget {
+        &self.ivars().target
+    }
+    pub(in crate::window) fn fence_reserved(&self) {
+        self.ivars().target.client.retire();
+    }
+    pub(in crate::window) fn cancel_reserved_work(&self) {
+        self.cancel_pending();
     }
 }
 

@@ -36,6 +36,9 @@ thread_local! {
 /// Callbacks GPUI registered and the launch and scene state they depend on.
 #[derive(Default)]
 pub(super) struct Shared {
+    pub(super) notification_response: Slot<dyn FnMut(gpui::SystemNotificationResponse)>,
+    pub(super) notification_delegate:
+        OnceCell<Retained<super::notifications::NotificationDelegate>>,
     pub(super) displays_changed: Slot<dyn FnMut()>,
     pub(super) app_lifecycle: Slot<dyn FnMut(AppLifecyclePhase)>,
     pub(super) app_menu_action: Slot<MenuActionCallback>,
@@ -75,9 +78,12 @@ pub(super) fn current() -> Option<Rc<Shared>> {
 /// mutably, so they must not run inside a call GPUI itself made, and UIKit
 /// may deliver delegate calls and notifications synchronously from one.
 pub(super) fn later(work: impl FnOnce(&Shared) + Send + 'static) {
-    DispatchQueue::main().exec_async(move || match current() {
-        Some(shared) => work(&shared),
-        None => tracing::warn!("a platform callback was queued before the platform ran"),
+    DispatchQueue::main().exec_async(move || {
+        let _raw_later_entry = crate::native_operation::raw("shared-later");
+        match current() {
+            Some(shared) => work(&shared),
+            None => tracing::warn!("a platform callback was queued before the platform ran"),
+        }
     });
 }
 

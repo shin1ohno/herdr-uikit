@@ -18,6 +18,7 @@ mod idle;
 mod keyboard;
 mod lifecycle;
 pub(crate) mod menus;
+pub mod notifications;
 mod pasteboard;
 mod scene_delegate;
 mod shared;
@@ -91,6 +92,24 @@ impl Default for IosPlatform {
 }
 
 impl Platform for IosPlatform {
+    fn show_system_notification(&self, notification: gpui::SystemNotification) {
+        notifications::post_notification(notification, |result| {
+            if let Err(error) = result {
+                tracing::warn!(?error, "local notification was not accepted");
+            }
+        });
+    }
+
+    fn on_system_notification_response(
+        &self,
+        callback: Box<dyn FnMut(gpui::SystemNotificationResponse)>,
+    ) {
+        self.shared.notification_response.set(callback);
+        self.shared
+            .notification_delegate
+            .get_or_init(notifications::NotificationDelegate::register);
+    }
+
     fn platform_info(&self) -> gpui::PlatformInfo {
         gpui::PlatformInfo {
             os: gpui::OperatingSystem::Ios,

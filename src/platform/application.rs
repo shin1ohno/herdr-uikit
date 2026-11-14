@@ -44,6 +44,7 @@ define_class!(
     impl Application {
         #[unsafe(method(sendEvent:))]
         fn send_event(&self, event: &UIEvent) {
+            crate::native_operation::event(event.r#type() == UIEventType::Presses, || {
             let source = source(event);
             // Restored afterwards, so an event UIKit delivers from inside
             // another one leaves the outer one's source in place.
@@ -52,6 +53,7 @@ define_class!(
             // selector; UIApplication's implementation returns nothing.
             let () = unsafe { msg_send![super(self), sendEvent: event] };
             DELIVERING.set(outer);
+            });
         }
     }
 );

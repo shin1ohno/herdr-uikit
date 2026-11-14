@@ -295,9 +295,10 @@ pub(super) fn destroy(scene: &UIWindowScene, mtm: MainThreadMarker) {
 
 /// Closes a scene that is no longer wanted. The scene is
 /// still connecting, so it is asked to go on the next main-queue turn.
-fn destroy_unwanted(scene: &UIWindowScene, mtm: MainThreadMarker) {
+pub(super) fn destroy_unwanted(scene: &UIWindowScene, mtm: MainThreadMarker) {
     let scene = MainThreadBound::new(scene.retain(), mtm);
     DispatchQueue::main().exec_async(move || {
+        let _raw_destroy_entry = crate::native_operation::raw("scene-destroy");
         if let Some(mtm) = MainThreadMarker::new() {
             destroy(&scene.into_inner(mtm), mtm);
         }
@@ -320,10 +321,11 @@ fn scene_request_refused(id: RequestId, _mtm: MainThreadMarker) {
 /// say which thread calls the handler, so the window is reached on the next
 /// main-queue turn, which also puts it after GPUI has registered the window's
 /// callbacks if UIKit refuses while `IosWindow::open` is still running.
-fn new_scene_refused(id: RequestId) -> RcBlock<dyn Fn(NonNull<NSError>)> {
+pub(super) fn new_scene_refused(id: RequestId) -> RcBlock<dyn Fn(NonNull<NSError>)> {
     RcBlock::new(move |error: NonNull<NSError>| {
         log_refusal(error);
         DispatchQueue::main().exec_async(move || {
+            let _raw_refusal_entry = crate::native_operation::raw("scene-refusal");
             if let Some(mtm) = MainThreadMarker::new() {
                 scene_request_refused(id, mtm);
             }
@@ -373,7 +375,92 @@ pub(crate) fn set_native_edit_availability(
     if state.native_edit_availability != availability {
         state.native_edit_availability = availability;
         drop(state);
+        window.edit_menu.availability(availability.is_some());
         objc2_ui_kit::UIMenuSystem::mainSystem(mtm).setNeedsRevalidate();
     }
     true
+}
+
+pub(super) fn menu_window(handle: AnyWindowHandle) -> Option<Rc<Window>> {
+    REGISTRY.with_borrow(|registry| {
+        registry
+            .scenes
+            .iter()
+            .filter_map(SceneEntry::live_window)
+            .find(|window| window.handle == handle)
+    })
+}
+
+/// Resolve outside observer borrows; never hand ownership to the observer.
+#[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+pub(crate) fn with_observation_registration<R>(
+    handle: AnyWindowHandle,
+    f: impl FnOnce(&crate::native_edit_observer::Registration) -> R,
+) -> Result<R, crate::native_edit_observer::ObserverError> {
+    let window = observation_window(handle)?;
+    Ok(window.text_input.with_observation_registration(f))
+}
+
+#[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+fn observation_window(
+    handle: AnyWindowHandle,
+) -> Result<Rc<Window>, crate::native_edit_observer::ObserverError> {
+    use crate::native_edit_observer::ObserverError;
+    let window = REGISTRY.with(|cell| {
+        let registry = cell.try_borrow().map_err(|_| ObserverError::Contention)?;
+        registry
+            .scenes
+            .iter()
+            .filter_map(SceneEntry::live_window)
+            .find(|window| window.handle == handle)
+            .ok_or(ObserverError::ViewUnavailable)
+    })?;
+    let closed = window
+        .state
+        .try_borrow()
+        .map_err(|_| ObserverError::Contention)?
+        .closed;
+    if closed {
+        return Err(ObserverError::ViewUnavailable);
+    }
+    Ok(window)
+}
+
+/// Synchronous messages through the real Objective-C selector entrypoints.
+#[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+#[allow(
+    unsafe_code,
+    reason = "fixed UIKit selectors take a nullable object sender and return void"
+)]
+pub(crate) fn invoke_observation_selector(
+    handle: AnyWindowHandle,
+    action: crate::native_edit_observer::Action,
+    responder: crate::native_edit_observer::ResponderOrigin,
+) -> Result<(), crate::native_edit_observer::ObserverError> {
+    use crate::native_edit_observer::{Action, ObserverError, ResponderOrigin};
+    let window = observation_window(handle)?;
+    let view: Retained<objc2_ui_kit::UIView> = match responder {
+        ResponderOrigin::Text => window.text_input.view(),
+        ResponderOrigin::Drawing => Retained::into_super(window.view.clone()),
+    };
+    let sender: Option<&objc2::runtime::AnyObject> = None;
+    // SAFETY: both responders implement these four selectors with this ABI.
+    unsafe {
+        match action {
+            Action::Copy => {
+                let (): () = objc2::msg_send![&*view, copy: sender];
+            }
+            Action::Cut => {
+                let (): () = objc2::msg_send![&*view, cut: sender];
+            }
+            Action::Paste => {
+                let (): () = objc2::msg_send![&*view, paste: sender];
+            }
+            Action::SelectAll => {
+                let (): () = objc2::msg_send![&*view, selectAll: sender];
+            }
+            Action::Unknown => return Err(ObserverError::InvalidAction),
+        }
+    }
+    Ok(())
 }

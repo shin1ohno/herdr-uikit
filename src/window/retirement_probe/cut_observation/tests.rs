@@ -226,9 +226,13 @@ impl<T: ?Sized + Send> AmbiguousIfSend<u8> for T {}
 const _: fn() = || <super::super::NativeClient as AmbiguousIfSend<_>>::check();
 
 // SF3: a body ends at the closing brace at the signature's own indent.
+// "A > f" names the first f after the unique marker A (two impls share f).
 fn body<'a>(source: &'a str, anchor: &str) -> &'a str {
-    assert_eq!(source.matches(anchor).count(), 1, "unique anchor {anchor}");
-    let start = source.find(anchor).unwrap();
+    let (after, anchor) = anchor.split_once(" > ").unwrap_or(("", anchor));
+    let unique = if after.is_empty() { anchor } else { after };
+    assert_eq!(source.matches(unique).count(), 1, "unique anchor {unique}");
+    let from = source.find(after).unwrap();
+    let start = from + source[from..].find(anchor).unwrap();
     let line = source[..start].rfind('\n').map_or(0, |i| i + 1);
     let indent = source[line..start].len() - source[line..start].trim_start().len();
     let close = format!("\n{}}}", &source[line..line + indent]);
@@ -237,11 +241,11 @@ fn body<'a>(source: &'a str, anchor: &str) -> &'a str {
 
 // Tier B: file | function anchor | hook. Removing or moving a hook fails.
 const HOOKS: &str = "
-actions | fn perform_edit_action(&self | AcceptedCut.record_edit(selector)
-actions | fn dispatch_edit_action( | DownReturned.record()
-actions | fn dispatch_edit_action( | UpReturned.record()
-actions | fn dispatch_edit_action( | OriginRestored.record()
-actions | fn dispatch_edit_action( | ModifiersRestored.record()
+actions | pub(super) fn perform_edit_action( | AcceptedCut.record_edit(selector)
+actions | fn dispatch_menu_action( | DownReturned.record()
+actions | fn dispatch_menu_action( | UpReturned.record()
+actions | fn dispatch_menu_action( | OriginRestored.record()
+actions | fn dispatch_menu_action( | ModifiersRestored.record()
 sync | fn refresh_snapshot(&self) | SnapshotEntered.scope()
 sync | fn flush(&self) | TextInputFlush.record()
 sync | fn notify(&self | DelegateNotify.record()
@@ -259,9 +263,9 @@ window | fn draw(&self, scene: &Scene) | Presentations.presented()
 window | fn show_soft_keyboard(&self) | KeyboardShown.record()
 window | fn hide_soft_keyboard(&self) | KeyboardHidden.record()
 window | fn text_input_state_changed(&self | FocusChange.on_state(&change)
-target | pub(crate) fn dispatch(&self | DispatchDepth.scope()
-target | pub(crate) fn with_input_handler<R>( | HandlerDepth.scope()
-target | pub(super) fn with_input_handler<R>( | HandlerRestores.restore_scope()
+target | fn dispatch_via( > fn dispatch_inner( | DispatchDepth.scope()
+target | fn with_edit_handler<R>( > fn with_input_handler_inner<R>( | HandlerDepth.scope()
+target | impl Window { > fn with_input_handler_inner<R>( | HandlerRestores.restore_scope()
 probe | pub fn next_native_turn( | DeferredScheduled.record()
 probe | pub fn next_native_turn( | DeferredExecuted.record()";
 

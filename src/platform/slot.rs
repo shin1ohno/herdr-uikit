@@ -50,6 +50,7 @@ impl<F: ?Sized> Slot<F> {
 
     /// [`Slot::call`], telling a missing callback from a running one.
     pub(super) fn try_call<R>(&self, call: impl FnOnce(&mut F) -> R) -> Called<R> {
+        let _callback_loan = crate::native_operation::loan();
         let Some(mut callback) = self.callback.borrow_mut().take() else {
             return if self.running.get() {
                 Called::Running

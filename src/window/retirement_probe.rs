@@ -8,7 +8,12 @@ use gpui::{AnyWindowHandle, KeyDownEvent, Keystroke, PlatformInput};
 use objc2::MainThreadMarker;
 
 pub use super::text_input::probe::*;
+mod native_operation;
 use super::{scene, state::Window};
+pub use native_operation::{
+    callback_sentinel, edit, empty_hardware_entry, on_raw_ingress, raw_later, raw_scene_destroy,
+    raw_scene_refusal, set_fixture_pasteboard,
+};
 
 pub(crate) mod cut_observation;
 
@@ -56,6 +61,7 @@ pub fn next_native_turn(f: impl FnOnce() + 'static) {
     NEXT.with_borrow_mut(|queue| queue.push_back(Box::new(f)));
     NativeCutRefusal::DeferredScheduled.record();
     dispatch2::DispatchQueue::main().exec_async(|| {
+        let _probe_turn = crate::native_operation::refused();
         let next = NEXT.with_borrow_mut(|queue| queue.pop_front());
         if let Some(next) = next {
             NativeCutRefusal::DeferredExecuted.record();
