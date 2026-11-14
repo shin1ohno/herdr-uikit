@@ -50,6 +50,13 @@ pub use layout_direction::{LayoutDirection, layout_direction, set_layout_directi
 pub use native_edit_action::{NativeEditAction, native_edit_action};
 pub use native_edit_availability::{NativeEditAvailability, set_native_edit_availability};
 pub use platform::IosPlatform;
+#[cfg(feature = "test-support")]
+pub use platform::notifications::NotificationResponseFixture;
+pub use platform::notifications::{
+    Authorization, NotificationError, NotificationResult, notification_authorization,
+    post_notification, post_notification_when, remove_notifications,
+    request_notification_authorization,
+};
 pub use window_controls::window_control_insets;
 
 /// The GPUI application on iPadOS, the counterpart of

@@ -1,0 +1,3 @@
+# Deferred notification acceptance
+
+- P14 D5 response and D4 display native acceptance is pending. Reason: source staging has no native lease and injected SDK fixtures are not OS evidence. First step: controller leases exact SDK/consumer heads, runs the two guarded commands in the consumer docs/p14-native-qa.md, and captures actual center/delegate receiving callbacks separately. Close condition: both intended mutants fail at their assertions, originals restore, exact-head compiler/SDK/consumer tests and actual OS/owner gates satisfy N1-N5; delete in the resolving commit. No SDK merge, signing, permission grant or physical mutation is authorized here.
