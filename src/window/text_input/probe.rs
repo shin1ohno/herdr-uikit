@@ -11,7 +11,9 @@ use objc2_ui_kit::{UICommand, UIKeyInput, UIMenuElementAttributes, UITextInput, 
 
 use super::{TextInputView, view_class::GPUITextInputView};
 
+mod cut_query;
 mod query;
+pub use cut_query::*;
 pub use query::{NativeQuery, NativeQueryError};
 
 /// A captured native origin, not a lookup of the window's current client.

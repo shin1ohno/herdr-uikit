@@ -44,6 +44,11 @@ impl InputTarget {
         }
     }
 
+    #[cfg(feature = "test-support")]
+    pub(super) fn window_handle(&self) -> Option<Rc<Window>> {
+        self.window.upgrade()
+    }
+
     fn live_window(&self) -> Option<Rc<Window>> {
         if !self.client.live() {
             return None;
@@ -66,6 +71,8 @@ impl InputTarget {
         let Some(_callback) = self.client.enter() else {
             return false;
         };
+        #[cfg(feature = "test-support")]
+        let _depth = super::retirement_probe::NativeCutCounter::DispatchDepth.scope();
         self.live_window()
             .is_some_and(|window| window.dispatch(input))
     }
@@ -77,6 +84,8 @@ impl InputTarget {
         f: impl FnOnce(&mut PlatformInputHandler) -> R,
     ) -> Option<R> {
         let _callback = self.client.enter()?;
+        #[cfg(feature = "test-support")]
+        let _depth = super::retirement_probe::NativeCutCounter::HandlerDepth.scope();
         #[cfg(all(test, feature = "test-support"))]
         if let Some(slot) = &self.test_handler {
             let mut handler = slot.borrow_mut().take()?;
@@ -214,6 +223,8 @@ impl Window {
         f: impl FnOnce(&mut PlatformInputHandler) -> R,
     ) -> Option<R> {
         let mut handler = self.state.borrow_mut().input_handler.take()?;
+        #[cfg(feature = "test-support")]
+        let _restore = super::retirement_probe::NativeCutCounter::HandlerRestores.restore_scope();
         // A handler can request retirement of another window, whose native
         // client is not busy. Keep its callback outside this GPUI borrow too.
         let _in_gpui = crate::gpui_call::InGpui::enter();

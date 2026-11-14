@@ -66,12 +66,16 @@ impl GPUITextInputView {
 
     /// Records the state after an edit UIKit made, which it already knows.
     pub(super) fn refresh_snapshot(&self) {
+        #[cfg(feature = "test-support")]
+        let _scope = crate::window::retirement_probe::NativeCutPhase::SnapshotEntered.scope();
         let snapshot = self.read_snapshot();
         *self.ivars().snapshot.borrow_mut() = snapshot;
     }
 
     /// The queued flush: the mode, then the traits, then any text change.
     pub(super) fn flush(&self) {
+        #[cfg(feature = "test-support")]
+        crate::window::retirement_probe::NativeCutRefusal::TextInputFlush.record();
         self.ivars().flush_scheduled.set(false);
         if !self.ivars().target.client.live() {
             return;
@@ -176,6 +180,8 @@ impl GPUITextInputView {
         if change == Change::None {
             return;
         }
+        #[cfg(feature = "test-support")]
+        crate::window::retirement_probe::NativeCutRefusal::DelegateNotify.record();
         let delegate = self.ivars().input_delegate.borrow().load();
         let Some(delegate) = delegate else {
             return;

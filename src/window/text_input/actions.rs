@@ -83,6 +83,8 @@ impl GPUITextInputView {
         if !self.editing_enabled(selector) {
             return;
         }
+        #[cfg(feature = "test-support")]
+        crate::window::retirement_probe::NativeCutPhase::AcceptedCut.record_edit(selector);
         dispatch_edit_selector(
             selector,
             self.ivars().target.modifiers(),
@@ -131,12 +133,20 @@ fn dispatch_edit_action(
         is_held: false,
         prefer_character_input: false,
     }));
+    #[cfg(feature = "test-support")]
+    crate::window::retirement_probe::NativeCutPhase::DownReturned.record();
     dispatch(PlatformInput::KeyUp(KeyUpEvent { keystroke }));
+    #[cfg(feature = "test-support")]
+    crate::window::retirement_probe::NativeCutPhase::UpReturned.record();
     drop(origin);
+    #[cfg(feature = "test-support")]
+    crate::window::retirement_probe::NativeCutPhase::OriginRestored.record();
     dispatch(PlatformInput::ModifiersChanged(ModifiersChangedEvent {
         modifiers: original.0,
         capslock: original.1,
     }));
+    #[cfg(feature = "test-support")]
+    crate::window::retirement_probe::NativeCutPhase::ModifiersRestored.record();
     if action == EditAction::Paste && !handled {
         paste();
     }

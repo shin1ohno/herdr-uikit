@@ -7,8 +7,10 @@ use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 use gpui::{AnyWindowHandle, KeyDownEvent, Keystroke, PlatformInput};
 use objc2::MainThreadMarker;
 
-pub use super::text_input::probe::{NativeClient, NativeQuery, NativeQueryError};
+pub use super::text_input::probe::*;
 use super::{scene, state::Window};
+
+pub(crate) mod cut_observation;
 
 fn window(handle: AnyWindowHandle) -> Option<Rc<Window>> {
     scene::live_windows(MainThreadMarker::new()?)
@@ -52,9 +54,11 @@ thread_local! {
 pub fn next_native_turn(f: impl FnOnce() + 'static) {
     assert!(MainThreadMarker::new().is_some());
     NEXT.with_borrow_mut(|queue| queue.push_back(Box::new(f)));
+    NativeCutRefusal::DeferredScheduled.record();
     dispatch2::DispatchQueue::main().exec_async(|| {
         let next = NEXT.with_borrow_mut(|queue| queue.pop_front());
         if let Some(next) = next {
+            NativeCutRefusal::DeferredExecuted.record();
             next();
         }
     });

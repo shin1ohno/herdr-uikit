@@ -60,6 +60,8 @@ fn drain() {
             break;
         }
         for action in batch {
+            #[cfg(feature = "test-support")]
+            crate::window::retirement_probe::NativeCutRefusal::AfterAction.record();
             action();
         }
     }

@@ -79,6 +79,8 @@ impl PlatformWindow for IosWindow {
     }
 
     fn set_text_input_configuration(&mut self, configuration: TextInputConfiguration) {
+        #[cfg(feature = "test-support")]
+        super::retirement_probe::NativeCutRefusal::Configuration.record();
         self.window
             .text_input
             .set_text_input_configuration(&configuration);
@@ -101,9 +103,13 @@ impl PlatformWindow for IosWindow {
     /// compares the handler's text state instead (`text_state`).
     fn set_input_handler(&mut self, input_handler: PlatformInputHandler) {
         self.window.state.borrow_mut().input_handler = Some(input_handler);
+        #[cfg(feature = "test-support")]
+        super::retirement_probe::NativeCutCounter::HandlerRestores.on_set(&self.window);
     }
 
     fn take_input_handler(&mut self) -> Option<PlatformInputHandler> {
+        #[cfg(feature = "test-support")]
+        super::retirement_probe::NativeCutCounter::HandlerRestores.on_take(&self.window);
         self.window.state.borrow_mut().input_handler.take()
     }
 
@@ -218,6 +224,8 @@ impl PlatformWindow for IosWindow {
     }
 
     fn draw(&self, scene: &Scene) {
+        #[cfg(feature = "test-support")]
+        super::retirement_probe::NativeCutCounter::Presentations.presented();
         if self.window.state.borrow().closed {
             return;
         }
@@ -255,10 +263,14 @@ impl PlatformWindow for IosWindow {
     }
 
     fn show_soft_keyboard(&self) {
+        #[cfg(feature = "test-support")]
+        super::retirement_probe::NativeCutRefusal::KeyboardShown.record();
         self.window.show_keyboard();
     }
 
     fn hide_soft_keyboard(&self) {
+        #[cfg(feature = "test-support")]
+        super::retirement_probe::NativeCutRefusal::KeyboardHidden.record();
         self.window.hide_keyboard();
     }
 
@@ -267,6 +279,8 @@ impl PlatformWindow for IosWindow {
     /// handler itself is taken and set again around every frame and event, so
     /// it does not say whether text input is focused.
     fn text_input_state_changed(&self, change: TextInputStateChange) {
+        #[cfg(feature = "test-support")]
+        super::retirement_probe::NativeCutRefusal::FocusChange.on_state(&change);
         match change {
             TextInputStateChange::FocusGained => self.window.set_text_input_focused(true),
             TextInputStateChange::FocusLost => self.window.set_text_input_focused(false),
