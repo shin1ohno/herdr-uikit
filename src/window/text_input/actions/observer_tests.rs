@@ -150,3 +150,30 @@ fn panic_in_keydown_or_fallback_does_not_become_success() {
         });
     }
 }
+#[test]
+fn rejected_menu_delivery_dispatches_nothing_and_completes_as_refused() {
+    use super::super::super::edit_menu::state::Delivery;
+    observer::with_source_test_observer(|registration, _| {
+        // Deliberately a source fixture entry; never a native proof.
+        let inv = observer::InvocationGuard::enter(registration, observer::Action::Paste);
+        let touched = Cell::new(false);
+        let checked = dispatch_checked_selector_inner(
+            sel!(paste:),
+            Delivery::Reject,
+            true,
+            (Modifiers::default(), Capslock::default()),
+            |_| {
+                touched.set(true);
+                false
+            },
+            || touched.set(true),
+            inv.key(),
+        );
+        assert!(matches!(checked, CheckedDispatch::RejectedDelivery));
+        assert!(!touched.get());
+        inv.complete(
+            observer::Decision::RefusedMenuDelivery,
+            observer::Outcome::Refused,
+        );
+    });
+}

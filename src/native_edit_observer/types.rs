@@ -46,6 +46,8 @@ pub enum Decision {
     RefusedNoTextFocus,
     AllowedExplicitPolicy,
     AllowedDefaultText,
+    /// A stale or foreign menu-tagged delivery refused before any edit policy ran.
+    RefusedMenuDelivery,
 }
 impl Decision {
     pub(crate) fn allowed(self) -> bool {

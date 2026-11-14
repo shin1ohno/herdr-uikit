@@ -112,6 +112,7 @@ entry/outcome oracle and its negative controls actually pass. Distinguish:
 | Modal Some disallow + active | RefusedPolicyDisallowed; no consumer dispatch |
 | Modal Some allow + active | Dispatched + correlated real consumer modal refusal + handled=true + NotEligible |
 | Some inactive / no responder | RefusedInactiveOrNoResponder; dedicated negative, not modal substitute |
+| Stale or foreign menu-tagged delivery (sender tag matches no current menu token) | RefusedMenuDelivery; terminal Refused before any edit policy, no consumer dispatch; appended last so earlier discriminants are unchanged |
 
 Run Text and Drawing origins separately. Retain all four actions and four
 settings combinations, the fake clipboard, and the complete ordered 24 FIFO

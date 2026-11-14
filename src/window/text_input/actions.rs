@@ -85,9 +85,15 @@ impl GPUITextInputView {
         }
     }
 
-    pub(super) fn perform_edit_action(&self, selector: Sel) {
+    pub(super) fn perform_edit_action(
+        &self,
+        selector: Sel,
+        sender: Option<&objc2::runtime::AnyObject>,
+    ) {
         #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
         let _outside_key_scope = observer::KeyScope::enter(None);
+        // The observation entry precedes the menu-delivery gate, so a rejected
+        // stale menu delivery is recorded as a terminal refusal, not skipped.
         #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
         let invocation = observer::InvocationGuard::enter(
             &self.ivars().observation,
@@ -100,13 +106,10 @@ impl GPUITextInputView {
             },
         );
         let decision = self.edit_decision(selector);
-        if !decision.allowed() {
-            #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
-            invocation.complete(decision.observed(), observer::Outcome::Refused);
-            return;
-        }
-        let summary = dispatch_edit_selector_inner(
+        let checked = dispatch_checked_selector_inner(
             selector,
+            self.ivars().target.menu_delivery(sender),
+            decision.allowed(),
             self.ivars().target.modifiers(),
             |input| {
                 #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
@@ -139,23 +142,37 @@ impl GPUITextInputView {
         );
         self.refresh_snapshot();
         #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
-        invocation.complete(
-            decision.observed(),
-            observer::Outcome::Dispatched {
-                key_down_handled: summary.handled,
-                fallback: if summary.fallback_invoked {
-                    observer::Fallback::Invoked
-                } else {
-                    observer::Fallback::NotEligible
+        match checked {
+            CheckedDispatch::RejectedDelivery => {
+                invocation.complete(
+                    observer::Decision::RefusedMenuDelivery,
+                    observer::Outcome::Refused,
+                );
+            }
+            CheckedDispatch::Disabled => {
+                invocation.complete(decision.observed(), observer::Outcome::Refused);
+            }
+            CheckedDispatch::Dispatched(summary) => invocation.complete(
+                decision.observed(),
+                observer::Outcome::Dispatched {
+                    key_down_handled: summary.handled,
+                    fallback: if summary.fallback_invoked {
+                        observer::Fallback::Invoked
+                    } else {
+                        observer::Fallback::NotEligible
+                    },
                 },
-            },
-        );
+            ),
+        }
         #[cfg(not(all(target_os = "ios", target_abi = "sim", feature = "test-support")))]
-        let _ = (summary.handled, summary.fallback_invoked);
+        if let CheckedDispatch::Dispatched(summary) = checked {
+            let _ = (summary.handled, summary.fallback_invoked);
+        }
     }
 }
 
-// Test wrappers do not manufacture an actual native observation key.
+// Legacy test entry points exercise the same production dispatcher. They do
+// not manufacture an actual native observation key.
 #[cfg(test)]
 fn dispatch_edit_selector(
     selector: Sel,
@@ -163,15 +180,11 @@ fn dispatch_edit_selector(
     dispatch: impl FnMut(PlatformInput) -> bool,
     paste: impl FnOnce(),
 ) {
-    let _ = dispatch_edit_selector_inner(
-        selector,
-        original,
-        dispatch,
-        paste,
-        #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
-        None,
-    );
+    if let Some(action) = EditAction::from_selector(selector) {
+        dispatch_edit_action(action, original, dispatch, paste);
+    }
 }
+
 #[cfg(test)]
 fn dispatch_edit_action(
     action: EditAction,
@@ -188,12 +201,10 @@ fn dispatch_edit_action(
         None,
     );
 }
-struct DispatchSummary {
-    handled: bool,
-    fallback_invoked: bool,
-}
-fn dispatch_edit_selector_inner(
-    selector: Sel,
+
+#[cfg(test)]
+fn dispatch_edit_action_inner(
+    action: EditAction,
     original: (Modifiers, Capslock),
     dispatch: impl FnMut(PlatformInput) -> bool,
     paste: impl FnOnce(),
@@ -201,23 +212,87 @@ fn dispatch_edit_selector_inner(
         observer::ObservationKey,
     >,
 ) -> DispatchSummary {
-    match EditAction::from_selector(selector) {
-        Some(action) => dispatch_edit_action_inner(
-            action,
-            original,
-            dispatch,
-            paste,
-            #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
-            key,
-        ),
-        None => DispatchSummary {
-            handled: false,
-            fallback_invoked: false,
-        },
-    }
+    dispatch_menu_action(
+        action,
+        None,
+        original,
+        dispatch,
+        paste,
+        #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+        key,
+    )
 }
-fn dispatch_edit_action_inner(
+
+struct DispatchSummary {
+    handled: bool,
+    fallback_invoked: bool,
+}
+
+/// What the menu-delivery and availability gates did with one native selector.
+enum CheckedDispatch {
+    RejectedDelivery,
+    Disabled,
+    Dispatched(DispatchSummary),
+}
+
+#[cfg(any(test, feature = "test-support"))]
+pub(in crate::window) fn dispatch_checked_selector(
+    selector: Sel,
+    delivery: super::super::edit_menu::state::Delivery,
+    enabled: bool,
+    original: (Modifiers, Capslock),
+    dispatch: impl FnMut(PlatformInput) -> bool,
+    paste: impl FnOnce(),
+) {
+    let _ = dispatch_checked_selector_inner(
+        selector,
+        delivery,
+        enabled,
+        original,
+        dispatch,
+        paste,
+        #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+        None,
+    );
+}
+
+fn dispatch_checked_selector_inner(
+    selector: Sel,
+    delivery: super::super::edit_menu::state::Delivery,
+    enabled: bool,
+    original: (Modifiers, Capslock),
+    dispatch: impl FnMut(PlatformInput) -> bool,
+    paste: impl FnOnce(),
+    #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))] key: Option<
+        observer::ObservationKey,
+    >,
+) -> CheckedDispatch {
+    use super::super::edit_menu::state::Delivery;
+    let token = match delivery {
+        Delivery::Reject => return CheckedDispatch::RejectedDelivery,
+        Delivery::Token(token) => Some(token),
+        Delivery::Command | Delivery::Other => None,
+    };
+    if !enabled {
+        return CheckedDispatch::Disabled;
+    }
+    let Some(action) = EditAction::from_selector(selector) else {
+        return CheckedDispatch::Disabled;
+    };
+    CheckedDispatch::Dispatched(dispatch_menu_action(
+        action,
+        token,
+        original,
+        dispatch,
+        paste,
+        #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+        key,
+    ))
+}
+
+fn dispatch_menu_action(
     action: EditAction,
+    token: Option<crate::NativeEditMenuToken>,
     original: (Modifiers, Capslock),
     mut dispatch: impl FnMut(PlatformInput) -> bool,
     paste: impl FnOnce(),
@@ -229,6 +304,7 @@ fn dispatch_edit_action_inner(
     let _outside_key_scope = observer::KeyScope::enter(None);
     let keystroke = action.keystroke();
     let origin = NativeEditActionGuard::enter(Some(action));
+    let menu_origin = crate::native_edit_menu::NativeEditMenuGuard::enter(token);
     #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
     let key_scope = observer::KeyScope::enter(key);
     let handled = dispatch(PlatformInput::KeyDown(KeyDownEvent {
@@ -237,6 +313,7 @@ fn dispatch_edit_action_inner(
         prefer_character_input: false,
     }));
     dispatch(PlatformInput::KeyUp(KeyUpEvent { keystroke }));
+    drop(menu_origin);
     drop(origin);
     #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
     drop(key_scope);

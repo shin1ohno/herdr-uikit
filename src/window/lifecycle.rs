@@ -69,6 +69,7 @@ impl Window {
             }
             pointer::install_recognizers(&view, mtm);
             let pointer = pointer::Pointer::new(&view, window.clone(), mtm);
+            let edit_menu = super::edit_menu::EditMenu::new(&view, window.clone(), mtm);
             view.observe_keyboard();
 
             let controller = UIViewController::new(mtm);
@@ -94,6 +95,7 @@ impl Window {
                 metal_layer,
                 mtm,
                 pointer,
+                edit_menu,
                 renderer: RefCell::new(renderer),
                 state: RefCell::new(State::new(bounds, scale_factor, title)),
                 text_input,
@@ -180,6 +182,9 @@ impl Window {
             }
             mem::replace(&mut state.is_active, active) != active
         };
+        if !active {
+            self.edit_menu.revoke(crate::RevokeReason::Inactive);
+        }
         if changed {
             call(&self.callbacks.active_status, |callback| callback(active));
         }
@@ -192,6 +197,7 @@ impl Window {
     /// `UISceneDidEnterBackgroundNotification` for the window's scene.
     pub(super) fn scene_visibility_changed(&self, visible: bool) {
         if !visible {
+            self.edit_menu.revoke(crate::RevokeReason::Inactive);
             self.state
                 .borrow_mut()
                 .keyboard
@@ -262,6 +268,7 @@ impl Window {
     /// GPUI update that is dropping the window, and out of the display link
     /// callback that may be on the stack.
     pub(super) fn close(&self) {
+        self.edit_menu.revoke(crate::RevokeReason::Closed);
         let ui_window = {
             let mut state = self.state.borrow_mut();
             if mem::replace(&mut state.closed, true) {
@@ -439,8 +446,9 @@ impl Window {
             self.text_input.activate();
         } else {
             self.text_input.deactivate();
-            self.text_input.resign(reason);
-            self.view.becomeFirstResponder();
+            let switch = super::edit_menu::responder_switch::ResponderSwitch::new(self);
+            self.text_input.resign(reason, &switch);
+            switch.acquire(&**self.view);
             self.reconcile_keyboard_layout();
         }
     }
