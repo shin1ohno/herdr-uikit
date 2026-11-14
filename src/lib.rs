@@ -38,6 +38,8 @@ mod menu;
 mod native_edit_action;
 mod native_edit_availability;
 mod native_edit_menu;
+#[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+pub mod native_edit_observer;
 mod platform;
 mod renderer;
 mod scene_fallback;

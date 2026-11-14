@@ -280,6 +280,8 @@ impl Window {
             state.touches.clear();
             state.ui_window.take()
         };
+        #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+        self.text_input.observation_registration().remove();
         pointer::clear_window(self);
         self.pointer.detach();
         self.stop_display_link();
