@@ -230,7 +230,8 @@ fn body<'a>(source: &'a str, anchor: &str) -> &'a str {
     assert_eq!(source.matches(anchor).count(), 1, "unique anchor {anchor}");
     let start = source.find(anchor).unwrap();
     let line = source[..start].rfind('\n').map_or(0, |i| i + 1);
-    let close = format!("\n{}}}", &source[line..start]);
+    let indent = source[line..start].len() - source[line..start].trim_start().len();
+    let close = format!("\n{}}}", &source[line..line + indent]);
     &source[start..start + source[start..].find(&close).unwrap()]
 }
 
@@ -297,10 +298,8 @@ fn every_passive_hook_is_gated_once_in_its_function() {
             .lines()
             .last()
             .unwrap();
-        assert_eq!(
-            gate.trim(),
-            "#[cfg(feature = \"test-support\")]",
-            "{hook} gated"
-        );
+        // retirement_probe.rs is gated as a whole module (window/mod.rs:42-43).
+        let gated = name == "probe" || gate.trim() == "#[cfg(feature = \"test-support\")]";
+        assert!(gated, "{hook} gated");
     }
 }
