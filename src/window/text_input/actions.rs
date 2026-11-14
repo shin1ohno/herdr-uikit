@@ -79,12 +79,15 @@ impl GPUITextInputView {
         }
     }
 
-    pub(super) fn perform_edit_action(&self, selector: Sel) {
-        if !self.editing_enabled(selector) {
-            return;
-        }
-        dispatch_edit_selector(
+    pub(super) fn perform_edit_action(
+        &self,
+        selector: Sel,
+        sender: Option<&objc2::runtime::AnyObject>,
+    ) {
+        dispatch_checked_selector(
             selector,
+            self.ivars().target.menu_delivery(sender),
+            self.editing_enabled(selector),
             self.ivars().target.modifiers(),
             |input| self.ivars().target.dispatch(input),
             || {
@@ -106,7 +109,8 @@ impl GPUITextInputView {
     }
 }
 
-// Shared by the actual responder selectors and the dispatch regression tests.
+// Legacy test entry points exercise the same production dispatcher.
+#[cfg(test)]
 fn dispatch_edit_selector(
     selector: Sel,
     original: (Modifiers, Capslock),
@@ -118,20 +122,55 @@ fn dispatch_edit_selector(
     }
 }
 
+#[cfg(test)]
 fn dispatch_edit_action(
     action: EditAction,
+    original: (Modifiers, Capslock),
+    dispatch: impl FnMut(PlatformInput) -> bool,
+    paste: impl FnOnce(),
+) {
+    dispatch_menu_action(action, None, original, dispatch, paste);
+}
+
+pub(in crate::window) fn dispatch_checked_selector(
+    selector: Sel,
+    delivery: super::super::edit_menu::state::Delivery,
+    enabled: bool,
+    original: (Modifiers, Capslock),
+    dispatch: impl FnMut(PlatformInput) -> bool,
+    paste: impl FnOnce(),
+) {
+    use super::super::edit_menu::state::Delivery;
+    let token = match delivery {
+        Delivery::Reject => return,
+        Delivery::Token(token) => Some(token),
+        Delivery::Command | Delivery::Other => None,
+    };
+    if !enabled {
+        return;
+    }
+    if let Some(action) = EditAction::from_selector(selector) {
+        dispatch_menu_action(action, token, original, dispatch, paste);
+    }
+}
+
+pub(in crate::window) fn dispatch_menu_action(
+    action: EditAction,
+    token: Option<crate::NativeEditMenuToken>,
     original: (Modifiers, Capslock),
     mut dispatch: impl FnMut(PlatformInput) -> bool,
     paste: impl FnOnce(),
 ) {
     let keystroke = action.keystroke();
     let origin = NativeEditActionGuard::enter(Some(action));
+    let menu_origin = crate::native_edit_menu::NativeEditMenuGuard::enter(token);
     let handled = dispatch(PlatformInput::KeyDown(KeyDownEvent {
         keystroke: keystroke.clone(),
         is_held: false,
         prefer_character_input: false,
     }));
     dispatch(PlatformInput::KeyUp(KeyUpEvent { keystroke }));
+    drop(menu_origin);
     drop(origin);
     dispatch(PlatformInput::ModifiersChanged(ModifiersChangedEvent {
         modifiers: original.0,

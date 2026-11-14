@@ -37,6 +37,7 @@ mod layout_direction;
 mod menu;
 mod native_edit_action;
 mod native_edit_availability;
+mod native_edit_menu;
 mod platform;
 mod renderer;
 mod scene_fallback;
@@ -49,6 +50,11 @@ pub use error::{Error, Result};
 pub use layout_direction::{LayoutDirection, layout_direction, set_layout_direction};
 pub use native_edit_action::{NativeEditAction, native_edit_action};
 pub use native_edit_availability::{NativeEditAvailability, set_native_edit_availability};
+pub use native_edit_menu::{
+    EDIT_MENU_IDENTIFIER_PREFIX, EDIT_MENU_PROPERTY_KEY, NativeEditMenuStatus, NativeEditMenuToken,
+    RevokeReason, dismiss_native_edit_menu, native_edit_menu_status, native_edit_menu_token,
+    present_native_edit_menu,
+};
 pub use platform::IosPlatform;
 #[cfg(feature = "test-support")]
 pub use platform::notifications::NotificationResponseFixture;
@@ -64,3 +70,15 @@ pub use window_controls::window_control_insets;
 pub fn application() -> gpui::Application {
     gpui::Application::with_platform(std::rc::Rc::new(IosPlatform::new()))
 }
+
+/// Simulator contract runner: called from a harness-free main-thread test binary.
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub fn test_native_edit_menu_contract() {
+    window::edit_menu::tests::run();
+}
+
+#[cfg(target_abi = "sim")]
+pub use native_edit_menu::{
+    NativeEditMenuSwitchObservation, take_native_edit_menu_switch_observations,
+};

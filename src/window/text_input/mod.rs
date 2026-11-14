@@ -24,7 +24,7 @@
 //! its state, which needs the input handler GPUI is holding at that moment.
 
 mod accessibility;
-mod actions;
+pub(super) mod actions;
 mod editing;
 mod geometry;
 mod keymap;
@@ -76,8 +76,12 @@ impl TextInputView {
         self.view.editing_enabled(selector)
     }
 
-    pub(super) fn perform_edit_action(&self, selector: Sel) {
-        self.view.perform_edit_action(selector);
+    pub(super) fn perform_edit_action(
+        &self,
+        selector: Sel,
+        sender: Option<&objc2::runtime::AnyObject>,
+    ) {
+        self.view.perform_edit_action(selector, sender);
     }
 
     pub(super) fn validate_edit_command(&self, command: &objc2_ui_kit::UICommand) {
@@ -106,10 +110,16 @@ impl TextInputView {
 
     /// Marks an intentional native resignation before UIKit can synchronously
     /// deliver its hide notifications or responder callback.
-    pub(super) fn resign(&self, reason: ResignReason) {
+    pub(super) fn resign(
+        &self,
+        reason: ResignReason,
+        switch: &super::edit_menu::responder_switch::ResponderSwitch<
+            impl super::edit_menu::responder_switch::SwitchOwner,
+        >,
+    ) {
         if self.view.isFirstResponder() {
             self.view.ivars().target.expect_keyboard_hide(reason);
-            self.view.resignFirstResponder();
+            switch.resign(&**self.view);
         }
     }
 

@@ -26,6 +26,35 @@ impl InputTarget {
 }
 
 impl InputTarget {
+    pub(super) fn menu_switch(
+        &self,
+    ) -> Option<super::edit_menu::responder_switch::ResponderSwitch<std::rc::Rc<Window>>> {
+        Some(super::edit_menu::responder_switch::ResponderSwitch::new(
+            self.window.upgrade()?,
+        ))
+    }
+    #[cfg(target_abi = "sim")]
+    pub(super) fn menu_restart(&self) {
+        if let Some(window) = self.window.upgrade() {
+            window.edit_menu.observation.borrow_mut().restart = true;
+        }
+    }
+    pub(super) fn menu_resigned(&self) {
+        if let Some(window) = self.window.upgrade() {
+            window.edit_menu.resigned();
+        }
+    }
+    pub(super) fn menu_delivery(
+        &self,
+        sender: Option<&objc2::runtime::AnyObject>,
+    ) -> super::edit_menu::state::Delivery {
+        let sender = super::edit_menu::classify(sender);
+        self.window
+            .upgrade()
+            .map_or(super::edit_menu::state::Delivery::Reject, |w| {
+                w.edit_menu.state.borrow().delivery(sender)
+            })
+    }
     /// Sends `input` through the window's event callback. Returns whether
     /// GPUI handled it (`DispatchEventResult::propagate == false`).
     pub(crate) fn dispatch(&self, input: PlatformInput) -> bool {

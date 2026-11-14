@@ -28,6 +28,7 @@
 
 mod convert;
 mod direction;
+pub(crate) mod edit_menu;
 mod error;
 mod frame;
 mod input_target;

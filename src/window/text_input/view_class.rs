@@ -97,23 +97,23 @@ define_class!(
         }
 
         #[unsafe(method(paste:))]
-        fn __paste(&self, _: Option<&AnyObject>) {
-            self.perform_edit_action(sel!(paste:));
+        fn __paste(&self, sender: Option<&AnyObject>) {
+            self.perform_edit_action(sel!(paste:), sender);
         }
 
         #[unsafe(method(copy:))]
-        fn __copy(&self, _: Option<&AnyObject>) {
-            self.perform_edit_action(sel!(copy:));
+        fn __copy(&self, sender: Option<&AnyObject>) {
+            self.perform_edit_action(sel!(copy:), sender);
         }
 
         #[unsafe(method(cut:))]
-        fn __cut(&self, _: Option<&AnyObject>) {
-            self.perform_edit_action(sel!(cut:));
+        fn __cut(&self, sender: Option<&AnyObject>) {
+            self.perform_edit_action(sel!(cut:), sender);
         }
 
         #[unsafe(method(selectAll:))]
-        fn __select_all(&self, _: Option<&AnyObject>) {
-            self.perform_edit_action(sel!(selectAll:));
+        fn __select_all(&self, sender: Option<&AnyObject>) {
+            self.perform_edit_action(sel!(selectAll:), sender);
         }
 
         #[unsafe(method(canBecomeFirstResponder))]
@@ -138,6 +138,7 @@ define_class!(
             // SAFETY: `resignFirstResponder` takes nothing and returns a BOOL.
             let resigned: bool = unsafe { msg_send![super(self), resignFirstResponder] };
             if resigned {
+                self.ivars().target.menu_resigned();
                 self.did_resign_first_responder(context);
             }
             resigned

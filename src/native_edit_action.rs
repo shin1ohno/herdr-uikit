@@ -32,16 +32,25 @@ pub fn native_edit_action() -> Option<NativeEditAction> {
     CURRENT.get()
 }
 
-pub(crate) struct NativeEditActionGuard(Option<NativeEditAction>);
+pub(crate) struct NativeEditActionGuard(
+    Option<NativeEditAction>,
+    Option<crate::native_edit_menu::NativeEditMenuGuard>,
+);
 
 impl NativeEditActionGuard {
     pub(crate) fn enter(action: Option<NativeEditAction>) -> Self {
-        Self(CURRENT.replace(action))
+        Self(
+            CURRENT.replace(action),
+            action
+                .is_none()
+                .then(|| crate::native_edit_menu::NativeEditMenuGuard::enter(None)),
+        )
     }
 }
 
 impl Drop for NativeEditActionGuard {
     fn drop(&mut self) {
         CURRENT.set(self.0);
+        drop(self.1.take());
     }
 }
