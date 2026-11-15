@@ -532,6 +532,11 @@ mod probe {
                     herdr_uikit::set_native_edit_availability(handle.into(), None),
                     "restore-policy",
                 );
+                // Back to a real selection before retiring: with a nil selection the
+                // new responder makes UIKit pass nil to offsetFromPosition:toPosition:,
+                // which the SDK takes as non-optional (view_class.rs __offset_between).
+                let reset = handle.update(&mut app, |view, _, _| view.nil_selection = false);
+                check(reset.is_ok(), "nil-selection-reset");
                 let receipt = retire_text_input_session(handle.into(), |_| {});
                 check(receipt.is_ok(), "retire-last");
             }
