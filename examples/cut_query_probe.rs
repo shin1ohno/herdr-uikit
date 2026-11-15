@@ -65,6 +65,7 @@ mod probe {
         static CLIENT: RefCell<Option<NativeClient>> = const { RefCell::new(None) };
         static COUNTS: RefCell<CallbackCounts> = RefCell::new(CallbackCounts::default());
         static LOAN: RefCell<Option<NativeCutProbeResult>> = const { RefCell::new(None) };
+        static WAITS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
     }
     // The single legal-phase table (matrix-4 §3).
     fn legal(callback: Callback, phase: P) -> bool {
@@ -432,7 +433,13 @@ mod probe {
         let next = app.clone();
         let client = client(handle);
         match n {
+            // Bounded and logged like examples/retirement_probe.rs: a responder
+            // that never becomes ready fails by name instead of hanging.
             0 if client.text_readiness() != (true, true, true) => {
+                let waits = WAITS.replace(WAITS.get() + 1);
+                let ready = client.text_readiness();
+                eprintln!("CUT_QUERY_PROBE_READINESS: frame={waits} {ready:?}");
+                check(waits < 600, "text-responder-ready-within-600-frames");
                 return frame(app, move || step(handle, next, 0));
             }
             0 => {

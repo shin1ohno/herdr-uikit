@@ -138,10 +138,7 @@ fn focus_handler_and_presentation_rules() {
     assert!(same_install((1, &Some(3)), (1, &Some(3))));
     assert!(!same_install((1, &Some(3)), (1, &None)), "nil focus");
     assert!(!same_install((1, &Some(3)), (1, &Some(4))), "another focus");
-    assert!(
-        !same_install((1, &Some(3)), (2, &Some(3))),
-        "another window"
-    );
+    assert!(!same_install((1, &Some(3)), (2, &Some(3))), "other window");
     let _run = rearm(_run);
     with_run(|run| run.installed(true));
     assert!(trace().refused == 0 && trace().counters[C::SameFocusInstalls as usize] == 1);
@@ -153,10 +150,7 @@ fn focus_handler_and_presentation_rules() {
     C::HandlerRestores.took(true);
     permit();
     drop(C::QueryEntries.query());
-    assert!(
-        only(R::HandlerUnrestored),
-        "a take without a set before the getter"
-    );
+    assert!(only(R::HandlerUnrestored), "take, no set, getter");
     let _run = rearm(_run);
     P::AcceptedCut.record_edit(sel!(cut:));
     P::DownReturned.record();
