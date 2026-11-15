@@ -37,6 +37,8 @@ mod keyboard;
 mod layout;
 mod lifecycle;
 mod native_retirement_request;
+#[cfg(all(test, target_os = "ios", target_abi = "sim", feature = "test-support"))]
+mod observation_test_host;
 mod platform_window;
 mod pointer;
 mod requests;
