@@ -167,10 +167,8 @@ fn order_depth_contention_overflow_and_ownership() {
     let _run = armed();
     P::AcceptedCut.record_edit(sel!(cut:));
     P::UpReturned.record();
-    assert!(
-        only(R::PhaseOrder) && phase(RECEIVER) == Some(P::AcceptedCut),
-        "skipped"
-    );
+    assert!(only(R::PhaseOrder), "skipped");
+    assert_eq!(phase(RECEIVER), Some(P::AcceptedCut));
     let _run = rearm(_run);
     P::AcceptedCut.record_edit(sel!(copy:));
     assert!(only(R::NestedEditAction), "not a Cut");
@@ -196,10 +194,8 @@ fn order_depth_contention_overflow_and_ownership() {
         Some(NativeCutProbeError::CallbackLoanActive)
     );
     drop(Armed(u64::MAX));
-    assert!(
-        phase(RECEIVER).is_some() && phase(RECEIVER + 1).is_none(),
-        "other runs stay armed"
-    );
+    assert!(phase(RECEIVER).is_some(), "other runs stay armed");
+    assert_eq!(phase(RECEIVER + 1), None);
     drop(_run);
     NEXT_ID.set(None);
     assert_eq!(

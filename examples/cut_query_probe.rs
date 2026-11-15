@@ -308,8 +308,12 @@ mod probe {
         }
     }
 
+    // AsyncWindowContext::on_next_frame drops the request while the App is
+    // borrowed; update reports it, so a lost frame fails by name.
     fn frame(mut app: AsyncWindowContext, f: impl FnOnce() + 'static) {
-        app.on_next_frame(move |_, _| native::next_native_turn(f));
+        let next = move |_: &mut Window, _: &mut App| native::next_native_turn(f);
+        let scheduled = app.update(|window, _| window.on_next_frame(next));
+        check(scheduled.is_ok(), "next-frame-scheduled");
     }
     fn client(handle: WindowHandle<Probe>) -> NativeClient {
         let client = native::capture(handle.into());
@@ -580,7 +584,8 @@ mod probe {
             check(app.is_ok(), "capture-async-window");
             let Ok(app) = app else { return };
             let next = app.clone();
-            frame(app, move || step(handle, next, 0));
+            // Outside application().run's App borrow (examples/retirement_probe.rs).
+            native::next_native_turn(move || frame(app, move || step(handle, next, 0)));
         });
     }
 }
