@@ -27,6 +27,7 @@ use super::view_class::GPUITextInputView;
 use crate::menu::{self, EventSource, Route, Shortcut, Trigger};
 use crate::native_edit_action::NativeEditActionGuard;
 use crate::platform::application;
+use crate::window::state::press_ledger::KeyWitness;
 
 /// Seconds before a held key starts repeating, and between repeats, close to
 /// iPadOS's defaults for hardware keyboards (which apps cannot read).
@@ -94,6 +95,17 @@ impl KeyState {
         self.repeat = None;
     }
 
+    /// The second witness for retirement requests: what this state says is
+    /// held. Its body is fixed by `entry_guard_tests::key_state_witness_maps_every_field`.
+    pub(super) fn witness(&self) -> KeyWitness {
+        KeyWitness {
+            presses: self.presses.len(),
+            repeat: self.repeat.is_some(),
+            menu_press: self.menu_press.is_some(),
+            modifiers: self.held != HeldModifiers::default(),
+        }
+    }
+
     fn began(&mut self, usage: isize, route: Route, key: String, event: u64) {
         self.presses.retain(|press| press.usage != usage);
         self.presses.push(Press {
@@ -158,6 +170,11 @@ impl KeyFacts {
 }
 
 impl GPUITextInputView {
+    /// The key state's witness for `hardware_held`.
+    pub(in crate::window) fn key_witness(&self) -> KeyWitness {
+        self.ivars().keys.borrow().witness()
+    }
+
     pub(super) fn presses_began(&self, presses: &NSSet<UIPress>, event: Option<&UIPressesEvent>) {
         if !self.ivars().target.client.live() {
             return;
@@ -482,4 +499,45 @@ pub(super) fn dispatch_key_up(
     let _observation = crate::native_edit_observer::KeyScope::enter(None);
     let _origin = NativeEditActionGuard::enter(None);
     dispatch(PlatformInput::KeyUp(KeyUpEvent { keystroke }))
+}
+
+#[cfg(test)]
+mod witness_tests {
+    //! S8: every field of the key state reaches the witness. These build the
+    //! private state directly, so they live beside it.
+    use super::*;
+
+    #[test]
+    fn key_witness_reflects_key_state() {
+        assert_eq!(
+            KeyState::default().witness(),
+            KeyWitness::default(),
+            "witness-empty"
+        );
+        let mut keys = KeyState::default();
+        keys.began(4, Route::Gpui, "a".into(), 0);
+        assert_eq!(keys.witness().presses, 1, "witness-presses");
+        let keys = KeyState {
+            repeat: Some(Repeat {
+                usage: 4,
+                keystroke: Keystroke::default(),
+            }),
+            ..KeyState::default()
+        };
+        assert!(keys.witness().repeat, "witness-repeat");
+        let keys = KeyState {
+            menu_press: Some(Keystroke::default()),
+            ..KeyState::default()
+        };
+        assert!(keys.witness().menu_press, "witness-menu-press");
+        let mut keys = KeyState::default();
+        keys.held.set(0b0000_1000, true);
+        assert!(keys.witness().modifiers, "witness-modifiers");
+        keys.held.set(0b0000_1000, false);
+        assert_eq!(
+            keys.witness(),
+            KeyWitness::default(),
+            "witness-modifier-released"
+        );
+    }
 }

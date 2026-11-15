@@ -11,8 +11,9 @@ pub use super::text_input::probe::{NativeClient, NativeQuery, NativeQueryError};
 mod native_operation;
 use super::{scene, state::Window};
 pub use native_operation::{
-    callback_sentinel, edit, empty_hardware_entry, on_raw_ingress, raw_later, raw_scene_destroy,
-    raw_scene_refusal, set_fixture_pasteboard,
+    ProbePhase, ProbePressHandle, callback_sentinel, edit, empty_hardware_entry, inject_press,
+    on_raw_ingress, probe_press, raw_later, raw_scene_destroy, raw_scene_refusal,
+    set_fixture_pasteboard,
 };
 
 fn window(handle: AnyWindowHandle) -> Option<Rc<Window>> {

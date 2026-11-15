@@ -11,6 +11,11 @@ use std::{
 
 mod client_lifetime;
 mod native_retirement_request;
+/// The production ledger, compiled as is; `pin` is `()` here.
+pub(crate) mod state {
+    pub(crate) mod press_ledger;
+}
+use state::press_ledger::{KeyWitness, PressLedger};
 mod retirement;
 pub(crate) use native_retirement_request::*;
 pub(crate) use retirement::*;
@@ -26,6 +31,7 @@ pub(crate) struct State {
     pub(crate) native_request_serial: u64,
     pub(crate) native_request_pending: Option<u64>,
     pub(crate) native_hardware_observed: bool,
+    pub(crate) press_ledger: PressLedger<()>,
 }
 pub(crate) struct Target {
     window: Weak<Window>,
@@ -47,8 +53,13 @@ impl Target {
 }
 pub(crate) struct NativeEndpoint {
     target: Target,
+    /// Knob for the key state's witness, which UIKit's text view computes.
+    pub(crate) witness: Cell<KeyWitness>,
 }
 impl NativeEndpoint {
+    pub(crate) fn key_witness(&self) -> KeyWitness {
+        self.witness.get()
+    }
     pub(crate) fn native_target(&self) -> &Target {
         &self.target
     }
@@ -77,7 +88,10 @@ impl TextInputView {
     fn install(&self, next: Target) -> NativeInputOrigin {
         let origin = next.origin();
         self.constructed.set(self.constructed.get() + 1);
-        *self.view.borrow_mut() = Rc::new(NativeEndpoint { target: next });
+        *self.view.borrow_mut() = Rc::new(NativeEndpoint {
+            target: next,
+            witness: Cell::default(),
+        });
         let hook = self.acquire.borrow_mut().take();
         if let Some(hook) = hook {
             hook();
@@ -163,6 +177,7 @@ pub(crate) fn fixture(handle: u64, identity: u64) -> Rc<Window> {
                     window: weak.clone(),
                     client: client_lifetime::fixture(identity),
                 },
+                witness: Cell::default(),
             })),
             replacing: Cell::new(false),
             constructed: Cell::new(0),

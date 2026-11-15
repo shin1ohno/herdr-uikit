@@ -3,12 +3,19 @@
     unsafe_code,
     reason = "typed UIKit selectors for an isolated receiving fixture"
 )]
-use std::{ptr::NonNull, rc::Weak};
+use std::{cell::Cell, ptr::NonNull, rc::Weak};
 
 use gpui::AnyWindowHandle;
-use objc2::{MainThreadMarker, msg_send, rc::Retained, runtime::AnyObject};
+use objc2::{
+    DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send,
+    rc::Retained,
+    runtime::{AnyObject, NSObject},
+};
 use objc2_foundation::{NSError, NSSet, NSString};
-use objc2_ui_kit::{UIApplication, UIPasteboard, UIPress, UIView};
+use objc2_ui_kit::{
+    UIApplication, UIKey, UIKeyModifierFlags, UIKeyboardHIDUsage, UIPasteboard, UIPress,
+    UIPressPhase, UIPressType, UIView,
+};
 
 use crate::NativeEditAction;
 
@@ -65,8 +72,8 @@ pub fn edit(handle: AnyWindowHandle, action: NativeEditAction, drawing: bool) ->
     true
 }
 
-/// Empty physical press entry is still hardware history; no key conversion is
-/// needed to reach the exclusion. This is injected, not a physical keyboard.
+/// An empty press set through the actual selector: hardware history, but no
+/// press for the ledger. This is injected, not a physical keyboard.
 pub fn empty_hardware_entry(handle: AnyWindowHandle) -> bool {
     let Some(window) = super::window(handle) else {
         return false;
@@ -75,6 +82,136 @@ pub fn empty_hardware_entry(handle: AnyWindowHandle) -> bool {
     let presses = NSSet::<UIPress>::new();
     // SAFETY: standard UIResponder argument types, including a nil event.
     let () = unsafe { msg_send![&*view, pressesBegan: &*presses, withEvent: None::<&AnyObject>] };
+    true
+}
+
+pub struct ProbePressIvars {
+    key: Option<Retained<UIKey>>,
+    phase: Cell<UIPressPhase>,
+}
+
+define_class!(
+    // SAFETY: a test-support UIPress whose getters UIKit and the SDK read; it
+    // adds no designated initializer and does not implement Drop.
+    #[unsafe(super(UIPress, NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "HerdrProbePress"]
+    #[ivars = ProbePressIvars]
+    pub struct ProbePress;
+
+    impl ProbePress {
+        #[unsafe(method_id(key))]
+        fn __key(&self) -> Option<Retained<UIKey>> {
+            self.ivars().key.clone()
+        }
+
+        #[unsafe(method(phase))]
+        fn __phase(&self) -> UIPressPhase {
+            self.ivars().phase.get()
+        }
+
+        /// No TV-remote or arrow type, so no focus or remote handling.
+        #[unsafe(method(type))]
+        fn __type(&self) -> UIPressType {
+            UIPressType(-1)
+        }
+    }
+);
+
+define_class!(
+    // SAFETY: a test-support UIKey that types nothing: no characters, no
+    // modifiers and HID usage 0, which maps to no GPUI keystroke.
+    #[unsafe(super(UIKey, NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "HerdrProbeKey"]
+    struct ProbeKey;
+
+    impl ProbeKey {
+        #[unsafe(method(keyCode))]
+        fn __key_code(&self) -> UIKeyboardHIDUsage {
+            UIKeyboardHIDUsage(0)
+        }
+
+        #[unsafe(method_id(characters))]
+        fn __characters(&self) -> Retained<NSString> {
+            NSString::new()
+        }
+
+        #[unsafe(method_id(charactersIgnoringModifiers))]
+        fn __characters_ignoring_modifiers(&self) -> Retained<NSString> {
+            NSString::new()
+        }
+
+        #[unsafe(method(modifierFlags))]
+        fn __modifier_flags(&self) -> UIKeyModifierFlags {
+            UIKeyModifierFlags::empty()
+        }
+    }
+);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProbePhase {
+    Began,
+    Ended,
+}
+
+/// One injected press object, kept so its Ended is the same object as its Began.
+pub struct ProbePressHandle(Retained<ProbePress>);
+
+/// A new injected press, with a key (that types nothing) or without one.
+pub fn probe_press(keyed: bool) -> Option<ProbePressHandle> {
+    let mtm = MainThreadMarker::new()?;
+    let key = keyed.then(|| {
+        // SAFETY: NSObject's `init` on a subclass without ivars.
+        let key: Retained<ProbeKey> =
+            unsafe { msg_send![super(ProbeKey::alloc(mtm).set_ivars(())), init] };
+        Retained::into_super(key)
+    });
+    let this = ProbePress::alloc(mtm).set_ivars(ProbePressIvars {
+        key,
+        phase: Cell::new(UIPressPhase::Began),
+    });
+    // SAFETY: NSObject's `init`; the ivars were set before it runs.
+    let press: Retained<ProbePress> = unsafe { msg_send![super(this), init] };
+    Some(ProbePressHandle(press))
+}
+
+/// Send `press` to the text view (or its drawing parent) through the actual
+/// press selector for `phase`. This is injected, not a physical keyboard.
+pub fn inject_press(
+    handle: AnyWindowHandle,
+    press: &ProbePressHandle,
+    phase: ProbePhase,
+    drawing: bool,
+) -> bool {
+    let Some(window) = super::window(handle) else {
+        return false;
+    };
+    let text: Retained<UIView> = window.text_input.view();
+    let view = if drawing {
+        text.superview()
+    } else {
+        Some(text)
+    };
+    let Some(view) = view else {
+        return false;
+    };
+    press.0.ivars().phase.set(match phase {
+        ProbePhase::Began => UIPressPhase::Began,
+        ProbePhase::Ended => UIPressPhase::Ended,
+    });
+    let presses = NSSet::from_retained_slice(&[Retained::into_super(press.0.clone())]);
+    // SAFETY: standard UIResponder argument types, including a nil event.
+    let () = unsafe {
+        match phase {
+            ProbePhase::Began => {
+                msg_send![&*view, pressesBegan: &*presses, withEvent: None::<&AnyObject>]
+            }
+            ProbePhase::Ended => {
+                msg_send![&*view, pressesEnded: &*presses, withEvent: None::<&AnyObject>]
+            }
+        }
+    };
     true
 }
 

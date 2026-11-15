@@ -126,6 +126,13 @@ mutations = [
      '        view.flush();\n        old.removeFromSuperview();',
      '        view.ivars().acquire.set(Acquire::Settled);\n        view.flush();\n        old.removeFromSuperview();',
      'replacement-responder-acquired-before-input'),
+    # S13: the injected presses reach the ledger only through these lines.
+    ('text-press-record-removed', 'src/window/text_input/view_class.rs',
+     '            self.ivars().target.record_presses(PressPhase::Began, presses);\n', '',
+     'keyed-press-held-refused'),
+    ('drawing-press-record-removed', 'src/window/view.rs',
+     '            if let Some(window) = self.owner() { window.record_presses(PressPhase::Began, presses); }\n', '',
+     'unkeyed-press-held-refused'),
 ]
 manifest = {'head': head, 'scope': 'SDK native adapter subset, not OS/B2/S/Z acceptance', 'mutations': []}
 for label, relative, before, after, assertion in mutations:

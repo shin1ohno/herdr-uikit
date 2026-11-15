@@ -41,10 +41,32 @@ own endpoint. No input is buffered, relabeled, filtered by value or replayed.
 
 General text, unmark, selection, query, responder, lifecycle, observer and raw
 callbacks refuse requests. Native unmark still commits via replacement and
-restores selection. Hardware presses, repeat and keyboard/unknown shortcut
-routes set sticky Window hardware history before dispatch. New requests for
-that Window then return UnsupportedHardwareContext, including after release or
-retirement. This restriction leaves hardware/general-text recovery unsupported.
+restores selection.
+
+Held hardware input refuses requests with UnsupportedHardwareContext; released
+hardware does not. Each of the eight press selectors (text view and drawing
+view, Began/Changed/Ended/Cancelled) feeds the Window's held-press ledger
+(`src/window/state/press_ledger.rs`) as the first statement after its refusal
+frame, before the text view's live-client check, so a release reaching a fenced
+old view still clears its press. A press with a key is identified by its HID
+usage, one without a key by its UIPress object, retained while held; a press
+seen by both views counts once and an unseen Changed counts as held. A request
+is refused while the ledger has an entry, or while the text view's key state
+(the second witness: key presses, repeat, menu key command, held modifiers)
+says something is held although the ledger is empty. A press frame itself
+still refuses (`native_operation::admission`). Both the DispatcherTask and the
+Edit continuation paths read the same check.
+
+Three cases stay refused until the Window is rebuilt or the key is pressed
+again (fail-closed; nothing clears the ledger on its own, on deactivation or by
+timer): a lost release of a keyed press clears only when the same key is
+pressed and released again; a key-less press clears only with the release of
+the same UIPress object; more than 16 presses in flight set an overflow that is
+never cleared. A press that began before an SDK view saw it is in neither the
+ledger nor the key state; as before, its release goes to UIKit (B2 scope).
+`native_hardware_hold(window)` reports the keyed/key-less counts, overflow,
+key-state-only, the oldest press's age and the diagnostic hardware history,
+for status lines and observation; it never changes admission.
 
 ## Ownership and outcomes
 
@@ -102,7 +124,9 @@ requests there remain refused. Unexpected OS input during acquisition is B2.
    origin with a new RequestKey. It never revives old; only its own Proceed can
    construct a successor. Do not schedule timers to convert unsupported input
    into apparently supported recovery, or paste legacy retired+1 acknowledgement
-   arithmetic into this API.
+   arithmetic into this API. After UnsupportedHardwareContext, a consumer may
+   request again from a tagged DispatcherTask when an actual key release or
+   modifier release arrives; no timer, polling or input replay.
 
 Same-Window legacy requests remain InProgress during new work. A successful
 other-Window legacy request interrupts NewQueued and releases it before legacy
@@ -115,16 +139,22 @@ New requests never join or refill an active legacy drain.
 
 `scripts/check-b1-source.py` compiles selected production Rust modules with
 explicit native/GPUI doubles. Its three raw-body fixtures extract actual closure
-bodies; external effects are doubled. It covers scheduling/ownership source,
-not the target library, Objective-C ABI, AppCell or UIKit receiving behavior.
+bodies; external effects are doubled. Files the compiled modules read with
+`include_str!` (the source guards' targets) are copied verbatim and hashed. It
+also compiles the held-press ledger with its own tests. It covers
+scheduling/ownership source, not the target library, Objective-C ABI, AppCell
+or UIKit receiving behavior.
 
 `examples/b1_probe/` uses real SDK Windows/selectors and callback slots. It
 authors text/drawing edits, fallback, query interruption, cancellation, mixed
-live/fenced requests, raw bodies and an empty hardware refusal. It is a SUBSET
+live/fenced requests, raw bodies, an empty press set that leaves the ledger
+empty, and injected UIPress/UIKey subclasses: a key-less press on the drawing
+view and a keyed press on the fenced text view are refused while held, paired
+by object or usage, and admitted after release. It is a SUBSET
 of A1-A16; focus/detach/reconnect, every text/press variation, consumer peer
 receipt and physical OS delivery are not supplied by its PASS marker.
 
-`scripts/check-public-b1.py` authors eight single source-removal negatives and
+`scripts/check-public-b1.py` authors ten single source-removal negatives and
 exact restores. None of its native runs is authorized by this document. Under a
 fresh controller-granted exclusive mini lease and the existing absolute 6 GiB
 guard, use the frozen HEAD with device/simulator clippy all-targets/all-features,
