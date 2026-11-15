@@ -154,7 +154,7 @@ by object or usage, and admitted after release. It is a SUBSET
 of A1-A16; focus/detach/reconnect, every text/press variation, consumer peer
 receipt and physical OS delivery are not supplied by its PASS marker.
 
-`scripts/check-public-b1.py` authors ten single source-removal negatives and
+`scripts/check-public-b1.py` authors nine single source-removal negatives and
 exact restores. None of its native runs is authorized by this document. Under a
 fresh controller-granted exclusive mini lease and the existing absolute 6 GiB
 guard, use the frozen HEAD with device/simulator clippy all-targets/all-features,
