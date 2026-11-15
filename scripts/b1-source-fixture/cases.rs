@@ -70,15 +70,157 @@ fn origin_capacity_exhaustion_and_refusals_do_not_reserve() {
         released(&w);
         assert!(w.text_input.captured_native().native_target().client.live());
     }
-    b.state.borrow_mut().native_hardware_observed = true;
+}
+
+use window::state::press_ledger::{self, KeyWitness, PressFact, PressPhase};
+
+fn press(w: &window::Window, phase: PressPhase, usage: Option<isize>, identity: usize) {
+    press_ledger::apply(
+        &mut w.state.borrow_mut().press_ledger,
+        phase,
+        [PressFact::new(usage, identity, ())],
+        std::time::Instant::now(),
+    );
+}
+fn refused_as_hardware(w: &window::Window, label: &str) {
     dispatcher_task(|| {
         assert_eq!(
-            request_native_edit_retirement(b.handle, origin(&b), |_| PrepareDecision::Decline)
-                .unwrap_err(),
-            Error::UnsupportedHardwareContext
+            request_native_edit_retirement(w.handle, origin(w), |_| PrepareDecision::Decline).err(),
+            Some(Error::UnsupportedHardwareContext),
+            "{label}"
         )
     });
-    assert_eq!(b.state.borrow().native_request_serial, 0);
+    assert_eq!(w.state.borrow().native_request_serial, 0, "{label}");
+    released(w);
+}
+
+// S10: a held press refuses a task request without reserving.
+#[test]
+fn held_press_refuses_request() {
+    let w = window::fixture(13, 0);
+    press(&w, PressPhase::Began, Some(4), 0);
+    refused_as_hardware(&w, "held-press-refused");
+    let hold = crate::window::Window::native_hardware_hold(w.handle, MainThreadMarker).unwrap();
+    assert_eq!(
+        (hold.keyed, hold.unkeyed, hold.held()),
+        (1, 0, true),
+        "hold-observed"
+    );
+    press(&w, PressPhase::Began, None, 0x1000);
+    refused_as_hardware(&w, "held-press-refused");
+}
+
+// S11: once every press ended, hardware history alone admits the request.
+#[test]
+fn released_window_admits_request() {
+    let w = window::fixture(14, 0);
+    // Production sets this at all 13 hardware sites; it is diagnostic only.
+    w.state.borrow_mut().native_hardware_observed = true;
+    press(&w, PressPhase::Began, Some(4), 0);
+    press(&w, PressPhase::Ended, Some(4), 0);
+    let hold = crate::window::Window::native_hardware_hold(w.handle, MainThreadMarker).unwrap();
+    assert!(
+        !hold.held() && hold.observed_ever,
+        "released-hardware-observed"
+    );
+    dispatcher_task(|| {
+        assert!(
+            request_native_edit_retirement(w.handle, origin(&w), |_| PrepareDecision::Decline)
+                .is_ok(),
+            "released-hardware-admitted"
+        )
+    });
+    released(&w);
+}
+
+// S7 / G2: the real `hardware_held` reads the key state when the ledger is
+// empty, for each witness field.
+#[test]
+fn key_state_witness_refuses_request_with_empty_ledger() {
+    let none = KeyWitness::default();
+    for (witness, label) in [
+        (
+            KeyWitness { presses: 1, ..none },
+            "request-key-state-presses",
+        ),
+        (
+            KeyWitness {
+                repeat: true,
+                ..none
+            },
+            "request-key-state-repeat",
+        ),
+        (
+            KeyWitness {
+                menu_press: true,
+                ..none
+            },
+            "request-key-state-menu",
+        ),
+        (
+            KeyWitness {
+                modifiers: true,
+                ..none
+            },
+            "request-key-state-modifiers",
+        ),
+    ] {
+        let w = window::fixture(15, 0);
+        w.text_input.captured_native().witness.set(witness);
+        refused_as_hardware(&w, label);
+        let hold = crate::window::Window::native_hardware_hold(w.handle, MainThreadMarker).unwrap();
+        assert!(hold.key_state_only && hold.held(), "{label}");
+    }
+}
+
+// G7: the Edit continuation path is refused the same way while a press is held.
+#[test]
+fn held_press_refuses_edit_request() {
+    let w = window::fixture(16, 0);
+    press(&w, PressPhase::Began, Some(4), 0);
+    let old = w.text_input.captured_native();
+    dispatcher_task(|| {
+        event(false, || {
+            NativeOperation::edit(|op| {
+                op.phase(origin(&w), Phase::EditDispatch, || {
+                    let _client = old.native_target().client.enter().unwrap();
+                    assert_eq!(
+                        request_native_edit_retirement(w.handle, origin(&w), |_| {
+                            PrepareDecision::Decline
+                        })
+                        .err(),
+                        Some(Error::UnsupportedHardwareContext),
+                        "held-press-refuses-edit"
+                    );
+                })
+            })
+        })
+    });
+    assert_eq!(
+        w.state.borrow().native_request_serial,
+        0,
+        "held-press-refuses-edit"
+    );
+    released(&w);
+    // Released, the same Edit continuation is admitted.
+    press(&w, PressPhase::Ended, Some(4), 0);
+    dispatcher_task(|| {
+        event(false, || {
+            NativeOperation::edit(|op| {
+                op.phase(origin(&w), Phase::EditDispatch, || {
+                    let _client = old.native_target().client.enter().unwrap();
+                    assert!(
+                        request_native_edit_retirement(w.handle, origin(&w), |_| {
+                            PrepareDecision::Decline
+                        })
+                        .is_ok(),
+                        "released-edit-admitted"
+                    );
+                })
+            })
+        })
+    });
+    released(&w);
 }
 
 #[test]

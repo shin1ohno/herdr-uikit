@@ -7,7 +7,7 @@ use std::{cell::RefCell, rc::Rc};
 use gpui::AnyWindowHandle;
 use objc2::MainThreadMarker;
 
-use super::{Window, scene};
+use super::{Window, scene, state::press_ledger};
 use crate::{
     NativeInputOrigin, NativeRetirementInterruption, NativeRetirementRequest,
     NativeRetirementRequestError as Error, NativeRetirementRequestStatus as Status,
@@ -30,6 +30,36 @@ pub(crate) fn native_input_origin(
     Some(window.text_input.captured_native().native_target().origin())
 }
 
+/// A press is held by the Window's ledger or, failing that, by the text view's
+/// key state (the second witness). Requests are refused while either says so;
+/// a press frame still refuses on its own (`native_operation::admission`).
+pub(super) fn hardware_held(window: &Window) -> Option<press_ledger::HeldReason> {
+    let witness = window.text_input.captured_native().key_witness();
+    press_ledger::held(&window.state.borrow().press_ledger, witness)
+}
+
+impl Window {
+    /// Observation only; see [`crate::NativeHardwareHold`].
+    pub(crate) fn native_hardware_hold(
+        handle: AnyWindowHandle,
+        mtm: MainThreadMarker,
+    ) -> Option<crate::NativeHardwareHold> {
+        let window = find(handle, mtm)?;
+        let witness = window.text_input.captured_native().key_witness();
+        let state = window.state.borrow();
+        let summary =
+            press_ledger::summary(&state.press_ledger, witness, std::time::Instant::now());
+        Some(crate::NativeHardwareHold {
+            keyed: summary.keyed,
+            unkeyed: summary.unkeyed,
+            overflow: summary.overflow,
+            key_state_only: summary.key_state_only,
+            oldest: summary.oldest,
+            observed_ever: state.native_hardware_observed,
+        })
+    }
+}
+
 pub(crate) fn request_native_edit_retirement(
     handle: AnyWindowHandle,
     mtm: MainThreadMarker,
@@ -47,7 +77,7 @@ pub(crate) fn request_native_edit_retirement(
         if state.native_request_pending.is_some() || window.text_input.replacing.get() {
             return Err(Error::InProgress);
         }
-        if state.native_hardware_observed {
+        if hardware_held(&window).is_some() {
             return Err(Error::UnsupportedHardwareContext);
         }
         state

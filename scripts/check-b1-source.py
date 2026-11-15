@@ -25,7 +25,9 @@ FILES = [
     'src/window/client_lifetime.rs', 'src/window/native_retirement_request.rs',
     'src/window/native_retirement_request/coordinator.rs',
     'src/window/native_retirement_request/transaction.rs', 'src/window/retirement.rs',
+    'src/native_operation/entry_guard_tests.rs', 'src/window/state/press_ledger.rs',
 ]
+INCLUDE_STR = re.compile(r'include_str!\("([^"]+)"\)')
 
 
 def digest(data):
@@ -45,6 +47,23 @@ def body(source, anchor):
     raise ValueError('unclosed raw closure')
 
 
+def include_targets():
+    """Files the compiled modules read with include_str!, relative to ROOT.
+
+    They are read, not compiled, so the source guards that read them must see
+    the production bytes: they are copied verbatim, never rewritten.
+    """
+    targets = []
+    for relative in FILES:
+        for target in INCLUDE_STR.findall((ROOT / relative).read_text()):
+            resolved = str((ROOT / relative).parent.joinpath(target).resolve().relative_to(ROOT))
+            if resolved in FILES:
+                raise ValueError(f'{resolved} is both compiled and read by include_str!')
+            if resolved not in targets:
+                targets.append(resolved)
+    return targets
+
+
 def extract(destination):
     hashes = {}
     for relative in FILES:
@@ -61,6 +80,11 @@ def extract(destination):
         target = destination / relative.removeprefix('src/')
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text)
+    for relative in include_targets():
+        hashes[relative] = digest((ROOT / relative).read_bytes())
+        target = destination / relative.removeprefix('src/')
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / relative, target)
     for name in ['main.rs', 'window.rs', 'cases.rs']:
         hashes[f'scripts/b1-source-fixture/{name}'] = digest((FIXTURE / name).read_bytes())
         shutil.copyfile(FIXTURE / name, destination / name)
@@ -108,6 +132,117 @@ MUTATIONS = [
      'Phase::EditDispatch | Phase::PasteFallback | Phase::ObserveSnapshot)', 'query-loan-is-not-admission'),
     ('quiescence-loan-lost', 'native_operation/state.rs',
      '            && s.loans == 0', '', 'native-prepare-no-borrow'),
+] + [
+    # Held-press ledger (plan-2 section 4.1). S1-S7: the std-only ledger and its
+    # own tests, compiled as is.
+    ('s1-began-ignored', 'window/state/press_ledger.rs',
+     '            (PressPhase::Began | PressPhase::Changed, None) => {',
+     '            (PressPhase::Began, None) => {}\n            (PressPhase::Changed, None) => {', 'keyed-began-holds'),
+    ('s2-ended-ignored', 'window/state/press_ledger.rs',
+     '            (PressPhase::Ended | PressPhase::Cancelled, Some(index)) => {',
+     '            (PressPhase::Ended, Some(_)) => {}\n            (PressPhase::Cancelled, Some(index)) => {',
+     'release-clears-usage'),
+    ('s2-cancelled-ignored', 'window/state/press_ledger.rs',
+     '            (PressPhase::Ended | PressPhase::Cancelled, Some(index)) => {',
+     '            (PressPhase::Cancelled, Some(_)) => {}\n            (PressPhase::Ended, Some(index)) => {',
+     'cancel-clears-usage'),
+    ('s2-release-clears-all', 'window/state/press_ledger.rs',
+     '                ledger.entries.remove(index);', '                let _ = index;\n                ledger.entries.clear();',
+     'release-keeps-other-usage'),
+    ('s3-duplicate-pushed', 'window/state/press_ledger.rs',
+     '            (PressPhase::Began | PressPhase::Changed, Some(_)) => {}',
+     '            (PressPhase::Began | PressPhase::Changed, Some(_)) => ledger.entries.push(Entry { id, since: now, _pin: fact.pin }),',
+     'same-usage-dedup'),
+    ('s4-unkeyed-began-ignored', 'window/state/press_ledger.rs',
+     '        let id = fact.id();',
+     '        let id = fact.id();\n        if matches!(id, Id::Identity(_)) && phase == PressPhase::Began { continue; }',
+     'unkeyed-held'),
+    ('s4-any-unkeyed-release', 'window/state/press_ledger.rs',
+     '        let known = ledger.entries.iter().position(|entry| entry.id == id);',
+     '        let known = ledger.entries.iter().position(|entry| entry.id == id || matches!((entry.id, id), (Id::Identity(_), Id::Identity(_))));',
+     'unkeyed-identity'),
+    ('s5-overflow-lost', 'window/state/press_ledger.rs',
+     '                    ledger.overflow = true;', '', 'overflow-fail-closed'),
+    ('s6-changed-ignored', 'window/state/press_ledger.rs',
+     '            (PressPhase::Began | PressPhase::Changed, None) => {',
+     '            (PressPhase::Changed, None) => {}\n            (PressPhase::Began, None) => {', 'changed-unseen-holds'),
+] + [
+    (f's7-witness-{name}-lost', 'window/state/press_ledger.rs',
+     'self.presses != 0 || self.repeat || self.menu_press || self.modifiers', after, f'key-state-{name}-witness')
+    for name, after in [
+        ('presses', 'self.repeat || self.menu_press || self.modifiers'),
+        ('repeat', 'self.presses != 0 || self.menu_press || self.modifiers'),
+        ('menu', 'self.presses != 0 || self.repeat || self.modifiers'),
+        ('modifiers', 'self.presses != 0 || self.repeat || self.menu_press'),
+    ]
+] + [
+    # G2: the real hardware_held passes the text view's key state.
+    ('g2-witness-call-dropped', 'window/native_retirement_request.rs',
+     'press_ledger::held(&window.state.borrow().press_ledger, witness)',
+     'press_ledger::held(&window.state.borrow().press_ledger, press_ledger::KeyWitness::default())',
+     'request-key-state-presses'),
+] + [
+    # S8 / G2: the key state's mapping (read by a source guard).
+    (f's8-witness-{name}-dropped', 'window/text_input/keys.rs', before, after, 'witness-maps-every-field')
+    for name, before, after in [
+        ('presses', 'presses: self.presses.len(),', 'presses: 0,'),
+        ('repeat', 'repeat: self.repeat.is_some(),', 'repeat: false,'),
+        ('menu', 'menu_press: self.menu_press.is_some(),', 'menu_press: false,'),
+        ('modifiers', 'modifiers: self.held != HeldModifiers::default(),', 'modifiers: false,'),
+    ]
+] + [
+    ('s8-text-view-witness-default', 'window/text_input/keys.rs',
+     '        self.ivars().keys.borrow().witness()', '        KeyWitness::default()',
+     'text-view-witness-is-its-key-state'),
+] + [
+    # S9: each selector's record line (read by a source guard): four removed,
+    # four with the wrong phase.
+    ('s9-text-pressesBegan-removed', 'window/text_input/view_class.rs',
+     '            self.ivars().target.record_presses(PressPhase::Began, presses);\n', '',
+     'pressesBegan must feed the ledger with PressPhase::Began'),
+    ('s9-text-pressesChanged-phase', 'window/text_input/view_class.rs',
+     '            self.ivars().target.record_presses(PressPhase::Changed, presses);\n', '            self.ivars().target.record_presses(PressPhase::Began, presses);\n',
+     'pressesChanged must feed the ledger with PressPhase::Changed'),
+    ('s9-text-pressesEnded-removed', 'window/text_input/view_class.rs',
+     '            self.ivars().target.record_presses(PressPhase::Ended, presses);\n', '',
+     'pressesEnded must feed the ledger with PressPhase::Ended'),
+    ('s9-text-pressesCancelled-phase', 'window/text_input/view_class.rs',
+     '            self.ivars().target.record_presses(PressPhase::Cancelled, presses);\n', '            self.ivars().target.record_presses(PressPhase::Ended, presses);\n',
+     'pressesCancelled must feed the ledger with PressPhase::Cancelled'),
+    ('s9-drawing-pressesBegan-phase', 'window/view.rs',
+     '            if let Some(window) = self.owner() { window.record_presses(PressPhase::Began, presses); }\n', '            if let Some(window) = self.owner() { window.record_presses(PressPhase::Changed, presses); }\n',
+     'pressesBegan must feed the ledger with PressPhase::Began'),
+    ('s9-drawing-pressesChanged-removed', 'window/view.rs',
+     '            if let Some(window) = self.owner() { window.record_presses(PressPhase::Changed, presses); }\n', '',
+     'pressesChanged must feed the ledger with PressPhase::Changed'),
+    ('s9-drawing-pressesEnded-phase', 'window/view.rs',
+     '            if let Some(window) = self.owner() { window.record_presses(PressPhase::Ended, presses); }\n', '            if let Some(window) = self.owner() { window.record_presses(PressPhase::Cancelled, presses); }\n',
+     'pressesEnded must feed the ledger with PressPhase::Ended'),
+    ('s9-drawing-pressesCancelled-removed', 'window/view.rs',
+     '            if let Some(window) = self.owner() { window.record_presses(PressPhase::Cancelled, presses); }\n', '',
+     'pressesCancelled must feed the ledger with PressPhase::Cancelled'),
+] + [
+    # G1: the UIPress adapter bodies (read by a source guard).
+    ('g1-adapter-usage-dropped', 'window/state.rs',
+     '                    press.key(self.mtm).map(|key| key.keyCode().0),', '                    None,',
+     'window-adapter-maps-usage-identity-phase'),
+    ('g1-adapter-phase-ignored', 'window/state.rs',
+     '            phase,\n            facts,', '            press_ledger::PressPhase::Began,\n            facts,',
+     'window-adapter-maps-usage-identity-phase'),
+    ('g1-text-adapter-phase-ignored', 'window/input_target.rs',
+     '            window.record_presses(phase, presses);',
+     '            window.record_presses(super::state::press_ledger::PressPhase::Began, presses);',
+     'text-adapter-forwards-phase'),
+    # S10 / S11 / G7: the request reads the ledger, not the history flag.
+    ('s10-held-press-admitted', 'window/native_retirement_request.rs',
+     '        if hardware_held(&window).is_some() {', '        if false {', 'held-press-refused'),
+    ('s11-history-refuses', 'window/native_retirement_request.rs',
+     '        if hardware_held(&window).is_some() {',
+     '        if hardware_held(&window).is_some() || state.native_hardware_observed {',
+     'released-hardware-admitted'),
+    # S12: the press frame itself still refuses.
+    ('s12-press-frame-admitted', 'native_operation/state.rs',
+     '        if s.presses != 0 {', '        if false {', 'hardware-entry-never-admitted'),
 ]
 
 

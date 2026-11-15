@@ -62,3 +62,133 @@ fn notification_main_queue_closures_open_a_raw_frame_first() {
         assert!(body.starts_with(RAW), "closure at byte {at} lacks raw()");
     }
 }
+
+/// The whole brace-balanced body of the item at `anchor`, whitespace removed.
+/// Like `body_after`, the body starts at the first `{` after the anchor, so an
+/// anchor must end before any braced argument type (none has one today).
+fn exact_body(source: &str, anchor: &str) -> String {
+    let body = body_after(source, anchor);
+    let mut level = 1;
+    let end = body
+        .char_indices()
+        .find(|&(_, c)| {
+            level += i32::from(c == '{') - i32::from(c == '}');
+            level == 0
+        })
+        .map(|(i, _)| i)
+        .unwrap_or_else(|| panic!("unclosed body: {anchor}"));
+    body[..end].split_whitespace().collect()
+}
+
+fn squash(text: &str) -> String {
+    text.split_whitespace().collect()
+}
+
+/// S9: each of the eight press selectors feeds the Window's held-press ledger
+/// with its own phase as the first statement after its refusal frame. The
+/// refusal frame must stay first: it interrupts a queued request before any
+/// press is recorded (plan R5 is subsumed by this ordering).
+#[test]
+fn press_selectors_feed_the_ledger() {
+    let text = include_str!("../window/text_input/view_class.rs");
+    let drawing = include_str!("../window/view.rs");
+    for (source, record) in [
+        (
+            text,
+            "self.ivars().target.record_presses(PressPhase::{}, presses);",
+        ),
+        (
+            drawing,
+            "if let Some(window) = self.owner() { window.record_presses(PressPhase::{}, presses); }",
+        ),
+    ] {
+        for (selector, phase) in [
+            ("pressesBegan", "Began"),
+            ("pressesChanged", "Changed"),
+            ("pressesEnded", "Ended"),
+            ("pressesCancelled", "Cancelled"),
+        ] {
+            let anchor = format!("#[unsafe(method({selector}:withEvent:))]");
+            let body = body_after(source, &anchor);
+            assert!(
+                body.starts_with(REFUSED),
+                "{selector} must start with the refusal frame"
+            );
+            let rest = body[REFUSED.len()..].trim_start();
+            assert!(
+                rest.starts_with(&record.replace("{}", phase)),
+                "{selector} must feed the ledger with PressPhase::{phase}"
+            );
+        }
+    }
+}
+
+/// G1: the adapter from `NSSet<UIPress>` to `PressFact`s cannot be exercised
+/// without UIKit on the host, so its exact text is fixed here; the ledger
+/// rules it feeds are tested in `press_ledger`.
+#[test]
+fn press_adapter_bodies_are_fixed() {
+    let state = include_str!("../window/state.rs");
+    assert_eq!(
+        exact_body(
+            state,
+            "pub(super) fn record_presses(&self, phase: press_ledger::PressPhase, presses: &NSSet<UIPress>)"
+        ),
+        squash(
+            "let facts: Vec<_> = presses
+                .iter()
+                .map(|press| {
+                    press_ledger::PressFact::new(
+                        press.key(self.mtm).map(|key| key.keyCode().0),
+                        Retained::as_ptr(&press).addr(),
+                        press,
+                    )
+                })
+                .collect();
+            press_ledger::apply(
+                &mut self.state.borrow_mut().press_ledger,
+                phase,
+                facts,
+                std::time::Instant::now(),
+            );"
+        ),
+        "window-adapter-maps-usage-identity-phase"
+    );
+    let target = include_str!("../window/input_target.rs");
+    assert_eq!(
+        exact_body(target, "pub(crate) fn record_presses("),
+        squash(
+            "if let Some(window) = self.window.upgrade() {
+                window.record_presses(phase, presses);
+            }"
+        ),
+        "text-adapter-forwards-phase"
+    );
+}
+
+/// S8 / G2: every key-state field reaches the second witness, and the text
+/// view hands its own state to `hardware_held`.
+#[test]
+fn key_state_witness_maps_every_field() {
+    let keys = include_str!("../window/text_input/keys.rs");
+    assert_eq!(
+        exact_body(keys, "pub(super) fn witness(&self) -> KeyWitness"),
+        squash(
+            "KeyWitness {
+                presses: self.presses.len(),
+                repeat: self.repeat.is_some(),
+                menu_press: self.menu_press.is_some(),
+                modifiers: self.held != HeldModifiers::default(),
+            }"
+        ),
+        "witness-maps-every-field"
+    );
+    assert_eq!(
+        exact_body(
+            keys,
+            "pub(in crate::window) fn key_witness(&self) -> KeyWitness"
+        ),
+        squash("self.ivars().keys.borrow().witness()"),
+        "text-view-witness-is-its-key-state"
+    );
+}

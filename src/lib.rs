@@ -61,10 +61,11 @@ pub use native_edit_menu::{
     present_native_edit_menu,
 };
 pub use native_retirement_request::{
-    NativeInputOrigin, NativeRetirementCancellation, NativeRetirementInterruption,
-    NativeRetirementOutcome, NativeRetirementRequest, NativeRetirementRequestError,
-    NativeRetirementRequestStatus, PrepareDecision, PreparedNativeRetirement, RequestKey,
-    native_input_origin, request_native_edit_retirement,
+    NativeHardwareHold, NativeInputOrigin, NativeRetirementCancellation,
+    NativeRetirementInterruption, NativeRetirementOutcome, NativeRetirementRequest,
+    NativeRetirementRequestError, NativeRetirementRequestStatus, PrepareDecision,
+    PreparedNativeRetirement, RequestKey, native_hardware_hold, native_input_origin,
+    request_native_edit_retirement,
 };
 pub use platform::IosPlatform;
 #[cfg(feature = "test-support")]
