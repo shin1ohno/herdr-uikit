@@ -64,6 +64,26 @@ pressed and released again; a key-less press clears only with the release of
 the same UIPress object; more than 16 presses in flight set an overflow that is
 never cleared. A press that began before an SDK view saw it is in neither the
 ledger nor the key state; as before, its release goes to UIKit (B2 scope).
+
+Two further fail-closed cases are untested. The ledger belongs to one Window:
+if a press began in one scene and its release is delivered to another scene's
+Window, that Window's ledger does not know the press and ignores the release,
+so the first Window stays refused until its key is pressed and released again
+or the Window is rebuilt; no test or mutant covers this. Whether UIKit sends
+`pressesEnded:` for a press that a key command took is also unconfirmed (see
+`menu_shortcut` in `src/window/text_input/keys.rs`); if it does not, the ledger
+keeps that press's Began and the Window stays refused after each shortcut. Both
+stay refused rather than admitted, so they are no worse than the sticky history
+this ledger replaces. The device observation D3 records both: the release
+delivered to another scene, and whether a key command's press gets a
+`pressesEnded:`.
+
+Device check D6 (the Edit path; unticked, owner's device, not run in this PR):
+type on a hardware keyboard, release the key, then run the edit menu's Paste or
+Cut. With an empty ledger the request is now admitted where the sticky history
+used to refuse it, and the old client's tail stays live after an Edit
+admission, so the device must show that, when the request is admitted, no input
+is lost or duplicated.
 `native_hardware_hold(window)` reports the keyed/key-less counts, overflow,
 key-state-only, the oldest press's age and the diagnostic hardware history,
 for status lines and observation; it never changes admission.
