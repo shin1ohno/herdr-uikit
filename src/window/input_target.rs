@@ -144,8 +144,6 @@ impl InputTarget {
         let Some(_callback) = self.client.enter() else {
             return false;
         };
-        #[cfg(feature = "test-support")]
-        let _depth = super::retirement_probe::NativeCutCounter::DispatchDepth.scope();
         self.live_window()
             .is_some_and(|window| window.dispatch_inner(input))
     }
@@ -334,6 +332,8 @@ impl Window {
 
     // The two ingress methods establish provenance before reaching callbacks.
     fn dispatch_inner(&self, input: PlatformInput) -> bool {
+        #[cfg(feature = "test-support")]
+        let _depth = super::retirement_probe::NativeCutCounter::DispatchDepth.scope();
         {
             let mut state = self.state.borrow_mut();
             if state.closed {

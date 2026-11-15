@@ -12,6 +12,7 @@ use objc2::{DefinedClass, MainThreadMarker, msg_send, rc::Retained, runtime::Any
 
 use super::{NativeClient, NativeQuery, NativeQueryError};
 use crate::window::retirement_probe::{cut_observation as obs, next_native_turn};
+use NativeCutProbeError::*;
 
 pub type NativeCutProbeResult = Result<NativeCutSelectionObservation, NativeCutProbeFailure>;
 
@@ -156,7 +157,6 @@ impl NativeClient {
     }
 
     fn begin_cut(&self) -> Result<obs::Armed, NativeCutProbeFailure> {
-        use NativeCutProbeError::*;
         let target = &self.0.ivars().target;
         if MainThreadMarker::new().is_none() || crate::gpui_call::is_running() {
             return Err(failure(CallbackLoanActive, false));
@@ -191,7 +191,6 @@ impl NativeClient {
     }
 
     fn finish_cut(&self, run: obs::Armed) -> NativeCutProbeResult {
-        use NativeCutProbeError::*;
         let client = &self.0.ivars().target.client;
         let loaned = client.busy() || crate::gpui_call::is_running();
         let retired = (!client.live()).then_some(ClientRetired);
@@ -209,10 +208,7 @@ impl NativeClient {
             .iter()
             .flatten()
             .any(|event| event.phase == NativeCutPhase::AcceptedCut && event.refusal.is_none());
-        let reason = skip
-            .or((!accepted).then_some(NotEligible))
-            .or((trace.refused != 0).then_some(IntervalInterrupted))
-            .or(exhausted.then_some(TraceExhausted));
+        let reason = failure_reason(skip, accepted, trace.refused != 0, exhausted);
         let observation = first.map(|first_selection| NativeCutSelectionObservation {
             run,
             client: self.identity(),
@@ -228,5 +224,33 @@ impl NativeClient {
                 observation,
             }),
         }
+    }
+}
+
+// The first failing condition wins: an unsafe query, then an unaccepted Cut,
+// then any refusal in the interval, then an exhausted trace.
+fn failure_reason(
+    skip: Option<NativeCutProbeError>,
+    accepted: bool,
+    refused: bool,
+    exhausted: bool,
+) -> Option<NativeCutProbeError> {
+    skip.or((!accepted).then_some(NotEligible))
+        .or(refused.then_some(IntervalInterrupted))
+        .or(exhausted.then_some(TraceExhausted))
+}
+
+#[test]
+fn failure_reasons_keep_their_priority() {
+    let loan = Some(CallbackLoanActive);
+    for (skip, accepted, refused, exhausted, want) in [
+        (Some(ClientRetired), false, true, true, Some(ClientRetired)),
+        (loan, true, false, false, loan),
+        (None, false, true, true, Some(NotEligible)),
+        (None, true, true, true, Some(IntervalInterrupted)),
+        (None, true, false, true, Some(TraceExhausted)),
+        (None, true, false, false, None),
+    ] {
+        assert_eq!(failure_reason(skip, accepted, refused, exhausted), want);
     }
 }

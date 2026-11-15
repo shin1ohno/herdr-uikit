@@ -66,8 +66,6 @@ impl GPUITextInputView {
 
     /// Records the state after an edit UIKit made, which it already knows.
     pub(super) fn refresh_snapshot(&self) {
-        #[cfg(feature = "test-support")]
-        let _scope = crate::window::retirement_probe::NativeCutPhase::SnapshotEntered.scope();
         let snapshot = self.read_snapshot();
         *self.ivars().snapshot.borrow_mut() = snapshot;
     }
@@ -76,6 +74,8 @@ impl GPUITextInputView {
         &self,
         operation: &crate::native_operation::NativeOperation,
     ) {
+        #[cfg(feature = "test-support")]
+        let _scope = crate::window::retirement_probe::NativeCutPhase::SnapshotEntered.scope();
         let snapshot = self
             .ivars()
             .target

@@ -40,6 +40,10 @@ jobs:
         run: cargo fmt --check --all
       - name: Run host tests
         run: cargo test --locked --tests
+      - name: Product build for iOS devices (no test-support)
+        run: cargo clippy --locked --target aarch64-apple-ios -- -D warnings
+      - name: Product build for iOS Simulator (no test-support)
+        run: cargo clippy --locked --target aarch64-apple-ios-sim -- -D warnings
       - name: Clippy for iOS devices
         run: cargo clippy --locked --all-targets --features test-support --target aarch64-apple-ios -- -D warnings
       - name: Clippy for iOS Simulator

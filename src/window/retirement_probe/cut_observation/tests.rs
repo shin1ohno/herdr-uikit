@@ -132,6 +132,9 @@ fn focus_handler_and_presentation_rules() {
     assert_eq!(trace().refused, 0);
     R::FocusChange.on_state(&TextInputStateChange::FocusGained);
     assert!(only(R::FocusChange));
+    let _run = rearm(_run);
+    R::FocusChange.on_state(&TextInputStateChange::FocusLost);
+    assert!(only(R::FocusChange), "focus lost");
     assert!(same_install((1, &Some(3)), (1, &Some(3))));
     assert!(!same_install((1, &Some(3)), (1, &None)), "nil focus");
     assert!(!same_install((1, &Some(3)), (1, &Some(4))), "another focus");
@@ -141,13 +144,7 @@ fn focus_handler_and_presentation_rules() {
     );
     let _run = rearm(_run);
     with_run(|run| run.installed(true));
-    assert_eq!(
-        (
-            trace().refused,
-            trace().counters[C::SameFocusInstalls as usize]
-        ),
-        (0, 1)
-    );
+    assert!(trace().refused == 0 && trace().counters[C::SameFocusInstalls as usize] == 1);
     with_run(|run| run.installed(false));
     assert!(only(R::HandlerReplaced));
     let _run = rearm(_run);
@@ -239,35 +236,37 @@ fn body<'a>(source: &'a str, anchor: &str) -> &'a str {
     &source[start..start + source[start..].find(&close).unwrap()]
 }
 
-// Tier B: file | function anchor | hook. Removing or moving a hook fails.
+// Tier B: file | function anchor | hook [| order]. The order column lists
+// "after X" / "before Y" texts, each unique in the body, joined by " + ".
+// Removing, moving or reordering a hook fails.
 const HOOKS: &str = "
-actions | pub(super) fn perform_edit_action( | AcceptedCut.record_edit(selector)
-actions | fn dispatch_menu_action( | DownReturned.record()
-actions | fn dispatch_menu_action( | UpReturned.record()
-actions | fn dispatch_menu_action( | OriginRestored.record()
-actions | fn dispatch_menu_action( | ModifiersRestored.record()
-sync | fn refresh_snapshot(&self) | SnapshotEntered.scope()
+actions | pub(super) fn perform_edit_action( | AcceptedCut.record_edit(selector) | after self.edit_decision(selector) + before dispatch_checked_selector_inner( + before self.refresh_edit_snapshot(operation)
+actions | fn dispatch_menu_action( | DownReturned.record() | after dispatch(PlatformInput::KeyDown( + before dispatch(PlatformInput::KeyUp(
+actions | fn dispatch_menu_action( | UpReturned.record() | after dispatch(PlatformInput::KeyUp( + before drop(menu_origin);
+actions | fn dispatch_menu_action( | OriginRestored.record() | after drop(menu_origin); + after drop(origin); + after drop(key_scope); + before dispatch(PlatformInput::ModifiersChanged(
+actions | fn dispatch_menu_action( | ModifiersRestored.record() | after dispatch(PlatformInput::ModifiersChanged( + before paste();
+sync | pub(super) fn refresh_edit_snapshot( | SnapshotEntered.scope() | before .with_edit_handler(
 sync | fn flush(&self) | TextInputFlush.record()
 sync | fn notify(&self | DelegateNotify.record()
-view | fn __selected_text_range(&self) | QueryEntries.query()
-view | fn __set_selected_text_range(&self | Setter.record()
-view | fn __resign_first_responder(&self) | Resign.record()
-view | fn __will_move_to_window(&self | LeavingWindow.record()
+view | fn __selected_text_range(&self) | QueryEntries.query() | before crate::native_operation::refused()
+view | fn __set_selected_text_range(&self | Setter.record() | before crate::native_operation::refused()
+view | fn __resign_first_responder(&self) | Resign.record() | before crate::native_operation::refused()
+view | fn __will_move_to_window(&self | LeavingWindow.record() | after crate::native_operation::refused() + before willMoveToWindow: window]
 gpui | fn drain() | AfterAction.record()
 frame | fn tick(&self) | FrameTick.record()
 frame | fn flush_input_handler_change(&self) | InputHandlerFlush.record()
 window | fn set_text_input_configuration(&mut self | Configuration.record()
-window | fn set_input_handler(&mut self | HandlerRestores.on_set(&self.window)
-window | fn take_input_handler(&mut self) | HandlerRestores.on_take(&self.window)
+window | fn set_input_handler(&mut self | HandlerRestores.on_set(&self.window) | after .input_handler = Some(input_handler);
+window | fn take_input_handler(&mut self) | HandlerRestores.on_take(&self.window) | before .input_handler.take()
 window | fn draw(&self, scene: &Scene) | Presentations.presented()
 window | fn show_soft_keyboard(&self) | KeyboardShown.record()
 window | fn hide_soft_keyboard(&self) | KeyboardHidden.record()
 window | fn text_input_state_changed(&self | FocusChange.on_state(&change)
-target | fn dispatch_via( > fn dispatch_inner( | DispatchDepth.scope()
-target | fn with_edit_handler<R>( > fn with_input_handler_inner<R>( | HandlerDepth.scope()
-target | impl Window { > fn with_input_handler_inner<R>( | HandlerRestores.restore_scope()
-probe | pub fn next_native_turn( | DeferredScheduled.record()
-probe | pub fn next_native_turn( | DeferredExecuted.record()";
+target | impl Window { > fn dispatch_inner( | DispatchDepth.scope() | before call(&self.callbacks.input
+target | fn with_edit_handler<R>( > fn with_input_handler_inner<R>( | HandlerDepth.scope() | after .client.enter()?
+target | impl Window { > fn with_input_handler_inner<R>( | HandlerRestores.restore_scope() | after .input_handler.take()? + before f(&mut handler)
+probe | pub fn next_native_turn( | DeferredScheduled.record() | after queue.push_back( + before exec_async(
+probe | pub fn next_native_turn( | DeferredExecuted.record() | after queue.pop_front() + before next();";
 
 #[test]
 fn every_passive_hook_is_gated_once_in_its_function() {
@@ -287,9 +286,8 @@ fn every_passive_hook_is_gated_once_in_its_function() {
         .lines()
         .map(|row| row.split(" | ").collect())
         .collect();
-    assert_eq!(rows.len(), 27, "every W hook has a row");
-    for row in rows {
-        let [name, function, hook] = row[..] else {
+    for row in &rows {
+        let [name, function, hook, ref order @ ..] = row[..] else {
             panic!("{row:?}")
         };
         let source = file(name);
@@ -305,5 +303,19 @@ fn every_passive_hook_is_gated_once_in_its_function() {
         // retirement_probe.rs is gated as a whole module (window/mod.rs:42-43).
         let gated = name == "probe" || gate.trim() == "#[cfg(feature = \"test-support\")]";
         assert!(gated, "{hook} gated");
+        for item in order.iter().flat_map(|order| order.split(" + ")) {
+            let (side, text) = item.split_once(' ').unwrap();
+            assert_eq!(body.matches(text).count(), 1, "{text} once in {function}");
+            let before = body.find(text).unwrap() < at;
+            assert_eq!(before, side == "after", "{hook} {item}");
+        }
+    }
+    // Every NativeCut line in these files is a row, so no hook skips the checks.
+    let mut names: Vec<_> = rows.iter().map(|row| row[0]).collect();
+    names.dedup();
+    for name in names {
+        let lines = file(name).lines().filter(|line| line.contains("NativeCut"));
+        let rows = rows.iter().filter(|row| row[0] == name).count();
+        assert_eq!(lines.count(), rows, "{name}: one row per hook");
     }
 }

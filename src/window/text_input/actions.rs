@@ -121,6 +121,8 @@ impl GPUITextInputView {
             self.ivars().target.mark_hardware_observed();
         }
         let decision = self.edit_decision(selector);
+        // Cut-probe milestone: the selector entered the SDK. The delivery and
+        // eligibility gates follow; the probe's preflight checks eligibility first.
         #[cfg(feature = "test-support")]
         crate::window::retirement_probe::NativeCutPhase::AcceptedCut.record_edit(selector);
         let checked = dispatch_checked_selector_inner(
