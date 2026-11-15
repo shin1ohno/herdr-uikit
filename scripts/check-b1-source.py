@@ -25,7 +25,9 @@ FILES = [
     'src/window/client_lifetime.rs', 'src/window/native_retirement_request.rs',
     'src/window/native_retirement_request/coordinator.rs',
     'src/window/native_retirement_request/transaction.rs', 'src/window/retirement.rs',
+    'src/native_operation/entry_guard_tests.rs',
 ]
+INCLUDE_STR = re.compile(r'include_str!\("([^"]+)"\)')
 
 
 def digest(data):
@@ -45,6 +47,23 @@ def body(source, anchor):
     raise ValueError('unclosed raw closure')
 
 
+def include_targets():
+    """Files the compiled modules read with include_str!, relative to ROOT.
+
+    They are read, not compiled, so the source guards that read them must see
+    the production bytes: they are copied verbatim, never rewritten.
+    """
+    targets = []
+    for relative in FILES:
+        for target in INCLUDE_STR.findall((ROOT / relative).read_text()):
+            resolved = str((ROOT / relative).parent.joinpath(target).resolve().relative_to(ROOT))
+            if resolved in FILES:
+                raise ValueError(f'{resolved} is both compiled and read by include_str!')
+            if resolved not in targets:
+                targets.append(resolved)
+    return targets
+
+
 def extract(destination):
     hashes = {}
     for relative in FILES:
@@ -61,6 +80,11 @@ def extract(destination):
         target = destination / relative.removeprefix('src/')
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text)
+    for relative in include_targets():
+        hashes[relative] = digest((ROOT / relative).read_bytes())
+        target = destination / relative.removeprefix('src/')
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / relative, target)
     for name in ['main.rs', 'window.rs', 'cases.rs']:
         hashes[f'scripts/b1-source-fixture/{name}'] = digest((FIXTURE / name).read_bytes())
         shutil.copyfile(FIXTURE / name, destination / name)
