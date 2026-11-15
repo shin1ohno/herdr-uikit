@@ -535,6 +535,8 @@ mod probe {
                 // Back to a real selection before retiring: with a nil selection the
                 // new responder makes UIKit pass nil to offsetFromPosition:toPosition:,
                 // which the SDK takes as non-optional (view_class.rs __offset_between).
+                // Workaround for SH1-315, not a fix: remove this reset when SH1-315
+                // lands, so retire-last also runs with a nil selection.
                 let reset = handle.update(&mut app, |view, _, _| view.nil_selection = false);
                 check(reset.is_ok(), "nil-selection-reset");
                 let receipt = retire_text_input_session(handle.into(), |_| {});
