@@ -130,6 +130,23 @@ Existing action tests and `actions/observer_tests.rs` exercise real dispatch
 helpers; their fixture invocations are not native-selector positive controls.
 The native stimulus API above is ready for the consumer's actual QA app.
 
+`text_input/tests/native_edit_selectors.rs` is the SDK's own Simulator test
+that sends the real `copy:`/`cut:`/`paste:`/`selectAll:` selectors through
+`invoke_native_selector`, after the public `begin_run`/`arm` and before
+`drain`/`disable`. `window/observation_test_host.rs` (test cfg only) replaces
+the scene lookup with a window-less `TextInputView`; everything after the
+lookup is production code. Because no live window exists, the menu-delivery
+gate refuses each selector before dispatch, so it proves canonical entry, the
+view's own registration, the arm-time enable and one terminal refusal pair per
+selector, plus the off-before-arm and disabled-after-disable negatives. It
+does not reach dispatch, KeyDown/KeyUp key correlation, the Drawing responder,
+paste publication, consumer callbacks or receiving. Under an exclusive lease,
+`scripts/check-observer-selector-mutations.py` (`HERDR_OBSERVER_LEASE=exclusive`,
+an absolute `HERDR_OBSERVER_EVIDENCE_DIR` outside the checkout) requires the
+disabled, entry-registration and terminal mutants to fail on their named
+assertions, and a mutant confined to the Dispatched arm to survive, which
+records that boundary.
+
 Required exact-head lease gates (do not run concurrently with another build):
 
 1. Device and Simulator compile/clippy; Simulator SDK tests feature-off/on.

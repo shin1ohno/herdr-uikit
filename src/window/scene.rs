@@ -397,6 +397,10 @@ pub(crate) fn with_observation_registration<R>(
     handle: AnyWindowHandle,
     f: impl FnOnce(&crate::native_edit_observer::Registration) -> R,
 ) -> Result<R, crate::native_edit_observer::ObserverError> {
+    #[cfg(test)]
+    if let Some(input) = super::observation_test_host::find(handle) {
+        return Ok(input.with_observation_registration(f));
+    }
     let window = observation_window(handle)?;
     Ok(window.text_input.with_observation_registration(f))
 }
@@ -428,36 +432,55 @@ fn observation_window(
 
 /// Synchronous messages through the real Objective-C selector entrypoints.
 #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
-#[allow(
-    unsafe_code,
-    reason = "fixed UIKit selectors take a nullable object sender and return void"
-)]
 pub(crate) fn invoke_observation_selector(
     handle: AnyWindowHandle,
     action: crate::native_edit_observer::Action,
     responder: crate::native_edit_observer::ResponderOrigin,
 ) -> Result<(), crate::native_edit_observer::ObserverError> {
-    use crate::native_edit_observer::{Action, ObserverError, ResponderOrigin};
+    use crate::native_edit_observer::ResponderOrigin;
+    #[cfg(test)]
+    if let Some(input) = super::observation_test_host::find(handle) {
+        // The test host has a text responder only; `input` stays alive here.
+        return match responder {
+            ResponderOrigin::Text => send_edit_selector(&input.view(), action),
+            ResponderOrigin::Drawing => {
+                Err(crate::native_edit_observer::ObserverError::ViewUnavailable)
+            }
+        };
+    }
     let window = observation_window(handle)?;
     let view: Retained<objc2_ui_kit::UIView> = match responder {
         ResponderOrigin::Text => window.text_input.view(),
         ResponderOrigin::Drawing => Retained::into_super(window.view.clone()),
     };
+    send_edit_selector(&view, action)
+}
+
+#[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+#[allow(
+    unsafe_code,
+    reason = "fixed UIKit selectors take a nullable object sender and return void"
+)]
+fn send_edit_selector(
+    view: &objc2_ui_kit::UIView,
+    action: crate::native_edit_observer::Action,
+) -> Result<(), crate::native_edit_observer::ObserverError> {
+    use crate::native_edit_observer::{Action, ObserverError};
     let sender: Option<&objc2::runtime::AnyObject> = None;
     // SAFETY: both responders implement these four selectors with this ABI.
     unsafe {
         match action {
             Action::Copy => {
-                let (): () = objc2::msg_send![&*view, copy: sender];
+                let (): () = objc2::msg_send![view, copy: sender];
             }
             Action::Cut => {
-                let (): () = objc2::msg_send![&*view, cut: sender];
+                let (): () = objc2::msg_send![view, cut: sender];
             }
             Action::Paste => {
-                let (): () = objc2::msg_send![&*view, paste: sender];
+                let (): () = objc2::msg_send![view, paste: sender];
             }
             Action::SelectAll => {
-                let (): () = objc2::msg_send![&*view, selectAll: sender];
+                let (): () = objc2::msg_send![view, selectAll: sender];
             }
             Action::Unknown => return Err(ObserverError::InvalidAction),
         }
