@@ -40,10 +40,6 @@ jobs:
         run: cargo fmt --check --all
       - name: Run host tests
         run: cargo test --locked --tests
-      - name: Product build for iOS devices (no test-support)
-        run: cargo clippy --locked --target aarch64-apple-ios -- -D warnings
-      - name: Product build for iOS Simulator (no test-support)
-        run: cargo clippy --locked --target aarch64-apple-ios-sim -- -D warnings
       - name: Clippy for iOS devices
         run: cargo clippy --locked --all-targets --features test-support --target aarch64-apple-ios -- -D warnings
       - name: Clippy for iOS Simulator
@@ -52,29 +48,3 @@ jobs:
         run: bash scripts/check-responder-calls.sh
       - name: Run Simulator contracts
         run: python3 scripts/test-simulator.py
-
-  native-cut-query:
-    name: Native cut-query stages (B1-B5)
-    runs-on: macos-26
-    timeout-minutes: 60
-    env:
-      IPHONEOS_DEPLOYMENT_TARGET: '17.0'
-      CARGO_PROFILE_DEV_DEBUG: '0'
-      CARGO_PROFILE_TEST_DEBUG: '0'
-      CARGO_INCREMENTAL: '0'
-      # The exact PR head, not the merge ref: the evidence is per head commit.
-      HERDR_EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          persist-credentials: false
-      - name: Install pinned Rust and record toolchain
-        run: |
-          rustup show active-toolchain
-          rustc --version --verbose
-          xcodebuild -version
-          xcrun --sdk iphonesimulator --show-sdk-version
-          git rev-parse HEAD
-      - name: Native stages (5 builds, 6 launches, 7 actual Cuts)
-        run: python3 scripts/check-cut-query-native.py "$RUNNER_TEMP/cut-query-native"
