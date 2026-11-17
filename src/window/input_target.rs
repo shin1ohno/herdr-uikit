@@ -67,6 +67,11 @@ impl InputTarget {
         }
     }
 
+    #[cfg(feature = "test-support")]
+    pub(super) fn window_handle(&self) -> Option<Rc<Window>> {
+        self.window.upgrade()
+    }
+
     fn live_window(&self) -> Option<Rc<Window>> {
         if !self.client.live() {
             return None;
@@ -199,6 +204,8 @@ impl InputTarget {
     ) -> Option<R> {
         let _loan = crate::native_operation::loan();
         let _callback = self.client.enter()?;
+        #[cfg(feature = "test-support")]
+        let _depth = super::retirement_probe::NativeCutCounter::HandlerDepth.scope();
         #[cfg(all(test, feature = "test-support"))]
         if let Some(slot) = &self.test_handler {
             let mut handler = slot.borrow_mut().take()?;
@@ -337,6 +344,8 @@ impl Window {
 
     // The two ingress methods establish provenance before reaching callbacks.
     fn dispatch_inner(&self, input: PlatformInput) -> bool {
+        #[cfg(feature = "test-support")]
+        let _depth = super::retirement_probe::NativeCutCounter::DispatchDepth.scope();
         {
             let mut state = self.state.borrow_mut();
             if state.closed {
@@ -371,6 +380,8 @@ impl Window {
     ) -> Option<R> {
         let _loan = crate::native_operation::loan();
         let mut handler = self.state.borrow_mut().input_handler.take()?;
+        #[cfg(feature = "test-support")]
+        let _restore = super::retirement_probe::NativeCutCounter::HandlerRestores.restore_scope();
         // A handler can request retirement of another window, whose native
         // client is not busy. Keep its callback outside this GPUI borrow too.
         let _in_gpui = crate::gpui_call::InGpui::enter();

@@ -143,6 +143,8 @@ define_class!(
         // flushes must not take it straight back.
         #[unsafe(method(resignFirstResponder))]
         fn __resign_first_responder(&self) -> bool {
+            #[cfg(feature = "test-support")]
+            crate::window::retirement_probe::NativeCutRefusal::Resign.record();
             let _native_entry = crate::native_operation::refused();
             // UIKit may post WillHide only after it has already transferred
             // first responder, so capture ownership before the native call.
@@ -160,6 +162,8 @@ define_class!(
         fn __will_move_to_window(&self, window: Option<&UIWindow>) {
             let _native_entry = crate::native_operation::refused();
             if window.is_none() {
+                #[cfg(feature = "test-support")]
+                crate::window::retirement_probe::NativeCutRefusal::LeavingWindow.record();
                 self.ivars().target.expect_keyboard_hide(ResignReason::LeavingWindow);
             }
             // SAFETY: the argument is UIKit's nullable UIWindow for this selector;
@@ -320,6 +324,8 @@ define_class!(
 
         #[unsafe(method_id(selectedTextRange))]
         fn __selected_text_range(&self) -> Option<Retained<UITextRange>> {
+            #[cfg(feature = "test-support")]
+            let _query = crate::window::retirement_probe::NativeCutCounter::QueryEntries.query();
             let _native_entry = crate::native_operation::refused();
             let selection = self.read_snapshot().selection.map(|(range, _)| range);
             selection.map(|range| TextRange::text_range(self.mtm(), range))
@@ -327,6 +333,8 @@ define_class!(
 
         #[unsafe(method(setSelectedTextRange:))]
         fn __set_selected_text_range(&self, range: Option<&UITextRange>) {
+            #[cfg(feature = "test-support")]
+            crate::window::retirement_probe::NativeCutRefusal::Setter.record();
             let _native_entry = crate::native_operation::refused();
             if let Some(range) = range.and_then(positions::range) {
                 self.select_range(range);

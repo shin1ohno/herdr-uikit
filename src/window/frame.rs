@@ -96,6 +96,8 @@ impl Window {
 
     /// One display link tick, on the main thread.
     fn tick(&self) {
+        #[cfg(feature = "test-support")]
+        super::retirement_probe::NativeCutRefusal::FrameTick.record();
         if !self.state.borrow().can_draw() {
             self.stop_display_link();
             return;
@@ -141,6 +143,8 @@ impl Window {
     /// can be read here, and UIKit's synchronous queries back into it can
     /// reach the app.
     fn flush_input_handler_change(&self) {
+        #[cfg(feature = "test-support")]
+        super::retirement_probe::NativeCutRefusal::InputHandlerFlush.record();
         let current = self.with_input_handler(TextState::sample);
         let changed = {
             let mut state = self.state.borrow_mut();
