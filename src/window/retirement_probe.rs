@@ -17,6 +17,8 @@ pub use native_operation::{
 };
 
 pub(crate) mod cut_observation;
+#[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+pub mod held_press;
 
 fn window(handle: AnyWindowHandle) -> Option<Rc<Window>> {
     scene::live_windows(MainThreadMarker::new()?)

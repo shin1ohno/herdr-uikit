@@ -64,6 +64,18 @@ impl NativeClient {
         self.0.superview().is_some()
     }
 
+    /// The captured text view, for held-press injection.
+    #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+    pub(crate) fn view(&self) -> Retained<UIView> {
+        Retained::into_super(self.0.clone())
+    }
+
+    /// Whether this client still accepts input (it has not retired).
+    #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+    pub(crate) fn live(&self) -> bool {
+        self.0.ivars().target.client.live()
+    }
+
     /// Actual Objective-C canPerformAction and validateCommand on the captured
     /// text view (or its drawing parent). Order: Copy, Cut, Paste, SelectAll.
     pub fn availability(&self, drawing: bool) -> Option<([bool; 4], [bool; 4])> {
