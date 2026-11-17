@@ -31,6 +31,18 @@ impl InputTarget {
             client: self.client.identity,
         }
     }
+    /// The text view's press selectors feed the Window's ledger here, also
+    /// after this client was fenced, so a release reaching an old view still
+    /// clears its press.
+    pub(crate) fn record_presses(
+        &self,
+        phase: super::state::press_ledger::PressPhase,
+        presses: &objc2_foundation::NSSet<objc2_ui_kit::UIPress>,
+    ) {
+        if let Some(window) = self.window.upgrade() {
+            window.record_presses(phase, presses);
+        }
+    }
     pub(crate) fn mark_hardware_observed(&self) {
         if let Some(window) = self.window.upgrade() {
             window.state.borrow_mut().native_hardware_observed = true;

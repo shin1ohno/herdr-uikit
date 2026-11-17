@@ -10,6 +10,8 @@
 //! view synchronously. So no `RefCell` here is borrowed across a callback or
 //! such a UIKit call: callers copy what they need out of a short borrow.
 
+pub(super) mod press_ledger;
+
 use std::cell::{Cell, RefCell};
 
 use gpui::{
@@ -19,8 +21,9 @@ use gpui::{
     WindowInsets, WindowVisibility,
 };
 use objc2::{MainThreadMarker, rc::Retained};
+use objc2_foundation::NSSet;
 use objc2_quartz_core::CALayer;
-use objc2_ui_kit::{UIViewController, UIWindow, UIWindowScene};
+use objc2_ui_kit::{UIPress, UIViewController, UIWindow, UIWindowScene};
 
 use super::{
     frame::InsetAnimation,
@@ -55,7 +58,11 @@ pub(crate) struct Window {
 pub(super) struct State {
     pub(super) native_request_serial: u64,
     pub(super) native_request_pending: Option<u64>,
+    /// Diagnostic only: a hardware press, repeat or keyboard shortcut reached
+    /// this Window at some point. Retirement requests read `press_ledger`.
     pub(super) native_hardware_observed: bool,
+    /// The presses seen begin and not yet end (`press_ledger`).
+    pub(super) press_ledger: press_ledger::PressLedger<Retained<UIPress>>,
     pub(super) appearance: WindowAppearance,
     pub(super) background_appearance: WindowBackgroundAppearance,
     /// The window's frame in its scene, in points; the size is the content
@@ -107,6 +114,7 @@ impl State {
             native_request_serial: 0,
             native_request_pending: None,
             native_hardware_observed: false,
+            press_ledger: press_ledger::PressLedger::default(),
             appearance: WindowAppearance::default(),
             background_appearance: WindowBackgroundAppearance::Opaque,
             bounds,
@@ -143,6 +151,30 @@ impl State {
     /// the scene is in the background is refused, so drawing stops there.
     pub(super) fn can_draw(&self) -> bool {
         !self.closed && self.ui_window.is_some() && self.visibility.is_visible()
+    }
+}
+
+impl Window {
+    /// The one adapter from a press selector's `NSSet<UIPress>` to the ledger.
+    /// The keys are read before the state is borrowed. Its body is fixed by
+    /// `entry_guard_tests::press_adapter_bodies_are_fixed`.
+    pub(super) fn record_presses(&self, phase: press_ledger::PressPhase, presses: &NSSet<UIPress>) {
+        let facts: Vec<_> = presses
+            .iter()
+            .map(|press| {
+                press_ledger::PressFact::new(
+                    press.key(self.mtm).map(|key| key.keyCode().0),
+                    Retained::as_ptr(&press).addr(),
+                    press,
+                )
+            })
+            .collect();
+        press_ledger::apply(
+            &mut self.state.borrow_mut().press_ledger,
+            phase,
+            facts,
+            std::time::Instant::now(),
+        );
     }
 }
 

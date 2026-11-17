@@ -23,6 +23,7 @@ use objc2_ui_kit::{
     UITextSpellCheckingType, UITextStorageDirection, UIView, UIWindow,
 };
 
+use super::super::state::press_ledger::PressPhase;
 use super::super::{input_target::InputTarget, keyboard::ResignReason};
 use super::positions::{self, TextPosition, TextRange};
 use super::state::{Ivars, Mode};
@@ -185,6 +186,7 @@ define_class!(
         #[unsafe(method(pressesBegan:withEvent:))]
         fn __presses_began(&self, presses: &NSSet<UIPress>, event: Option<&UIPressesEvent>) {
             let _native_entry = crate::native_operation::refused();
+            self.ivars().target.record_presses(PressPhase::Began, presses);
             self.ivars().target.mark_hardware_observed();
             self.presses_began(presses, event);
         }
@@ -192,6 +194,7 @@ define_class!(
         #[unsafe(method(pressesChanged:withEvent:))]
         fn __presses_changed(&self, presses: &NSSet<UIPress>, event: Option<&UIPressesEvent>) {
             let _native_entry = crate::native_operation::refused();
+            self.ivars().target.record_presses(PressPhase::Changed, presses);
             self.ivars().target.mark_hardware_observed();
             // SAFETY: the arguments are the ones UIKit passed for this selector.
             let () = unsafe { msg_send![super(self), pressesChanged: presses, withEvent: event] };
@@ -200,6 +203,7 @@ define_class!(
         #[unsafe(method(pressesEnded:withEvent:))]
         fn __presses_ended(&self, presses: &NSSet<UIPress>, event: Option<&UIPressesEvent>) {
             let _native_entry = crate::native_operation::refused();
+            self.ivars().target.record_presses(PressPhase::Ended, presses);
             self.ivars().target.mark_hardware_observed();
             self.presses_ended(presses, event, false);
         }
@@ -207,6 +211,7 @@ define_class!(
         #[unsafe(method(pressesCancelled:withEvent:))]
         fn __presses_cancelled(&self, presses: &NSSet<UIPress>, event: Option<&UIPressesEvent>) {
             let _native_entry = crate::native_operation::refused();
+            self.ivars().target.record_presses(PressPhase::Cancelled, presses);
             self.ivars().target.mark_hardware_observed();
             self.presses_ended(presses, event, true);
         }

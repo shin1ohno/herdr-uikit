@@ -157,7 +157,7 @@ pub enum NativeRetirementRequestError {
     IdentityExhausted,
     #[error("this native entry or query phase is unsupported")]
     UnsupportedNativeEntry,
-    #[error("physical, repeat or keyboard-menu input was observed")]
+    #[error("physical, repeat or keyboard-menu input is held or unpaired")]
     UnsupportedHardwareContext,
     #[error("nested native/task entry is unsupported")]
     UnsupportedReentrancy,
@@ -165,6 +165,43 @@ pub enum NativeRetirementRequestError {
     LegacyDispatchActive,
     #[error("there is no protected native Edit or dispatcher task")]
     UnprotectedEntry,
+}
+
+/// Why a Window's requests return `UnsupportedHardwareContext`, for status lines
+/// and observation only; it never changes admission. Nothing clears the ledger
+/// on its own: a keyed press clears when the same key is pressed and released
+/// again, while an unpaired key-less press or `overflow` stays until the Window
+/// is rebuilt. `observed_ever` is the diagnostic hardware history.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct NativeHardwareHold {
+    /// Held presses with a key (HID usage).
+    pub keyed: u8,
+    /// Held presses without a key, paired by press object.
+    pub unkeyed: u8,
+    /// More than 16 presses were in flight at once; never cleared.
+    pub overflow: bool,
+    /// The ledger is empty but the key state says a key, repeat, menu press or
+    /// modifier is held: a press selector did not feed the ledger.
+    pub key_state_only: bool,
+    /// How long the oldest held press has been held.
+    pub oldest: Option<std::time::Duration>,
+    /// Hardware input reached this Window at some point (diagnostic history).
+    pub observed_ever: bool,
+}
+
+impl NativeHardwareHold {
+    /// Whether requests are currently refused as `UnsupportedHardwareContext`
+    /// outside a press frame.
+    pub fn held(&self) -> bool {
+        self.keyed != 0 || self.unkeyed != 0 || self.overflow || self.key_state_only
+    }
+}
+
+/// The Window's held-press state, or `None` off the main thread or for a
+/// closed Window. Reading it has no side effects.
+pub fn native_hardware_hold(window: AnyWindowHandle) -> Option<NativeHardwareHold> {
+    crate::window::Window::native_hardware_hold(window, MainThreadMarker::new()?)
 }
 
 /// Sample immutable origin without a handler loan, focus request or readiness claim.
