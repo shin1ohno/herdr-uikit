@@ -15,6 +15,7 @@
 
 use std::{
     cell::RefCell,
+    marker::PhantomData,
     pin::Pin,
     rc::Rc,
     task::{Context, Poll},
@@ -205,9 +206,14 @@ impl futures::Stream for NativeSearchEvents {
 /// is dismissed if still up, and the gate opens once a GPUI view is first
 /// responder again (`InputRestored`). Hold it until a selection's target has
 /// opened, so the terminal never takes input in between.
+///
+/// The handle stays on the main thread (it is neither `Send` nor `Sync`):
+/// dropping it releases the session, which only the main thread can do, and
+/// a drop elsewhere would leave the gate shut for good.
 pub struct NativeSearchHandle {
     window: AnyWindowHandle,
     session: SessionId,
+    _main_thread: PhantomData<Rc<()>>,
 }
 
 impl NativeSearchHandle {
@@ -255,7 +261,11 @@ pub fn present_native_search(
     let queue: SharedQueue = Rc::default();
     let session = modal::present(window, request, queue.clone(), mtm)?;
     Ok((
-        NativeSearchHandle { window, session },
+        NativeSearchHandle {
+            window,
+            session,
+            _main_thread: PhantomData,
+        },
         NativeSearchEvents { queue },
     ))
 }
@@ -269,3 +279,20 @@ pub fn native_modal_active(window: AnyWindowHandle) -> Option<bool> {
 /// Simulator QA: the panel's and the gate's observable state.
 #[cfg(all(target_abi = "sim", feature = "test-support"))]
 pub use crate::window::native_modal::{NativeSearchState, native_search_state};
+
+#[cfg(test)]
+mod tests {
+    use super::NativeSearchHandle;
+
+    /// Compiles only while the handle is not `Send`: with `Send`, both
+    /// implementations apply and the call is ambiguous.
+    #[test]
+    fn handle_stays_on_the_main_thread() {
+        trait AmbiguousIfSend<A> {
+            fn some_item() {}
+        }
+        impl<T: ?Sized> AmbiguousIfSend<()> for T {}
+        impl<T: ?Sized + Send> AmbiguousIfSend<u8> for T {}
+        <NativeSearchHandle as AmbiguousIfSend<_>>::some_item();
+    }
+}
