@@ -6,7 +6,8 @@ over the window's root controller: a title, a Cancel button, a
 `UITableView` (or an empty state with a clear button). It is a popover without
 arrow (kept a popover in compact width) or, when the consumer asks for
 `NativeSearchPresentation::Sheet`, a page sheet with medium and large detents
-whose dimmed background takes no touches. The consumer decides which (yebisu:
+dimmed behind at every detent: the dimmed background takes no touches, so a
+tap there neither closes the sheet nor reaches the window. The consumer decides which (yebisu:
 a sheet below 352 pt).
 
 The field is first responder while the panel is up. Keys, composition, Paste
@@ -26,7 +27,7 @@ Events arrive in order on `NativeSearchEvents` (a `futures::Stream`):
 | `QueryChanged(text)` | committed text changed (marked text excluded); the newest replaces one still unread. The final committed text is sent again before `Dismissed` when it differs |
 | `ClearRequested` | the empty state's button |
 | `Selected { id, revision }` | a row was tapped; `revision` is the `update` that showed it. The panel stays up: open the target, then `dismiss_selected(id)`, or show a message with `update` |
-| `Dismissed(reason)` | `Return`, `Escape` (not composing), `Cancel`, `OutsideTap`, `SwipedDown` (completed sheet swipe; an abandoned swipe changes nothing), `System` (UIKit removed the panel, seen on reactivation), `Selected(id)`, `Requested`, `WindowClosed` |
+| `Dismissed(reason)` | `Return`, `Escape` (not composing), `Cancel`, `OutsideTap` (outside the popover), `SwipedDown` (a completed sheet swipe; an abandoned swipe changes nothing), `System` (UIKit removed the panel, seen on reactivation), `Selected(id)`, `Requested`, `WindowClosed` |
 | `InputRestored(responder)` | after the handle was dropped: `Text` or `Drawing` became first responder, or `WindowClosed` |
 
 Dropping `NativeSearchHandle` ends the session; while the panel is up it is
@@ -54,6 +55,7 @@ first responder again after the handle was dropped. Readers:
 | `validateCommand:` for the app's commands | disabled while the key window is shut |
 | window close, scene disconnect | the panel is dismissed without animation; one `Dismissed(WindowClosed)` (if none yet) and `InputRestored(WindowClosed)` |
 | scene reactivation | the field takes first responder back if it lost it; a panel UIKit removed is `Dismissed(System)` |
+| an abandoned sheet swipe (UIKit cancels the dismissal it began) | the field takes first responder back; UIKit resigned it when the swipe began |
 
 Keys GPUI holds when the gate shuts get their `KeyUp` before it shuts, and
 the SDK repeat stops; those keys stay fenced until UIKit delivers their
@@ -71,7 +73,11 @@ release. Modifiers are not fenced: GPUI adopts the flags every key reports.
   disposable Simulator under `UIApplicationMain`. `scripts/native_search_mutations.py
   uikit OUT` runs it unchanged and with each reader removed; every case first
   checks the panel opened (or, for the presenter case, failed), so a mutation
-  fails at its own assertion.
+  fails at its own assertion. The fixture's app command is bound to
+  Shift-Command-B: on Command-B UIKit's Bold keeps the shortcut, the command
+  gets no key command, and the press never reaches the menu's validate and
+  perform paths. The text view's own check is reached by moving the view out
+  of its window and back while the panel is up (`didMoveToWindow`).
 
 Hosted CI compiles the fixtures and runs the host tests; it cannot run the
 `UIApplicationMain` fixtures (its Simulator runner spawns a bare process).
@@ -85,4 +91,11 @@ sheet was presented by request. Composition in the panel's field was not
 reproduced with XCUITest typing (the ja-JP input mode was active); it was
 checked with `setMarkedText:`. A command performed before a search opened and
 delivered after it is covered by the host test of the decision, not by a
-Simulator run.
+Simulator run. Escape is not in the fixture: XCUITest's Escape key never
+reached the field (its `pressesBegan:` saw no such press, and a key command
+for Escape did not fire either), so the field's Escape handling, read from the
+press, is untested on the Simulator. An abandoned sheet swipe is not in the
+fixture: when a drag begins the software keyboard hides and the sheet falls to its medium detent by
+itself, so the same XCUITest drag was abandoned on some runs and completed on
+others. On the runs where it was abandoned, the field had lost first responder
+before the refocus on cancellation was added and kept it after.
