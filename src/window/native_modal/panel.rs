@@ -10,25 +10,28 @@
     reason = "defines UIKit subclasses and delegates with objc2's define_class!"
 )]
 
-use std::{cell::RefCell, rc::Weak};
+use std::{cell::RefCell, ptr::NonNull, rc::Weak};
+
+use block2::RcBlock;
 
 use objc2::{
     DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_class, msg_send,
     rc::Retained,
-    runtime::{AnyObject, NSObject, ProtocolObject},
+    runtime::{AnyObject, NSObject, ProtocolObject, Sel},
     sel,
 };
 use objc2_core_foundation::{CGPoint, CGRect, CGSize};
-use objc2_foundation::{NSArray, NSIndexPath, NSInteger, NSObjectProtocol, NSString};
+use objc2_foundation::{NSArray, NSIndexPath, NSInteger, NSObjectProtocol, NSSet, NSString};
 use objc2_ui_kit::{
     NSIndexPathUIKitAdditions, UIAdaptivePresentationControllerDelegate, UIButton, UIButtonType,
-    UIColor, UIControl, UIControlEvents, UIControlState, UIFont, UIKeyCommand, UIKeyInputEscape,
-    UIKeyModifierFlags, UILabel, UIModalPresentationStyle, UIPopoverArrowDirection,
-    UIPopoverPresentationControllerDelegate, UIPresentationController, UIResponder,
-    UIReturnKeyType, UIScrollViewDelegate, UISearchTextField, UISheetPresentationControllerDetent,
-    UITableView, UITableViewCell, UITableViewCellStyle, UITableViewDataSource, UITableViewDelegate,
-    UITableViewStyle, UITextField, UITextFieldDelegate, UITextInputTraits, UITraitCollection,
-    UIView, UIViewAutoresizing, UIViewController,
+    UIColor, UIControl, UIControlEvents, UIControlState, UIFont, UIKeyboardHIDUsage, UILabel,
+    UIModalPresentationStyle, UIPopoverArrowDirection, UIPopoverPresentationControllerDelegate,
+    UIPresentationController, UIPress, UIPressesEvent, UIResponder, UIReturnKeyType,
+    UIScrollViewDelegate, UISearchTextField, UISheetPresentationControllerDetent, UITableView,
+    UITableViewCell, UITableViewCellStyle, UITableViewDataSource, UITableViewDelegate,
+    UITableViewStyle, UITextField, UITextFieldDelegate, UITraitCollection, UIView,
+    UIViewAutoresizing, UIViewController, UIViewControllerTransitionCoordinator,
+    UIViewControllerTransitionCoordinatorContext,
 };
 
 use super::{DismissReason, SessionId};
@@ -43,6 +46,13 @@ pub(crate) const CANCEL_ID: &str = "native-search-cancel";
 pub(crate) const CLEAR_ID: &str = "native-search-clear";
 pub(crate) const TABLE_ID: &str = "native-search-results";
 const DOT_TAG: NSInteger = 0x5e_a7c4;
+
+#[cfg(all(target_abi = "sim", feature = "test-support"))]
+thread_local! {
+    /// Presses the field began and the last one's HID usage, for QA.
+    pub(super) static FIELD_PRESSES: std::cell::Cell<(u32, isize)> =
+        const { std::cell::Cell::new((0, 0)) };
+}
 
 /// Which session and window a UIKit object belongs to.
 pub(super) struct Binding {
@@ -67,34 +77,28 @@ define_class!(
     pub(super) struct SearchField;
 
     impl SearchField {
-        #[unsafe(method_id(keyCommands))]
-        fn key_commands(&self) -> Option<Retained<NSArray<UIKeyCommand>>> {
-            // SAFETY: UIKeyInputEscape is an immutable UIKit constant.
-            let escape = unsafe { UIKeyInputEscape };
-            // SAFETY: this class implements the action, taking the sender.
-            let command = unsafe {
-                UIKeyCommand::commandWithTitle_image_action_input_modifierFlags_propertyList(
-                    &NSString::from_str("Escape"),
-                    None,
-                    sel!(herdrSearchEscape:),
-                    escape,
-                    UIKeyModifierFlags(0),
-                    None,
-                    self.mtm(),
-                )
-            };
-            Some(NSArray::from_retained_slice(&[command]))
-        }
-
-        // Escape closes only while nothing is composing: the IME's own Escape
-        // cancels its composition first, and a key command never overrides
-        // system text input (wantsPriorityOverSystemBehavior stays false).
-        #[unsafe(method(herdrSearchEscape:))]
-        fn escape(&self, _sender: Option<&AnyObject>) {
-            if marked(self) {
-                return;
+        // Escape closes only while nothing is composing: then the IME's own
+        // Escape cancels the composition. Read from the press, before
+        // UITextField handles it: a key command for Escape did not fire while
+        // the field was first responder (Simulator, XCUITest hardware key).
+        // The press still goes on to UITextField.
+        #[unsafe(method(pressesBegan:withEvent:))]
+        fn presses_began(&self, presses: &NSSet<UIPress>, event: Option<&UIPressesEvent>) {
+            let mtm = self.mtm();
+            let escape = presses.iter().any(|press| {
+                press
+                    .key(mtm)
+                    .is_some_and(|key| key.keyCode() == UIKeyboardHIDUsage::KeyboardEscape)
+            });
+            let dismiss = escape && !marked(self);
+            #[cfg(all(target_abi = "sim", feature = "test-support"))]
+            for press in presses.iter() {
+                let code = press.key(mtm).map_or(-1, |key| key.keyCode().0);
+                FIELD_PRESSES.set((FIELD_PRESSES.get().0 + 1, code));
             }
-            if let Some(window) = self.ivars().live() {
+            // SAFETY: forwards UIKit's own arguments to UITextField's method.
+            let () = unsafe { msg_send![super(self), pressesBegan: presses, withEvent: event] };
+            if dismiss && let Some(window) = self.ivars().live() {
                 window.native_modal_dismiss(self.ivars().session, DismissReason::Escape);
             }
         }
@@ -210,22 +214,41 @@ define_class!(
             UIModalPresentationStyle::None
         }
 
+        // A user dismissal begins: a tap outside the popover or a swipe of
+        // the sheet. An abandoned swipe ends here:
+        // no didDismiss follows, the sheet and the session stay.
         #[unsafe(method(presentationControllerWillDismiss:))]
-        fn will_dismiss(&self, _controller: &UIPresentationController) {
-            self.ivars().interactive.set(true);
-        }
-
-        // A swipe the user abandoned: the sheet stays, so does the session.
-        #[unsafe(method(presentationControllerDidAttemptToDismiss:))]
-        fn attempted(&self, _controller: &UIPresentationController) {
-            self.ivars().interactive.set(false);
+        fn will_dismiss(&self, controller: &UIPresentationController) {
+            let state = self.ivars();
+            state
+                .dismissals_begun
+                .set(state.dismissals_begun.get().saturating_add(1));
+            let Some(coordinator) = controller.presentedViewController().transitionCoordinator()
+            else {
+                return;
+            };
+            // UIKit resigned the field when the swipe began and does not give
+            // first responder back when the swipe is abandoned.
+            let window = state.binding.window.clone();
+            let session = state.binding.session;
+            let completion = RcBlock::new(
+                move |context: NonNull<
+                    ProtocolObject<dyn UIViewControllerTransitionCoordinatorContext>,
+                >| {
+                    // SAFETY: UIKit passes a live context for the completion.
+                    let cancelled = unsafe { context.as_ref() }.isCancelled();
+                    if let Some(window) = window.upgrade().filter(|_| cancelled) {
+                        window.native_modal_dismissal_cancelled(session);
+                    }
+                },
+            );
+            coordinator.animateAlongsideTransition_completion(None, Some(&completion));
         }
 
         // Only user-driven dismissals arrive here (an outside tap, a finished
         // swipe); programmatic ones complete through our own completion.
         #[unsafe(method(presentationControllerDidDismiss:))]
         fn did_dismiss(&self, _controller: &UIPresentationController) {
-            self.ivars().interactive.set(false);
             let reason = match self.ivars().presentation {
                 NativeSearchPresentation::Popover => DismissReason::OutsideTap,
                 NativeSearchPresentation::Sheet => DismissReason::SwipedDown,
@@ -243,8 +266,8 @@ pub(super) struct TargetState {
     style: NativeSearchStyle,
     pub(super) results: RefCell<NativeSearchResults>,
     pub(super) revision: std::cell::Cell<u64>,
-    /// A sheet swipe is in progress (willDismiss without a result yet).
-    pub(super) interactive: std::cell::Cell<bool>,
+    /// User dismissals UIKit began (finished or abandoned), for QA.
+    pub(super) dismissals_begun: std::cell::Cell<u32>,
 }
 
 impl Target {
@@ -411,7 +434,7 @@ fn button(
     title: &str,
     id: &str,
     target: &Target,
-    action: objc2::runtime::Sel,
+    action: Sel,
     frame: CGRect,
     mtm: MainThreadMarker,
 ) -> Retained<UIButton> {
@@ -444,6 +467,14 @@ pub(crate) struct Panel {
 }
 
 impl Panel {
+    /// User dismissals UIKit began on this panel, finished or abandoned.
+    #[cfg(all(target_abi = "sim", feature = "test-support"))]
+    pub(super) fn dismissals_begun(&self) -> u32 {
+        self.target.ivars().dismissals_begun.get()
+    }
+}
+
+impl Panel {
     pub(super) fn new(
         binding: impl Fn() -> Binding,
         request: &NativeSearchRequest,
@@ -458,7 +489,7 @@ impl Panel {
             style,
             results: RefCell::new(request.results.clone()),
             revision: std::cell::Cell::new(0),
-            interactive: std::cell::Cell::new(false),
+            dismissals_begun: std::cell::Cell::new(0),
         });
         // SAFETY: NSObject's designated initializer after the ivars.
         let target: Retained<Target> = unsafe { msg_send![super(target), init] };
@@ -504,7 +535,7 @@ impl Panel {
         field.setTextColor(Some(&color(style.text)));
         // SAFETY: a UIColor for the caret.
         unsafe { field.setTintColor(Some(&color(style.accent))) };
-        field.setReturnKeyType(UIReturnKeyType::Search);
+        set_return_key_type(&field, UIReturnKeyType::Search);
         field.setDelegate(Some(ProtocolObject::from_ref(&*target)));
         // SAFETY: as for the buttons, for the field's editing events.
         unsafe {
@@ -666,5 +697,23 @@ impl Panel {
 
     pub(super) fn committed_text(&self) -> String {
         committed_text(&self.field)
+    }
+}
+
+/// `UITextField` answers the `UITextInputTraits` setters by forwarding: the
+/// class has no `setReturnKeyType:` method, so objc2's debug signature check
+/// panics on `setReturnKeyType`. Send the message as Objective-C does.
+fn set_return_key_type(field: &UITextField, value: UIReturnKeyType) {
+    // SAFETY: `-[UITextField setReturnKeyType:]` takes one `NSInteger` and
+    // returns nothing; `objc_msgSend` is called with exactly that signature on
+    // a live text field, on the main thread like every caller of this module.
+    unsafe {
+        let send: unsafe extern "C-unwind" fn(*const AnyObject, Sel, NSInteger) =
+            std::mem::transmute(objc2::ffi::objc_msgSend as unsafe extern "C-unwind" fn());
+        send(
+            (field as *const UITextField).cast(),
+            sel!(setReturnKeyType:),
+            value.0,
+        );
     }
 }

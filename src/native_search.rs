@@ -37,7 +37,8 @@ pub enum NativeSearchPresentation {
     #[default]
     Popover,
     /// A page sheet with medium and large detents. Its background is dimmed
-    /// and does not take touches (no `largestUndimmedDetentIdentifier`).
+    /// at every detent (no `largestUndimmedDetentIdentifier`) and takes no
+    /// touches: a tap there neither closes the sheet nor reaches the window.
     Sheet,
 }
 

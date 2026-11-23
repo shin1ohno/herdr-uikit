@@ -37,7 +37,8 @@ pub enum DismissReason {
     Return,
     /// The consumer closed it after a result was selected.
     Selected(u64),
-    /// The sheet was swiped down to completion.
+    /// The sheet was swiped down to completion, the one way a user closes
+    /// it: its dimmed background takes no touches.
     SwipedDown,
     /// UIKit removed the panel without telling its delegate.
     System,

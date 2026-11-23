@@ -24,6 +24,12 @@ pub struct NativeSearchState {
     pub fenced_keys: usize,
     pub fence_overflow: bool,
     pub keyboard_notifications_dropped: u32,
+    /// User dismissals UIKit began on the panel (a swipe, a tap outside),
+    /// finished or abandoned.
+    pub dismissals_begun: u32,
+    /// Presses the panel's field began (all sessions) and the last one's
+    /// HID usage (-1 without a key).
+    pub field_presses: (u32, isize),
 }
 
 pub fn native_search_state(handle: AnyWindowHandle) -> Option<NativeSearchState> {
@@ -59,6 +65,8 @@ pub fn native_search_state(handle: AnyWindowHandle) -> Option<NativeSearchState>
         fenced_keys: state.press_fence.len(),
         fence_overflow: state.press_fence.overflowed(),
         keyboard_notifications_dropped: state.modal_intent.dropped_notifications,
+        dismissals_begun: panel.as_ref().map_or(0, |p| p.dismissals_begun()),
+        field_presses: panel::FIELD_PRESSES.get(),
     })
 }
 

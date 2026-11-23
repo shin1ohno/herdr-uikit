@@ -555,6 +555,15 @@ impl Window {
         }
     }
 
+    /// UIKit cancelled a user dismissal (an abandoned sheet swipe) after
+    /// resigning the field when it began: the field takes first responder
+    /// back, as on scene reactivation.
+    pub(super) fn native_modal_dismissal_cancelled(&self, id: SessionId) {
+        if self.state.borrow().native_modal.session() == Some(id) {
+            self.native_modal_scene_active();
+        }
+    }
+
     /// The window is closing or its scene disconnected: the session ends
     /// once, before UIKit's window is torn down.
     pub(super) fn native_modal_window_closed(&self) {
