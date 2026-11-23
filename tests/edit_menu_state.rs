@@ -36,9 +36,13 @@ fn owned_configurations_never_fall_back_to_untagged_suggestions() {
     ] {
         assert_eq!(a.menu_for(Some(&id)), MenuDecision::Empty);
     }
+    // UIKit's own secondary-click presentation carries no token: nothing to paste there.
+    assert_eq!(a.menu_for(Some("other menu")), MenuDecision::Empty);
+    assert_eq!(a.menu_for(None), MenuDecision::Empty);
+    assert!(a.availability(false));
+    // A client that never opted into explicit availability keeps UIKit's suggestions.
     assert_eq!(a.menu_for(Some("other menu")), MenuDecision::Passthrough);
     assert_eq!(a.menu_for(None), MenuDecision::Passthrough);
-    assert!(a.availability(false));
     assert_eq!(a.menu_for(Some(&identifier(t2))), MenuDecision::Empty);
     assert!(a.present().is_none());
     a.availability(true);
