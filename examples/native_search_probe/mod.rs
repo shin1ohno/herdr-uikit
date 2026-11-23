@@ -247,7 +247,10 @@ pub fn run() {
         let actions = Rc::new(Cell::new(0));
         let counted = actions.clone();
         cx.on_action(move |_: &ToggleSidebar, _| counted.set(counted.get() + 1));
-        cx.bind_keys([KeyBinding::new("cmd-b", ToggleSidebar, None)]);
+        // Not Command-B: UIKit's Format menu has Bold there, so the command
+        // would stay a menu item without a key command, and the press would
+        // never reach the menu's validate and perform paths.
+        cx.bind_keys([KeyBinding::new("cmd-shift-b", ToggleSidebar, None)]);
         cx.set_menus([Menu {
             name: "Probe".into(),
             items: vec![MenuItem::action("Toggle Sidebar", ToggleSidebar)],

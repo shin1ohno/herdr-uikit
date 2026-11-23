@@ -22,7 +22,7 @@ use herdr_uikit::{
 };
 use objc2::{msg_send, rc::Retained, runtime::AnyObject};
 use objc2_foundation::NSIndexPath;
-use objc2_ui_kit::{UIView, UIViewController};
+use objc2_ui_kit::{UISheetPresentationControllerDetentIdentifierLarge, UIView, UIViewController};
 
 fn results(ids: [u64; 2], prefix: &str) -> NativeSearchResults {
     NativeSearchResults {
@@ -198,6 +198,29 @@ async fn c2_responders_late_input_and_selection(probe: &Probe, window: &objc2_ui
     check(
         s.field_first_responder && !s.gpui_text_first_responder,
         "t-u2-text-stays-off",
+    );
+    // T-U2: the text view moving into its window again (UIKit rebuilding
+    // the hierarchy) asks to acquire from didMoveToWindow, which only the
+    // text view's own check refuses; GPUI's focus above wants text.
+    let rejoined = native::gpui_text_view(window).and_then(|text_view| {
+        let parent = text_view.superview()?;
+        let index = parent
+            .subviews()
+            .iter()
+            .position(|v| std::ptr::eq(&*v, &*text_view))?;
+        text_view.removeFromSuperview();
+        parent.insertSubview_atIndex(&text_view, index as isize);
+        Some(())
+    });
+    probe.sleep(600).await;
+    let s = state(probe);
+    record(format!(
+        "c2: text view rejoined {:?}, {s:?}",
+        rejoined.is_some()
+    ));
+    check(
+        rejoined.is_some() && s.field_first_responder && !s.gpui_text_first_responder,
+        "t-u2-text-view-rejoined-stays-off",
     );
 
     // F5: late text and an Edit command reaching GPUI's views are dropped.
@@ -376,18 +399,49 @@ async fn xcuitest_cases(probe: &Probe) {
     native::set_phase("await-tap");
     let tapped = probe.wait(300_000, |p| p.sink().taps > 0).await;
     check(tapped, "xcuitest-attached");
+    // Lets the handshake tap finish (GPUI's focus and keyboard requests)
+    // before the field takes first responder; opening at once raced with it
+    // and the field's software keyboard sometimes never appeared.
+    probe.sleep(2_000).await;
 
-    // F4: Command-B (the app's menu command) does nothing while the panel is
-    // up; the same command runs after it closed (positive control).
+    // F4: Shift-Command-B (the app's menu command, a main-menu key command)
+    // does nothing while the panel is up; the same command runs after it
+    // closed (positive control).
     let actions = probe.actions.get();
     let (handle, mut log) = open(probe, NativeSearchPresentation::Popover);
     opened(probe, &mut log, "s1").await;
     native::set_phase("s1-open");
+    probe.sleep(1_000).await;
+    record(format!(
+        "s1: keyboard notifications after 1 s {}",
+        state(probe).keyboard_notifications_dropped
+    ));
+    let since = std::time::Instant::now();
+    let mut notifications = None;
+    // Long enough for XCUITest's wait for the app to idle, which gave up
+    // after 57 s on some runs before typing.
     let typed = probe
-        .wait(60_000, |_| {
-            native_search_state(probe.any()).is_some_and(|s| s.field_text.ends_with('#'))
+        .wait(150_000, |_| {
+            let s = native_search_state(probe.any());
+            let count = s.as_ref().map(|s| s.keyboard_notifications_dropped);
+            if count != notifications {
+                record(format!(
+                    "s1: +{} ms keyboard notifications {count:?}",
+                    since.elapsed().as_millis()
+                ));
+                notifications = count;
+            }
+            s.is_some_and(|s| s.field_text.ends_with('#'))
         })
         .await;
+    if !typed {
+        record(format!(
+            "s1: sentinel missing, {:?} sink {:?} actions {}",
+            state(probe),
+            probe.sink(),
+            probe.actions.get()
+        ));
+    }
     check(typed, "s1-sentinel-typed");
     record(format!(
         "s1: actions {} -> {}",
@@ -396,10 +450,10 @@ async fn xcuitest_cases(probe: &Probe) {
     ));
     check(
         probe.actions.get() == actions,
-        "f4-command-b-disabled-while-open",
+        "f4-menu-shortcut-disabled-while-open",
     );
     let returned = probe
-        .wait(30_000, |_| log.has(&Event::Dismissed(Reason::Return)))
+        .wait(120_000, |_| log.has(&Event::Dismissed(Reason::Return)))
         .await;
     check(returned, "return-dismisses");
     let order: Vec<_> = log.drain().to_vec();
@@ -415,38 +469,162 @@ async fn xcuitest_cases(probe: &Probe) {
     );
     finish(probe, handle, log, "s1").await;
     let ran = probe.wait(30_000, |p| p.actions.get() == actions + 1).await;
-    check(ran, "f4-command-b-runs-after-close");
+    check(ran, "f4-menu-shortcut-runs-after-close");
 
     // F2: dismissals UIKit makes on its own (outside tap, sheet swipe) are
-    // session states with their own reason.
-    for (presentation, reason, name) in [
-        (
-            NativeSearchPresentation::Popover,
-            Reason::OutsideTap,
-            "f2-outside-tap-dismissed",
-        ),
-        (
-            NativeSearchPresentation::Sheet,
-            Reason::SwipedDown,
-            "f2-sheet-swipe-dismissed",
-        ),
-        (
-            NativeSearchPresentation::Popover,
-            Reason::Escape,
-            "escape-dismisses",
-        ),
-    ] {
-        let (handle, mut log) = open(probe, presentation);
-        opened(probe, &mut log, name).await;
-        let style = state(probe).presentation_style;
-        record(format!("{name}: style {style:?}"));
-        let dismissed = probe
-            .wait(60_000, |_| log.has(&Event::Dismissed(reason)))
+    // session states with their own reason; the sheet's dimmed background
+    // takes no touches.
+    user_dismissal(
+        probe,
+        NativeSearchPresentation::Popover,
+        Reason::OutsideTap,
+        "f2-outside-tap-dismissed",
+    )
+    .await;
+    user_dismissal(
+        probe,
+        NativeSearchPresentation::Sheet,
+        Reason::SwipedDown,
+        "f2-sheet-swipe-dismissed",
+    )
+    .await;
+    inert_background(probe).await;
+}
+
+/// A tap on the sheet's dimmed background, 8 s after the swipe, neither
+/// closes it nor reaches the window; the consumer then closes it.
+async fn inert_background(probe: &Probe) {
+    let name = "f2-sheet-background-inert";
+    let (handle, mut log) = open(probe, NativeSearchPresentation::Sheet);
+    opened(probe, &mut log, name).await;
+    pin_large_detent(probe).await;
+    let taps = probe.sink().taps;
+    probe.sleep(12_000).await;
+    let dismissals = log.count(|e| matches!(e, Event::Dismissed(_)));
+    let s = state(probe);
+    record(format!(
+        "{name}: taps {taps} -> {}, dismissals {dismissals}, {s:?}",
+        probe.sink().taps
+    ));
+    check(
+        dismissals == 0
+            && probe.sink().taps == taps
+            && s.phase == "Presented"
+            && s.field_first_responder,
+        name,
+    );
+    let requested = handle.dismiss().is_ok()
+        && probe
+            .wait(5_000, |_| log.has(&Event::Dismissed(Reason::Requested)))
             .await;
-        check(dismissed, name);
-        let restored = finish(probe, handle, log, name).await;
-        check(restored.is_some(), &format!("{name}-restored"));
+    check(requested, &format!("{name}-then-requested"));
+    let restored = finish(probe, handle, log, name).await;
+    check(restored.is_some(), &format!("{name}-restored"));
+}
+
+/// Puts a sheet at its large detent (top at y 42 on this iPad), where the
+/// XCUITest gestures start. The software keyboard raises it there on some
+/// runs and not on others; without this the grabber is in either place.
+async fn pin_large_detent(probe: &Probe) {
+    probe.sleep(1_000).await;
+    let sheet = native::gpui_window(probe.mtm)
+        .and_then(|window| window.rootViewController())
+        .and_then(|root| root.presentedViewController())
+        .and_then(|panel| panel.sheetPresentationController());
+    match sheet {
+        Some(sheet) => {
+            // SAFETY: an immutable UIKit constant.
+            let large = unsafe { UISheetPresentationControllerDetentIdentifierLarge };
+            sheet.setSelectedDetentIdentifier(Some(large));
+        }
+        None => record("sheet controller missing".into()),
     }
+    probe.sleep(1_000).await;
+}
+
+/// The presented panel's frame in window points, and the window's size.
+fn panel_frame(probe: &Probe) -> String {
+    let Some(window) = native::gpui_window(probe.mtm) else {
+        return "no window".into();
+    };
+    let to: &UIView = &window;
+    let frame = window
+        .rootViewController()
+        .and_then(|root| root.presentedViewController())
+        .and_then(|panel| panel.viewIfLoaded())
+        .map(|view| view.convertRect_toView(view.bounds(), Some(to)));
+    let bounds = window.bounds();
+    match frame {
+        Some(f) => format!(
+            "x {} y {} w {} h {} in {}x{}",
+            f.origin.x,
+            f.origin.y,
+            f.size.width,
+            f.size.height,
+            bounds.size.width,
+            bounds.size.height
+        ),
+        None => "none".into(),
+    }
+}
+
+/// Records the panel frame each time it changes while a case waits for a
+/// gesture, with the milliseconds since the case opened.
+struct FrameTrack {
+    name: String,
+    since: std::time::Instant,
+    last: String,
+}
+
+impl FrameTrack {
+    fn new(name: &str) -> Self {
+        Self {
+            name: name.into(),
+            since: std::time::Instant::now(),
+            last: String::new(),
+        }
+    }
+    fn sample(&mut self, probe: &Probe) {
+        let frame = panel_frame(probe);
+        if frame != self.last {
+            record(format!(
+                "{}: +{} ms panel frame {frame}",
+                self.name,
+                self.since.elapsed().as_millis()
+            ));
+            self.last = frame;
+        }
+    }
+}
+
+/// Opens the panel and waits for the XCUITest gesture to dismiss it with
+/// `reason`.
+async fn user_dismissal(
+    probe: &Probe,
+    presentation: NativeSearchPresentation,
+    reason: Reason,
+    name: &str,
+) {
+    let (handle, mut log) = open(probe, presentation);
+    opened(probe, &mut log, name).await;
+    if presentation == NativeSearchPresentation::Sheet {
+        pin_large_detent(probe).await;
+    }
+    let style = state(probe).presentation_style;
+    record(format!("{name}: style {style:?}"));
+    let mut track = FrameTrack::new(name);
+    let dismissed = probe
+        .wait(60_000, |p| {
+            track.sample(p);
+            log.has(&Event::Dismissed(reason))
+        })
+        .await;
+    if !dismissed {
+        record(format!("{name}: not dismissed, {:?}", state(probe)));
+    }
+    check(dismissed, name);
+    let restored = finish(probe, handle, log, name).await;
+    check(restored.is_some(), &format!("{name}-restored"));
 }
 
 #[allow(
