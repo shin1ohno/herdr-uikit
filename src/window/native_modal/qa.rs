@@ -30,6 +30,9 @@ pub struct NativeSearchState {
     /// Presses the panel's field began (all sessions) and the last one's
     /// HID usage (-1 without a key).
     pub field_presses: (u32, isize),
+    /// What GPUI's text view checks before it acquires, besides the gate:
+    /// the window active, a focused text element, the keyboard dismissal.
+    pub text_acquire_inputs: String,
 }
 
 pub fn native_search_state(handle: AnyWindowHandle) -> Option<NativeSearchState> {
@@ -67,6 +70,10 @@ pub fn native_search_state(handle: AnyWindowHandle) -> Option<NativeSearchState>
         keyboard_notifications_dropped: state.modal_intent.dropped_notifications,
         dismissals_begun: panel.as_ref().map_or(0, |p| p.dismissals_begun()),
         field_presses: panel::FIELD_PRESSES.get(),
+        text_acquire_inputs: format!(
+            "active={} focused={} dismissal={:?}",
+            state.is_active, state.text_input_focused, state.keyboard.dismissal
+        ),
     })
 }
 

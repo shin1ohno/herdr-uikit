@@ -176,6 +176,21 @@ async fn c1_presenter_busy(probe: &Probe, window: &objc2_ui_kit::UIWindow) {
 /// T-U2 (responder readers), F5 (late text and Edit), selection and query
 /// callbacks, F6 (no restore before release; restore to the text view).
 async fn c2_responders_late_input_and_selection(probe: &Probe, window: &objc2_ui_kit::UIWindow) {
+    // GPUI's text view holds first responder (text mode) before the panel
+    // takes it, so its own acquisition is armed: the readers below are what
+    // keeps it from taking first responder back.
+    probe.update(|host, window, cx| {
+        host.focus.focus(window, cx);
+        window.request_virtual_keyboard();
+        window.refresh();
+    });
+    let text_first = probe
+        .wait(5_000, |p| {
+            native_search_state(p.any()).is_some_and(|s| s.gpui_text_first_responder)
+        })
+        .await;
+    record(format!("c2: before open {:?}", state(probe)));
+    check(text_first, "c2-gpui-text-first-before-open");
     let (handle, mut log) = open(probe, NativeSearchPresentation::Popover);
     opened(probe, &mut log, "c2").await;
 
@@ -200,8 +215,8 @@ async fn c2_responders_late_input_and_selection(probe: &Probe, window: &objc2_ui
         "t-u2-text-stays-off",
     );
     // T-U2: the text view moving into its window again (UIKit rebuilding
-    // the hierarchy) asks to acquire from didMoveToWindow, which only the
-    // text view's own check refuses; GPUI's focus above wants text.
+    // the hierarchy) asks to acquire from didMoveToWindow while GPUI's focus
+    // above wants text; the field keeps first responder.
     let rejoined = native::gpui_text_view(window).and_then(|text_view| {
         let parent = text_view.superview()?;
         let index = parent
@@ -468,7 +483,11 @@ async fn xcuitest_cases(probe: &Probe) {
         "final-query-before-dismissed",
     );
     finish(probe, handle, log, "s1").await;
-    let ran = probe.wait(30_000, |p| p.actions.get() == actions + 1).await;
+    // XCUITest's wait for app animations gave up after 60 s more than once
+    // while the panel was up, so the shortcut came minutes late on some runs.
+    let ran = probe
+        .wait(300_000, |p| p.actions.get() == actions + 1)
+        .await;
     check(ran, "f4-menu-shortcut-runs-after-close");
 
     // F2: dismissals UIKit makes on its own (outside tap, sheet swipe) are

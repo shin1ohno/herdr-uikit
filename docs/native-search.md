@@ -76,8 +76,7 @@ release. Modifiers are not fenced: GPUI adopts the flags every key reports.
   fails at its own assertion. The fixture's app command is bound to
   Shift-Command-B: on Command-B UIKit's Bold keeps the shortcut, the command
   gets no key command, and the press never reaches the menu's validate and
-  perform paths. The text view's own check is reached by moving the view out
-  of its window and back while the panel is up (`didMoveToWindow`).
+  perform paths.
 
 Hosted CI compiles the fixtures and runs the host tests; it cannot run the
 `UIApplicationMain` fixtures (its Simulator runner spawns a bare process).
@@ -99,3 +98,11 @@ fixture: when a drag begins the software keyboard hides and the sheet falls to i
 itself, so the same XCUITest drag was abandoned on some runs and completed on
 others. On the runs where it was abandoned, the field had lost first responder
 before the refocus on cancellation was added and kept it after.
+
+The text view's own check (`text_input_can_acquire`) has no Simulator
+mutation. With it removed, the window active, a text element focused and no
+keyboard dismissal, moving GPUI's text view out of its window and back while
+the popover was up still left the panel's field first responder; what else
+kept it there was not found. The fixture keeps that step as a check
+(`t-u2-text-view-rejoined-stays-off`), and the responder requests before it
+are covered by the `update_first_responder` mutation.

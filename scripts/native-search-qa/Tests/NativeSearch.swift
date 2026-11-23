@@ -32,8 +32,15 @@ final class NativeSearch: XCTestCase {
         app.activate()
         guard phase(app, "await-tap", 300) else { return }
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)).tap()
-        // s1: Shift-Command-B (the app's menu command) while the panel is up, a sentinel, then Return.
-        step(8, "menu-shortcut-open") { app.typeKey("b", modifierFlags: [.command, .shift]) }
+        // s1: Shift-Command-B (the app's menu command) while the panel is up,
+        // a sentinel, then Return. The tap lands on the popover's field (top
+        // at y 62, field 48 to 84 pt below): on some runs the field's
+        // software keyboard never appeared after the handshake tap, and no
+        // typed key reached the app.
+        step(6, "field-tap") {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.193, dy: 0.093)).tap()
+        }
+        step(4, "menu-shortcut-open") { app.typeKey("b", modifierFlags: [.command, .shift]) }
         // The software keyboard changes state for about 2 s after a hardware
         // key; text typed meanwhile was lost on some runs.
         step(4, "sentinel") { app.typeText("#") }
