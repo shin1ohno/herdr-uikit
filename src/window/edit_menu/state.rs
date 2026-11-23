@@ -110,7 +110,15 @@ impl EditMenuState {
     pub(crate) fn menu_for(&self, identifier: Option<&str>) -> MenuDecision {
         let Some(value) = identifier.and_then(|s| s.strip_prefix(EDIT_MENU_IDENTIFIER_PREFIX))
         else {
-            return MenuDecision::Passthrough;
+            // UIKit presents the interaction's menu by itself on a pointer's
+            // secondary click anywhere over the view. A consumer that opted into
+            // explicit availability decides where its menu appears and presents
+            // it with a token, so a configuration it did not present stays empty.
+            return if self.available {
+                MenuDecision::Empty
+            } else {
+                MenuDecision::Passthrough
+            };
         };
         match (
             value.parse::<u64>().ok().map(NativeEditMenuToken),

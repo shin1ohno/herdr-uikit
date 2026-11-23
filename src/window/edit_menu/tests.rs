@@ -171,7 +171,10 @@ pub(crate) fn run() {
     ] {
         assert_eq!(get_menu(id).children().count(), 0);
     }
-    let foreign = get_menu("other-owner".into());
+    // UIKit's own secondary-click menu has no token: empty while the consumer is explicit.
+    assert_eq!(get_menu("other-owner".into()).children().count(), 0);
+    // A client without explicit availability keeps UIKit's untagged suggestions.
+    let foreign = build_menu(MenuDecision::Passthrough, [true; 2], &suggestions, mtm);
     assert_eq!(foreign.children().count(), 2);
     assert_eq!(execute_menu(&state.borrow(), &foreign), (2, 0, 0));
     assert_eq!(
