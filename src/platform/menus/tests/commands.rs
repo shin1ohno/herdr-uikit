@@ -251,6 +251,154 @@ fn run(mtm: MainThreadMarker, failures: &mut Vec<String>) {
         *delivered.borrow() == [NewTab.name()],
         "the item's own action reaches GPUI's callback",
     );
+
+    #[cfg(all(target_os = "ios", target_abi = "sim"))]
+    check_receipts(mtm, &shared, &keymap, generation, failures);
+}
+
+/// Simulator QA receipts: where a performed command and its action stop.
+#[cfg(all(target_os = "ios", target_abi = "sim"))]
+fn check_receipts(
+    mtm: MainThreadMarker,
+    shared: &Shared,
+    keymap: &Keymap,
+    generation: u32,
+    failures: &mut Vec<String>,
+) {
+    use crate::platform::qa_input::tests::{Capture, receipt};
+
+    let current = generation.to_string();
+    let older = generation.wrapping_sub(1).to_string();
+    let (Some(new_tab), Some(keyed), Some(old)) = (
+        command(mtm, generation, 0),
+        key_command(mtm, generation, 0),
+        command(mtm, generation.wrapping_sub(1), 0),
+    ) else {
+        failures.push("no commands".to_owned());
+        return;
+    };
+    // SAFETY: as in `command`, with no property list.
+    let untagged = unsafe {
+        UICommand::commandWithTitle_image_action_propertyList(
+            &NSString::from_str("Item"),
+            None,
+            action_selector(),
+            None,
+            mtm,
+        )
+    };
+
+    let capture = Capture::default();
+    capture.during(|| {
+        let _ = Performed::new(None);
+        let _ = Performed::new(Some(&untagged));
+        let _ = Performed::new(Some(&new_tab));
+        let _ = Performed::new(Some(&keyed));
+        let _ = Performed::new(Some(&old));
+    });
+    let performed = |keyed: &str, generation: &str| {
+        receipt(&[
+            ("receipt", "menu-perform"),
+            ("outcome", "performed"),
+            ("generation", generation),
+            ("index", "0"),
+            ("current", &current),
+            ("keyed", keyed),
+        ])
+    };
+    check(
+        failures,
+        capture.take()
+            == [
+                receipt(&[
+                    ("receipt", "menu-perform"),
+                    ("outcome", "no_sender"),
+                    ("current", &current),
+                ]),
+                receipt(&[
+                    ("receipt", "menu-perform"),
+                    ("outcome", "no_tag"),
+                    ("current", &current),
+                ]),
+                performed("false", &current),
+                performed("true", &current),
+                performed("false", &older),
+            ],
+        "each performed command leaves a menu-perform receipt",
+    );
+
+    let (Some(new_tab_tag), Some(stale)) = (
+        MenuTag::new(generation, 0),
+        MenuTag::new(generation.wrapping_sub(1), 0),
+    ) else {
+        failures.push("no tag".to_owned());
+        return;
+    };
+    capture.during(|| {
+        deliver(shared, new_tab_tag);
+        deliver(shared, stale);
+    });
+    let delivery = |outcome: &str, generation: &str| {
+        receipt(&[
+            ("receipt", "menu-deliver"),
+            ("outcome", outcome),
+            ("generation", generation),
+            ("index", "0"),
+            ("current", &current),
+        ])
+    };
+    check(
+        failures,
+        capture.take()
+            == [
+                delivery("delivered", &current),
+                delivery("stale_generation", &older),
+            ],
+        "a delivered and a stale command leave menu-deliver receipts",
+    );
+
+    // Platform state that GPUI never registered with, and one whose callback
+    // performs a command again while it runs.
+    let unregistered = Rc::new(Shared::default());
+    unregistered.menus.borrow_mut().set(
+        vec![Menu::new("File").items([MenuItem::action("New Tab", NewTab)])],
+        keymap,
+    );
+    let first = unregistered.menus.borrow().generation;
+    let Some(first_tag) = MenuTag::new(first, 0) else {
+        failures.push("no tag".to_owned());
+        return;
+    };
+    capture.during(|| {
+        deliver(&unregistered, first_tag);
+        let again = Rc::downgrade(&unregistered);
+        unregistered.app_menu_action.set(Box::new(move |_| {
+            if let Some(shared) = again.upgrade() {
+                deliver(&shared, first_tag);
+            }
+        }));
+        deliver(&unregistered, first_tag);
+    });
+    let first = first.to_string();
+    let nested = |outcome: &str| {
+        receipt(&[
+            ("receipt", "menu-deliver"),
+            ("outcome", outcome),
+            ("generation", &first),
+            ("index", "0"),
+            ("current", &first),
+        ])
+    };
+    check(
+        failures,
+        capture.take()
+            == [
+                nested("no_callback"),
+                nested("callback_running"),
+                nested("delivered"),
+            ],
+        "a missing or running callback leaves its own menu-deliver receipt",
+    );
 }
 
 fn outcome() -> Vec<String> {
