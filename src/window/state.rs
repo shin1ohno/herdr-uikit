@@ -72,8 +72,6 @@ pub(super) struct State {
     pub(super) modal_intent: super::native_modal::Intent,
     /// Keys kept from GPUI until released (`native_modal::fence`).
     pub(super) press_fence: super::native_modal::Fence,
-    /// Input dropped at GPUI's side while the gate was shut (QA counter).
-    pub(super) modal_late_drops: u64,
     pub(super) appearance: WindowAppearance,
     pub(super) background_appearance: WindowBackgroundAppearance,
     /// The window's frame in its scene, in points; the size is the content
@@ -129,7 +127,6 @@ impl State {
             native_modal: super::native_modal::Gate::default(),
             modal_intent: super::native_modal::Intent::default(),
             press_fence: super::native_modal::Fence::default(),
-            modal_late_drops: 0,
             appearance: WindowAppearance::default(),
             background_appearance: WindowBackgroundAppearance::Opaque,
             bounds,

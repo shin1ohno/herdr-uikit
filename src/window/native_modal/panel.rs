@@ -47,6 +47,9 @@ pub(crate) const CLEAR_ID: &str = "native-search-clear";
 pub(crate) const TABLE_ID: &str = "native-search-results";
 const DOT_TAG: NSInteger = 0x5e_a7c4;
 
+// The host-tested Escape decision names UIKit's usage.
+const _: () = assert!(super::gate::ESCAPE_USAGE == UIKeyboardHIDUsage::KeyboardEscape.0);
+
 #[cfg(all(target_abi = "sim", feature = "test-support"))]
 thread_local! {
     /// Presses the field began and the last one's HID usage, for QA.
@@ -85,12 +88,10 @@ define_class!(
         #[unsafe(method(pressesBegan:withEvent:))]
         fn presses_began(&self, presses: &NSSet<UIPress>, event: Option<&UIPressesEvent>) {
             let mtm = self.mtm();
-            let escape = presses.iter().any(|press| {
-                press
-                    .key(mtm)
-                    .is_some_and(|key| key.keyCode() == UIKeyboardHIDUsage::KeyboardEscape)
-            });
-            let dismiss = escape && !marked(self);
+            let usages = presses
+                .iter()
+                .filter_map(|press| press.key(mtm).map(|key| key.keyCode().0));
+            let dismiss = super::gate::escape_dismisses(usages, marked(self));
             #[cfg(all(target_abi = "sim", feature = "test-support"))]
             for press in presses.iter() {
                 let code = press.key(mtm).map_or(-1, |key| key.keyCode().0);

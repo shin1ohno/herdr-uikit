@@ -634,12 +634,7 @@ impl Window {
     /// Input that reached GPUI's side while the gate was shut: dropped, and
     /// counted for QA (`native_search_state`).
     pub(super) fn native_modal_drops_input(&self) -> bool {
-        let mut state = self.state.borrow_mut();
-        if !state.modal_blocks_input() {
-            return false;
-        }
-        state.modal_late_drops = state.modal_late_drops.saturating_add(1);
-        true
+        self.state.borrow_mut().native_modal.drops_late_input()
     }
 }
 

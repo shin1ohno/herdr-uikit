@@ -217,16 +217,7 @@ async fn c2_responders_late_input_and_selection(probe: &Probe, window: &objc2_ui
     // T-U2: the text view moving into its window again (UIKit rebuilding
     // the hierarchy) asks to acquire from didMoveToWindow while GPUI's focus
     // above wants text; the field keeps first responder.
-    let rejoined = native::gpui_text_view(window).and_then(|text_view| {
-        let parent = text_view.superview()?;
-        let index = parent
-            .subviews()
-            .iter()
-            .position(|v| std::ptr::eq(&*v, &*text_view))?;
-        text_view.removeFromSuperview();
-        parent.insertSubview_atIndex(&text_view, index as isize);
-        Some(())
-    });
+    let rejoined = rejoin_text_view(window);
     probe.sleep(600).await;
     let s = state(probe);
     record(format!(
@@ -300,6 +291,23 @@ async fn c2_responders_late_input_and_selection(probe: &Probe, window: &objc2_ui
             && !s.gpui_drawing_first_responder,
         "f6-no-restore-before-release",
     );
+    // T-U2 with the panel gone: nothing UIKit presents holds first
+    // responder now, so only the text view's own check keeps it from
+    // taking first responder when it moves into its window again.
+    let rejoined = rejoin_text_view(window);
+    probe.sleep(800).await;
+    let s = state(probe);
+    record(format!(
+        "c2: text view rejoined while awaiting {:?}, {s:?}",
+        rejoined.is_some()
+    ));
+    check(
+        rejoined.is_some()
+            && s.phase == "AwaitingConsumer"
+            && !s.gpui_text_first_responder
+            && !s.gpui_drawing_first_responder,
+        "t-u2-text-view-rejoined-while-awaiting-stays-off",
+    );
     let restored = finish(probe, handle, log, "c2").await;
     let s = state(probe);
     check(
@@ -308,6 +316,21 @@ async fn c2_responders_late_input_and_selection(probe: &Probe, window: &objc2_ui
             && s.phase == "None",
         "f6-restored-text-responder",
     );
+}
+
+/// Moves GPUI's text view out of its window and back at the same index, as
+/// UIKit does when it rebuilds the hierarchy: `didMoveToWindow` asks to
+/// acquire first responder.
+fn rejoin_text_view(window: &objc2_ui_kit::UIWindow) -> Option<()> {
+    let text_view = native::gpui_text_view(window)?;
+    let parent = text_view.superview()?;
+    let index = parent
+        .subviews()
+        .iter()
+        .position(|v| std::ptr::eq(&*v, &*text_view))?;
+    text_view.removeFromSuperview();
+    parent.insertSubview_atIndex(&text_view, index as isize);
+    Some(())
 }
 
 /// Sends the table delegate's selection for row 0 of section 0.

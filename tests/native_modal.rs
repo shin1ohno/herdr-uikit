@@ -148,6 +148,42 @@ fn h1_a_settled_restore_ignores_its_late_check() {
     );
 }
 
+// F5: input reaching GPUI's side is dropped and counted in every phase from
+// acceptance to the restore, and goes through before and after.
+#[test]
+fn f5_late_input_is_dropped_from_acceptance_to_the_restore() {
+    let mut gate = Gate::default();
+    assert!(!gate.drops_late_input(), "admitted before a search");
+    let id = gate.request().unwrap_or_else(|_| panic!("accepted"));
+    assert!(gate.drops_late_input(), "presenting");
+    gate.presented(id, true);
+    assert!(gate.drops_late_input(), "presented");
+    gate.dismiss(id, Return);
+    assert!(gate.drops_late_input(), "dismissing");
+    gate.dismissed(id, Requested);
+    assert!(gate.drops_late_input(), "awaiting consumer");
+    gate.release(id);
+    assert!(gate.drops_late_input(), "restoring");
+    assert_eq!(gate.late_drops(), 5);
+    gate.restored(id, Responder::Text);
+    assert!(!gate.drops_late_input(), "admitted after the restore");
+    assert_eq!(gate.late_drops(), 5, "admitted input is not counted");
+}
+
+// The field closes the panel on Escape only while nothing is composing.
+#[test]
+fn escape_closes_only_when_not_composing() {
+    let other = 0x04; // A
+    assert!(gate::escape_dismisses([gate::ESCAPE_USAGE], false));
+    assert!(gate::escape_dismisses([other, gate::ESCAPE_USAGE], false));
+    assert!(
+        !gate::escape_dismisses([gate::ESCAPE_USAGE], true),
+        "Escape cancels the composition instead"
+    );
+    assert!(!gate::escape_dismisses([other], false));
+    assert!(!gate::escape_dismisses([], false));
+}
+
 #[test]
 fn h1_dropping_the_handle_while_up_dismisses_then_restores() {
     let mut gate = Gate::default();

@@ -122,6 +122,16 @@ pub enum Phase {
     Restoring,
 }
 
+/// HID usage of the Escape key (`UIKeyboardHIDUsage::KeyboardEscape`).
+pub const ESCAPE_USAGE: isize = 0x29;
+
+/// Whether presses the panel's field began close it with `Escape`: one of
+/// them is Escape and the field is not composing (Escape then cancels the
+/// composition in the field instead).
+pub fn escape_dismisses(usages: impl IntoIterator<Item = isize>, composing: bool) -> bool {
+    !composing && usages.into_iter().any(|usage| usage == ESCAPE_USAGE)
+}
+
 /// Whether an app menu command runs: not when the key that chose it is
 /// fenced, not when its origin window's gate was shut as UIKit performed it,
 /// and not when that gate is shut as its deferred delivery runs.
@@ -147,6 +157,7 @@ pub struct Busy;
 pub struct Gate {
     current: Option<(SessionId, Phase)>,
     last: u64,
+    late_drops: u64,
 }
 
 type Effects = Vec<Effect>;
@@ -159,6 +170,26 @@ impl Gate {
 
     pub fn phase(&self) -> Option<(SessionId, Phase)> {
         self.current
+    }
+
+    /// F5: input that reached GPUI's side (its input handler, a dispatched
+    /// edit, a native Edit command) is dropped and counted while the gate is
+    /// shut, from acceptance until the restore; otherwise it goes through.
+    pub fn drops_late_input(&mut self) -> bool {
+        if !self.blocks() {
+            return false;
+        }
+        self.late_drops = self.late_drops.saturating_add(1);
+        true
+    }
+
+    /// Input dropped by `drops_late_input`, over every session.
+    #[cfg_attr(
+        not(all(target_abi = "sim", feature = "test-support")),
+        allow(dead_code, reason = "read by Simulator QA and the host tests")
+    )]
+    pub fn late_drops(&self) -> u64 {
+        self.late_drops
     }
 
     pub fn session(&self) -> Option<SessionId> {

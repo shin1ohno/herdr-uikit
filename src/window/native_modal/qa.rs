@@ -64,7 +64,7 @@ pub fn native_search_state(handle: AnyWindowHandle) -> Option<NativeSearchState>
             .as_ref()
             .filter(|p| p.controller.presentingViewController().is_some())
             .map(|p| p.controller.modalPresentationStyle().0),
-        late_drops: state.modal_late_drops,
+        late_drops: state.native_modal.late_drops(),
         fenced_keys: state.press_fence.len(),
         fence_overflow: state.press_fence.overflowed(),
         keyboard_notifications_dropped: state.modal_intent.dropped_notifications,
