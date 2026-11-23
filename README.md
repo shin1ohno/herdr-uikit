@@ -334,8 +334,12 @@ already-revoked cleanup calls UIKit directly.
 
 Owned configuration identifiers have prefix `EDIT_MENU_IDENTIFIER_PREFIX`.
 The delegate returns token-tagged Copy/Paste only for the current token, and
-an explicit empty `UIMenu` for every invalid owned configuration. It forwards
-`suggestedActions` only for non-owned identifiers. Standard Edit commands
+an explicit empty `UIMenu` for every invalid owned configuration. UIKit also
+presents the interaction's menu by itself, with a non-owned configuration, on a
+pointer's secondary click anywhere over the view. While explicit availability
+is set, the consumer decides where its menu appears, so the delegate returns an
+empty `UIMenu` for every non-owned identifier too. Without explicit availability
+it forwards `suggestedActions` for non-owned identifiers. Standard Edit commands
 without `EDIT_MENU_PROPERTY_KEY`, nil senders and other senders retain their
 previous untagged behavior. A present but malformed/stale/foreign token is
 rejected before dispatch and before clipboard fallback.
