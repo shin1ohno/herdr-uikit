@@ -1,0 +1,54 @@
+# Simulator input receipts
+
+A consumer's Simulator QA synthesizes touches, trackpad clicks and menu picks
+through XCTest. When the expected result does not appear, a timeout only says
+that it has not appeared yet. The SDK therefore records where each input
+arrives, so the QA can tell an input that never reached the app from one that
+reached it and stopped further in.
+
+The receipts exist only in builds for the iOS Simulator
+(`cfg(all(target_os = "ios", target_abi = "sim"))`). The module
+`src/platform/qa_input.rs` and every statement that calls it carry that
+`cfg`, so a device build compiles none of it and behaves as before; the test
+`every_receipt_is_compiled_for_the_simulator_only` fails if a call loses it.
+No public API is added and no input is changed, delayed or retried.
+
+## How a consumer reads them
+
+Each receipt is one `tracing` event at level INFO with the target
+`herdr_uikit::qa_input`. A consumer's QA build adds a subscriber layer for
+that target and writes the events next to its own observations (yebisu:
+its diagnostics `Capture` and `app.jsonl`). Nothing is written when no
+subscriber listens.
+
+## Receipts
+
+Every event has a `receipt` field.
+
+| `receipt` | Emitted where | Fields |
+|---|---|---|
+| `touch` | `Window::handle_touches` (`src/window/touch.rs`), for each touch the drawing view's `touchesBegan`/`Ended`/`Cancelled` callback passes, before it becomes a GPUI event. Moves are not recorded. | `stage` (`began`, `ended`, `cancelled`), `kind` (`direct` for a finger or Pencil, `pointer` for a trackpad or mouse click), `x` and `y` in the window's points, `touches` (touches in that callback) |
+| `menu-perform` | `Performed::new` (`src/platform/menus.rs`), which both `herdrMenuAction:` implementations (drawing view and application delegate) call first | `outcome`: `no_sender`, `no_tag` (the sender is not one of the SDK's commands) or `performed`; for `performed`: `generation` and `index` of the command's tag and `keyed` (a key command with a key input performed it). Always `current`, the generation of the menus as last set, `-1` when the platform is not running |
+| `menu-deliver` | `deliver` (`src/platform/menus.rs`), on the main queue after UIKit's call returned | `outcome`: `stale_generation` (the tag names no command of the current menus), `no_callback` (GPUI registered no menu callback), `callback_running` (GPUI's callback was already running further up the stack) or `delivered`; `generation`, `index`, `current` |
+
+## Reading a lost menu command
+
+| Receipts after the pick | Where the command stopped |
+|---|---|
+| no `menu-perform` | before the app: the system did not perform the command (or the touch that should choose it never reached the menu) |
+| `menu-perform` `performed`, `keyed=true`, no `menu-deliver` | handled as a key shortcut by the text input view, as designed |
+| `menu-perform` `performed`, `keyed=false`, no `menu-deliver` | dropped in the drawing view before dispatch (for example, a branch that refuses the command) or the main-queue block never ran |
+| `menu-deliver` other than `delivered` | in the SDK: the outcome names the reason |
+| `menu-deliver` `delivered`, but the consumer saw no action | in GPUI or the consumer: GPUI's `App::dispatch_action` reached no handler (for example, with no active window it dispatches to global listeners only) |
+
+## Tests
+
+- `src/platform/qa_input/tests.rs`: each receipt's fields, that other targets
+  are ignored, that `handle_touches` records each touch before dispatching it,
+  and that every call into the module is Simulator-only.
+- `src/platform/menus/tests/commands.rs`: real `UICommand`s and
+  `UIKeyCommand`s through `Performed::new`, and `deliver` with a current, a
+  stale, a missing and a running callback, each leaving its receipt.
+
+These run in the Simulator through `scripts/test-simulator.py`, which the CI
+job "macOS SDK checks" runs.

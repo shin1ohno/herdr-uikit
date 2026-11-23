@@ -102,14 +102,18 @@ pub(crate) struct Performed {
 impl Performed {
     /// What `sender`, the command UIKit passed to `herdrMenuAction:`, names.
     pub(crate) fn new(sender: Option<&AnyObject>) -> Option<Self> {
-        let command = sender?.downcast_ref::<UICommand>()?;
-        let tag = tag(command)?;
+        let named = sender
+            .and_then(|sender| sender.downcast_ref::<UICommand>())
+            .and_then(tag);
         // A command built without a key input (its shortcut was taken) can
         // only have been chosen from the menu.
         let keyed = sender
             .and_then(|sender| sender.downcast_ref::<UIKeyCommand>())
             .and_then(UIKeyCommand::input)
             .is_some_and(|input| input.length() > 0);
+        #[cfg(all(target_os = "ios", target_abi = "sim"))]
+        super::qa_input::menu_perform(sender.is_some(), named, current_generation(), keyed);
+        let tag = named?;
         let shortcut = keyed
             .then(|| {
                 let shared = shared::current()?;
@@ -145,17 +149,47 @@ fn deliver(shared: &Shared, tag: MenuTag) -> bool {
             .map(|command| command.action.boxed_clone())
     };
     let Some(action) = action else {
+        #[cfg(all(target_os = "ios", target_abi = "sim"))]
+        receipt(shared, tag, super::qa_input::Delivery::StaleGeneration);
         tracing::debug!("a menu command from replaced menus was performed");
         return false;
     };
-    let delivered = shared
+    let called = shared
         .app_menu_action
-        .call(|callback| callback(action.as_ref()))
-        .is_some();
+        .try_call(|callback| callback(action.as_ref()));
+    #[cfg(all(target_os = "ios", target_abi = "sim"))]
+    receipt(
+        shared,
+        tag,
+        match called {
+            Called::Done(()) => super::qa_input::Delivery::Delivered,
+            Called::Unregistered => super::qa_input::Delivery::NoCallback,
+            Called::Running => super::qa_input::Delivery::CallbackRunning,
+        },
+    );
+    let delivered = matches!(called, Called::Done(()));
     if !delivered {
         tracing::warn!("a menu command was performed before GPUI registered for it");
     }
     delivered
+}
+
+/// The generation of the menus as last set, when the platform is running
+/// here and its menus are not borrowed.
+#[cfg(all(target_os = "ios", target_abi = "sim"))]
+fn current_generation() -> Option<u32> {
+    let shared = shared::current()?;
+    let menus = shared.menus.try_borrow().ok()?;
+    Some(menus.generation)
+}
+
+/// Records, for Simulator QA, what delivering the command `tag` came to.
+#[cfg(all(target_os = "ios", target_abi = "sim"))]
+fn receipt(shared: &Shared, tag: MenuTag, delivery: super::qa_input::Delivery) {
+    let Ok(menus) = shared.menus.try_borrow() else {
+        return;
+    };
+    super::qa_input::menu_deliver(tag, menus.generation, delivery);
 }
 
 /// What `validateCommand:` shows for one of GPUI's commands.
