@@ -189,6 +189,13 @@ impl TextInputView {
         }
     }
 
+    /// Before the native modal gate shuts: GPUI gets the release of each key
+    /// it saw pressed and the repeat stops. Returns every held key's usage,
+    /// to fence until UIKit reports its release.
+    pub(super) fn release_held_for_modal(&self) -> Vec<isize> {
+        self.current().release_held_for_modal()
+    }
+
     /// A menu command with `shortcut` was performed; see
     /// `GPUITextInputView::menu_shortcut`. Returns whether the key press
     /// was GPUI's to handle, so the command's action must not run.

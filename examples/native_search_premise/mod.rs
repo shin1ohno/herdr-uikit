@@ -1,3 +1,7 @@
+#[allow(
+    dead_code,
+    reason = "shared with the native search probe; this probe uses a subset"
+)]
 mod native;
 
 use gpui::{

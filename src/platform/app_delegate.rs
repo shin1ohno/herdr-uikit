@@ -63,6 +63,8 @@ define_class!(
         #[unsafe(method(herdrMenuAction:))]
         fn menu_action(&self, sender: Option<&AnyObject>) {
             let _native_entry = crate::native_operation::refused();
+            // `dispatch_action` drops it while the origin window's native
+            // modal gate is shut.
             if let Some(performed) = Performed::new(sender) {
                 performed.dispatch_action();
             }

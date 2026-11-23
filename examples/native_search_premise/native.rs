@@ -151,6 +151,24 @@ pub(super) fn chain_contains(responder: &UIResponder, target: &AnyObject) -> boo
     false
 }
 
+/// GPUI's text input view, found by class under the root view.
+pub(super) fn gpui_text_view(window: &UIWindow) -> Option<Retained<UIView>> {
+    let root = window.rootViewController()?.viewIfLoaded()?;
+    root.subviews()
+        .iter()
+        .find(|view| class_name(view).contains(GPUI_CLASSES[1]))
+}
+
+/// The first view of class `name` in `view`'s hierarchy.
+pub(super) fn find_class(view: &UIView, name: &str) -> Option<Retained<UIView>> {
+    if class_name(view) == name {
+        return Some(objc2::Message::retain(view));
+    }
+    view.subviews()
+        .iter()
+        .find_map(|child| find_class(&child, name))
+}
+
 /// GPUI's two views: whether each is first responder.
 pub(super) fn gpui_first_responders(window: &UIWindow) -> (bool, bool) {
     let Some(root) = window

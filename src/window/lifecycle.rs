@@ -100,6 +100,7 @@ impl Window {
                 state: RefCell::new(State::new(bounds, scale_factor, title)),
                 text_input,
                 view,
+                native_search: RefCell::new(None),
             }
         })
     }
@@ -189,6 +190,7 @@ impl Window {
             call(&self.callbacks.active_status, |callback| callback(active));
         }
         if active {
+            self.native_modal_scene_active();
             self.defer(Self::update_first_responder);
         }
     }
@@ -233,6 +235,8 @@ impl Window {
     /// callback removes it, and dropping it then finds nothing left to tear
     /// down in UIKit.
     pub(super) fn scene_disconnected(&self) {
+        // The panel is dismissed while the UIWindow still exists.
+        self.native_modal_window_closed();
         self.set_visibility(WindowVisibility::Hidden);
         let ui_window = {
             let mut state = self.state.borrow_mut();
@@ -269,6 +273,7 @@ impl Window {
     /// GPUI update that is dropping the window, and out of the display link
     /// callback that may be on the stack.
     pub(super) fn close(&self) {
+        self.native_modal_window_closed();
         self.edit_menu.revoke(crate::RevokeReason::Closed);
         let ui_window = {
             let mut state = self.state.borrow_mut();
@@ -385,6 +390,14 @@ impl Window {
     /// `PlatformWindow::show_soft_keyboard`: focuses the text input view
     /// again if the focused element takes text.
     pub(super) fn show_keyboard(self: &Rc<Self>) {
+        {
+            let mut state = self.state.borrow_mut();
+            if state.modal_holds_responder() {
+                // Replayed when the gate opens (`native_modal::intent`).
+                state.modal_intent.show();
+                return;
+            }
+        }
         self.state.borrow_mut().keyboard.show();
         self.defer(Self::update_first_responder);
     }
@@ -392,6 +405,13 @@ impl Window {
     /// `PlatformWindow::hide_soft_keyboard`: dismisses the keyboard and
     /// keeps GPUI's focus where it is.
     pub(super) fn hide_keyboard(self: &Rc<Self>) {
+        {
+            let mut state = self.state.borrow_mut();
+            if state.modal_holds_responder() {
+                state.modal_intent.hide();
+                return;
+            }
+        }
         self.state.borrow_mut().keyboard.hide();
         self.defer(Self::update_first_responder);
     }
@@ -408,6 +428,12 @@ impl Window {
         if state.closed {
             return;
         }
+        // The panel's field owns the keyboard; its hide key and notifications
+        // must not become GPUI's dismissal or minimized state.
+        if state.modal_holds_responder() {
+            state.modal_intent.notification();
+            return;
+        }
         state.keyboard = on_keyboard_event(state.keyboard, event, context);
         tracing::debug!(
             ?event,
@@ -421,10 +447,12 @@ impl Window {
     /// takes text and the scene is active, which shows the software keyboard
     /// when no hardware keyboard is attached; otherwise makes the drawing view
     /// first responder, so hardware key presses keep arriving.
-    fn update_first_responder(&self) {
+    pub(super) fn update_first_responder(&self) {
         let (wants_text, attached, reason) = {
             let state = self.state.borrow();
-            if state.closed {
+            // While the native modal gate holds the responder, the panel's
+            // field keeps it; nothing here may take it back.
+            if state.closed || state.modal_holds_responder() {
                 return;
             }
             (
@@ -453,6 +481,7 @@ impl Window {
             switch.acquire(&**self.view);
             self.reconcile_keyboard_layout();
         }
+        self.native_modal_responder_settled();
     }
 
     /// Runs `f` on the next main-queue turn, if the window is still open.

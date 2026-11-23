@@ -42,6 +42,7 @@ mod native_edit_menu;
 pub mod native_edit_observer;
 mod native_operation;
 mod native_retirement_request;
+mod native_search;
 mod platform;
 mod renderer;
 mod scene_fallback;
@@ -67,6 +68,14 @@ pub use native_retirement_request::{
     PreparedNativeRetirement, RequestKey, native_hardware_hold, native_input_origin,
     request_native_edit_retirement,
 };
+pub use native_search::{
+    NativeSearchDismissReason, NativeSearchEmpty, NativeSearchError, NativeSearchEvent,
+    NativeSearchEvents, NativeSearchFailure, NativeSearchHandle, NativeSearchItem,
+    NativeSearchPresentation, NativeSearchRequest, NativeSearchResults, NativeSearchSection,
+    NativeSearchStyle, RestoredResponder, native_modal_active, present_native_search,
+};
+#[cfg(all(target_abi = "sim", feature = "test-support"))]
+pub use native_search::{NativeSearchState, native_search_state};
 pub use platform::IosPlatform;
 #[cfg(feature = "test-support")]
 pub use platform::notifications::NotificationResponseFixture;

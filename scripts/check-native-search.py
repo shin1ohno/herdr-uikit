@@ -10,13 +10,14 @@ read from that stderr only.
   check-native-search.py --example native_search_premise --test Premise/testPremise \
       --prefix PREMISE --output /abs/new/dir [--expect-assert NAME] [--label L]
 
-`--mutate FILE::BEFORE::AFTER` rewrites one unique source text for this run
+`--mutate '["FILE", "BEFORE", "AFTER"]'` (JSON) rewrites one unique source text for this run
 and restores the exact bytes afterwards (negative controls). The Simulator is
 created here and deleted in a finally block. Output must be a new absolute
 directory outside the checkout. No signing identity or physical device.
 """
 import argparse
 import hashlib
+import json
 import os
 from pathlib import Path
 import platform
@@ -44,7 +45,6 @@ def run(log, *args, check=True, env=None, timeout=None):
 
 
 def simulator(log):
-    import json
     devices = json.loads(subprocess.check_output(
         ['xcrun', 'simctl', 'list', '--json', 'devices', 'available'], text=True))['devices']
     candidates = []
@@ -88,7 +88,7 @@ def main():
     bundle = f'be.ohno.herdruikit.{args.example.replace("_", "")}'
     restores = []
     for spec in args.mutate:
-        relative, before, after = spec.split('::')
+        relative, before, after = json.loads(spec)
         path = ROOT / relative
         original = path.read_bytes()
         text = original.decode()

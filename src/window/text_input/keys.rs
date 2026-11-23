@@ -170,6 +170,27 @@ impl KeyFacts {
 }
 
 impl GPUITextInputView {
+    /// See `TextInputView::release_held_for_modal`.
+    pub(super) fn release_held_for_modal(&self) -> Vec<isize> {
+        let presses = {
+            let mut keys = self.ivars().keys.borrow_mut();
+            keys.stop_repeat();
+            keys.menu_press = None;
+            std::mem::take(&mut keys.presses)
+        };
+        self.cancel_repeat_timer();
+        for press in &presses {
+            if press.route == Route::Gpui {
+                let keystroke = Keystroke {
+                    key: press.key.clone(),
+                    ..Keystroke::default()
+                };
+                dispatch_key_up(keystroke, |input| self.ivars().target.dispatch(input));
+            }
+        }
+        presses.iter().map(|press| press.usage).collect()
+    }
+
     /// The key state's witness for `hardware_held`.
     pub(in crate::window) fn key_witness(&self) -> KeyWitness {
         self.ivars().keys.borrow().witness()
@@ -191,6 +212,11 @@ impl GPUITextInputView {
                 // UIKit tracks modifiers for its own shortcuts and the
                 // command-key overlay.
                 self.forward(&press, event, Phase::Began);
+                continue;
+            }
+            // A key fenced by the native modal gate (held across it, or
+            // begun while it was shut) reaches neither GPUI nor UIKit.
+            if self.ivars().target.modal_fences(facts.usage, false) {
                 continue;
             }
             self.ivars().keys.borrow_mut().menu_press = None;
@@ -259,6 +285,10 @@ impl GPUITextInputView {
             if facts.is_modifier() {
                 self.modifier_changed(&facts, false);
                 self.forward(&press, event, phase);
+                continue;
+            }
+            // Its release is swallowed too, and ends the fence.
+            if self.ivars().target.modal_fences(facts.usage, true) {
                 continue;
             }
             let route = {

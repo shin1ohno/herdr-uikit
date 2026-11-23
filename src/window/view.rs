@@ -241,6 +241,10 @@ define_class!(
             let Some(performed) = Performed::new(sender) else {
                 return;
             };
+            let modal = self.owner().is_some_and(|w| w.state.borrow().modal_blocks_input());
+            if modal || performed.blocked() {
+                return;
+            }
             let handled = performed.shortcut().is_some_and(|shortcut| {
                 self.owner()
                     .is_some_and(|window| window.text_input.menu_shortcut(shortcut))
