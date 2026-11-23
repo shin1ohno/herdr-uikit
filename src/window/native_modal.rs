@@ -31,6 +31,9 @@ use crate::native_search::{
     NativeSearchError, NativeSearchEvent, NativeSearchRequest, NativeSearchResults, SharedQueue,
 };
 
+/// How long a restore attempt may take before it is retried.
+const RESTORE_CHECK: std::time::Duration = std::time::Duration::from_millis(500);
+
 /// The live session's consumer side, beside the window's gate.
 pub(crate) struct Session {
     id: SessionId,
@@ -429,7 +432,14 @@ impl Window {
             match effect {
                 Effect::Emit(note) => self.emit(id, note),
                 Effect::Dismiss { animated } => self.dismiss_panel(id, animated),
-                Effect::Restore => self.restore_after_modal(),
+                Effect::Restore => {
+                    self.restore_after_modal();
+                    self.check_restore(id, 0);
+                }
+                Effect::RetryRestore(attempt) => {
+                    self.restore_after_modal();
+                    self.check_restore(id, attempt);
+                }
             }
         }
     }
@@ -508,6 +518,31 @@ impl Window {
         }
         if let Some(window) = self.weak().upgrade() {
             window.defer(Window::update_first_responder);
+        }
+    }
+
+    /// `RESTORE_CHECK` after restore attempt `attempt`, a session still
+    /// restoring is asked again or, after the last attempt, ends with
+    /// `InputRestored(None)` (`Gate::restore_timed_out`).
+    fn check_restore(&self, id: SessionId, attempt: u32) {
+        let handle = self.handle;
+        let delay = i64::try_from(RESTORE_CHECK.as_nanos()).unwrap_or(i64::MAX);
+        let when = dispatch2::DispatchTime::NOW.time(delay);
+        let scheduled = dispatch2::DispatchQueue::main().after(when, move || {
+            let Some(window) = window(handle) else {
+                return;
+            };
+            // A view may hold first responder without a callback saying so.
+            window.native_modal_responder_settled();
+            let effects = window
+                .state
+                .borrow_mut()
+                .native_modal
+                .restore_timed_out(id, attempt);
+            window.apply(id, effects);
+        });
+        if let Err(error) = scheduled {
+            tracing::error!(?error, "GCD refused the restore check");
         }
     }
 
@@ -590,7 +625,7 @@ impl Window {
                             .dismissViewControllerAnimated_completion(false, None);
                     }
                 }
-                Effect::Restore => {}
+                Effect::Restore | Effect::RetryRestore(_) => {}
             }
         }
         *self.native_search.borrow_mut() = None;

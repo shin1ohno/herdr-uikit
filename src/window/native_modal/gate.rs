@@ -71,7 +71,15 @@ pub enum Responder {
     Text,
     /// The window closed first; nothing was restored.
     WindowClosed,
+    /// No GPUI view became first responder within `RESTORE_ATTEMPTS`
+    /// attempts. The gate opens anyway, so GPUI's own paths (a tap, a focus
+    /// change, the scene becoming active) can take first responder later.
+    None,
 }
+
+/// How many times a restore asks GPUI's views to take first responder before
+/// the gate opens with `Responder::None`.
+pub const RESTORE_ATTEMPTS: u32 = 3;
 
 /// A notification for the session's consumer, in order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -91,6 +99,9 @@ pub enum Effect {
     Emit(Note),
     /// Give first responder back to GPUI's views and report what took it.
     Restore,
+    /// A restore did not settle in time: ask again; this is attempt `n`
+    /// (the first `Restore` is attempt 0).
+    RetryRestore(u32),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -304,6 +315,24 @@ impl Gate {
             Some(Phase::AwaitingConsumer) => {
                 self.set(id, Phase::Restoring);
                 vec![Effect::Restore]
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// Restore attempt `attempt` left no GPUI view first responder in time.
+    /// Until the last attempt it asks again; after it the gate opens with
+    /// `Responder::None`, so the consumer learns nothing was restored and
+    /// GPUI is not shut out for good.
+    pub fn restore_timed_out(&mut self, id: SessionId, attempt: u32) -> Effects {
+        match self.phase_of(id) {
+            Some(Phase::Restoring) if attempt + 1 < RESTORE_ATTEMPTS => {
+                vec![Effect::RetryRestore(attempt + 1)]
+            }
+            Some(Phase::Restoring) => {
+                // The last attempt: the gate opens with nothing restored.
+                self.current = None;
+                vec![Effect::Emit(Note::Restored(Responder::None))]
             }
             _ => Vec::new(),
         }

@@ -101,6 +101,53 @@ fn h1_restore_waits_for_release_and_for_an_actual_responder() {
     );
 }
 
+// F6: a restore that settles no responder is asked again, then the gate
+// opens with `Responder::None` instead of staying shut for good.
+#[test]
+fn h1_an_unsettled_restore_retries_then_opens_with_nothing_restored() {
+    let mut gate = Gate::default();
+    let id = opened(&mut gate);
+    gate.dismiss(id, Return);
+    gate.dismissed(id, Requested);
+    assert!(
+        gate.restore_timed_out(id, 0).is_empty(),
+        "no retry while the consumer holds its handle"
+    );
+    assert_eq!(gate.release(id), vec![Effect::Restore]);
+    for attempt in 0..gate::RESTORE_ATTEMPTS - 1 {
+        assert_eq!(
+            gate.restore_timed_out(id, attempt),
+            vec![Effect::RetryRestore(attempt + 1)]
+        );
+        assert!(gate.blocks(), "shut while attempts remain");
+    }
+    assert_eq!(
+        emitted(&gate.restore_timed_out(id, gate::RESTORE_ATTEMPTS - 1)),
+        vec![Note::Restored(Responder::None)]
+    );
+    assert!(!gate.blocks());
+    assert!(gate.request().is_ok(), "the next search is accepted");
+}
+
+#[test]
+fn h1_a_settled_restore_ignores_its_late_check() {
+    let mut gate = Gate::default();
+    let id = opened(&mut gate);
+    gate.release(id);
+    gate.dismissed(id, Requested);
+    gate.restored(id, Responder::Text);
+    assert!(gate.restore_timed_out(id, 0).is_empty());
+    let next = gate.request().unwrap_or_else(|_| panic!("accepted"));
+    assert!(
+        gate.restore_timed_out(id, 2).is_empty(),
+        "an old session's check does nothing to the next one"
+    );
+    assert_eq!(
+        gate.phase(),
+        Some((next, Phase::Presenting { released: false }))
+    );
+}
+
 #[test]
 fn h1_dropping_the_handle_while_up_dismisses_then_restores() {
     let mut gate = Gate::default();

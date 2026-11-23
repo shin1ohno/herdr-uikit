@@ -11,7 +11,8 @@
 //! `Failed`; any number of `QueryChanged` (committed text only, the newest
 //! replacing an unread one), `ClearRequested` and `Selected`; one
 //! `Dismissed`; and, after the handle is dropped and a GPUI view is first
-//! responder again, one `InputRestored`. Every call is main-thread only.
+//! responder again (or no view took it after a few attempts, `None`), one
+//! `InputRestored`. Every call is main-thread only.
 
 use std::{
     cell::RefCell,

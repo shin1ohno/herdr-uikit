@@ -28,11 +28,13 @@ Events arrive in order on `NativeSearchEvents` (a `futures::Stream`):
 | `ClearRequested` | the empty state's button |
 | `Selected { id, revision }` | a row was tapped; `revision` is the `update` that showed it. The panel stays up: open the target, then `dismiss_selected(id)`, or show a message with `update` |
 | `Dismissed(reason)` | `Return`, `Escape` (not composing), `Cancel`, `OutsideTap` (outside the popover), `SwipedDown` (a completed sheet swipe; an abandoned swipe changes nothing), `System` (UIKit removed the panel, seen on reactivation), `Selected(id)`, `Requested`, `WindowClosed` |
-| `InputRestored(responder)` | after the handle was dropped: `Text` or `Drawing` became first responder, or `WindowClosed` |
+| `InputRestored(responder)` | after the handle was dropped: `Text` or `Drawing` became first responder, `WindowClosed`, or `None`: no GPUI view took first responder after 3 attempts 500 ms apart, and the gate opened anyway (a tap or focus change takes it later) |
 
 Dropping `NativeSearchHandle` ends the session; while the panel is up it is
 dismissed first. Hold the handle until a selection's target has opened, so the
 terminal never takes input in between. The stream ends after `InputRestored`.
+The handle is neither `Send` nor `Sync`: only the main thread can release a
+session, and a handle dropped elsewhere would leave the gate shut.
 
 ## The gate
 
