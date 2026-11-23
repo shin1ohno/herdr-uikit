@@ -38,6 +38,10 @@ What it provides:
   commands; see [Menus](#menus).
 - **Layout direction.** `herdr_uikit::set_layout_direction` tells UIKit which
   way the app's text runs; see [Layout direction](#layout-direction).
+- **Native search panel.** `present_native_search` shows a UIKit search
+  field and results list as a popover or sheet whose field owns the keyboard,
+  behind a per-window gate that keeps GPUI's responders, keys, menus and
+  edits out until GPUI's responder is back; see `docs/native-search.md`.
 - **Window controls.** Per-window insets for iPadOS 26's window controls;
   see [Window controls](#window-controls).
 - **Everything else.** A GCD dispatcher, the pasteboard, thermal state, and

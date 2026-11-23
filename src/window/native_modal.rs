@@ -319,12 +319,37 @@ impl Window {
                 .native_modal
                 .presented(id, focused);
             window.apply(id, effects);
+            if !focused && window.state.borrow().is_active {
+                // An active scene's field may take first responder a turn
+                // later; if it still refuses, the panel is unusable.
+                let field = field.clone();
+                window.defer(move |w| w.retry_field_focus(id, &field));
+            }
         });
         self.controller.presentViewController_animated_completion(
             &panel.controller,
             true,
             Some(&completion),
         );
+    }
+
+    fn retry_field_focus(&self, id: SessionId, field: &panel::SearchField) {
+        let unfocused = matches!(
+            self.state.borrow().native_modal.phase(),
+            Some((current, Phase::Presented { focused: false })) if current == id
+        );
+        if !unfocused {
+            return;
+        }
+        let effects = if self.acquire_field(field) {
+            self.state.borrow_mut().native_modal.focused(id)
+        } else {
+            self.state
+                .borrow_mut()
+                .native_modal
+                .failed(id, PresentFailure::FieldRefused)
+        };
+        self.apply(id, effects);
     }
 
     /// The field takes first responder through the window's responder guard.

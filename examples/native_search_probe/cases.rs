@@ -298,6 +298,7 @@ async fn c3_held_key(probe: &Probe) {
         check(false, "held-press-object");
         return;
     };
+    let down_before = probe.sink().key_down;
     let began = inject_held_press(
         probe.any(),
         &press,
@@ -305,7 +306,7 @@ async fn c3_held_key(probe: &Probe) {
         HeldProbeTarget::Current,
     );
     check(
-        began.is_ok() && probe.sink().key_down == 1,
+        began.is_ok() && probe.sink().key_down == down_before + 1,
         "f3-held-press-reaches-gpui-before",
     );
     let up_before = probe.sink().key_up;
