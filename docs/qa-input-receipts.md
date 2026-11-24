@@ -41,6 +41,11 @@ Every event has a `receipt` field.
 | `menu-deliver` other than `delivered` | in the SDK: the outcome names the reason |
 | `menu-deliver` `delivered`, but the consumer saw no action | in GPUI or the consumer: GPUI's `App::dispatch_action` reached no handler (for example, with no active window it dispatches to global listeners only) |
 
+While a native search panel's gate is shut in the window the command was
+chosen in, or the key that chose it is fenced ([native-search.md](native-search.md)),
+the command stops after `menu-perform` (keyed or not) or on the main queue
+before `deliver`, and leaves no `menu-deliver`.
+
 ## Tests
 
 - `src/platform/qa_input/tests.rs`: each receipt's fields, that other targets

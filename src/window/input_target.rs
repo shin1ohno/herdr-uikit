@@ -156,8 +156,9 @@ impl InputTarget {
         let Some(_callback) = self.client.enter() else {
             return false;
         };
-        self.live_window()
-            .is_some_and(|window| window.dispatch_inner(input))
+        self.live_window().is_some_and(|window| {
+            !window.native_modal_drops_input() && window.dispatch_inner(input)
+        })
     }
 
     /// Only the canonical native edit producer supplies an observation key.
@@ -175,8 +176,9 @@ impl InputTarget {
                 let Some(_callback) = self.client.enter() else {
                     return false;
                 };
-                self.live_window()
-                    .is_some_and(|window| window.dispatch_native_edit(input, key))
+                self.live_window().is_some_and(|window| {
+                    !window.native_modal_drops_input() && window.dispatch_native_edit(input, key)
+                })
             },
         )
     }
@@ -214,7 +216,13 @@ impl InputTarget {
             slot.borrow_mut().get_or_insert(handler);
             return Some(result);
         }
-        self.live_window()?.with_input_handler_inner(f)
+        let window = self.live_window()?;
+        // A late IME result, Paste or dictation reaching the text view while
+        // the native modal gate is shut is observed and dropped here.
+        if window.native_modal_drops_input() {
+            return None;
+        }
+        window.with_input_handler_inner(f)
     }
 
     /// The window's scale factor, to convert between points and GPUI pixels.
@@ -241,7 +249,7 @@ impl InputTarget {
     pub(crate) fn edit_window_active(&self) -> bool {
         self.live_window().is_some_and(|window| {
             let state = window.state.borrow();
-            !state.closed && state.is_active
+            !state.closed && state.is_active && !state.modal_blocks_input()
         }) && self.has_key_responder()
     }
 
@@ -298,13 +306,28 @@ impl InputTarget {
     pub(super) fn text_input_did_acquire(&self) {
         if let Some(window) = self.live_window() {
             window.state.borrow_mut().keyboard.acquired();
+            window.native_modal_responder_settled();
         }
+    }
+
+    /// Whether a non-modifier press of `usage` must be kept from GPUI: the
+    /// gate is shut, or the key is fenced. A `release` ends its fence.
+    pub(super) fn modal_fences(&self, usage: isize, release: bool) -> bool {
+        self.window.upgrade().is_some_and(|window| {
+            let mut state = window.state.borrow_mut();
+            let blocked = state.modal_blocks_input() || state.press_fence.blocks(usage);
+            if release {
+                state.press_fence.released(usage);
+            }
+            blocked
+        })
     }
 
     pub(super) fn text_input_can_acquire(&self) -> bool {
         self.live_window().is_some_and(|window| {
             let state = window.state.borrow();
             !state.closed
+                && !state.modal_holds_responder()
                 && state.is_active
                 && state.text_input_focused
                 && state.keyboard.dismissal.allows_text()

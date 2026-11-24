@@ -97,6 +97,10 @@ pub(crate) struct Performed {
     /// The item's shortcut, when the command is a key command.
     shortcut: Option<Shortcut>,
     tag: MenuTag,
+    /// The key window when UIKit performed it: the window it was chosen in.
+    origin: Option<gpui::AnyWindowHandle>,
+    /// The key event delivering it carried a key the native modal fences.
+    fenced: bool,
 }
 
 impl Performed {
@@ -121,7 +125,22 @@ impl Performed {
                 menus.command(tag)?.shortcut.clone()
             })
             .flatten();
-        Some(Self { shortcut, tag })
+        let origin =
+            MainThreadMarker::new().and_then(crate::window::native_modal::key_window_handle);
+        let fenced = super::application::delivering_fenced();
+        Some(Self {
+            shortcut,
+            tag,
+            origin,
+            fenced,
+        })
+    }
+
+    /// While the origin window's native modal gate is shut, or the key
+    /// that chose the command is fenced, the command does nothing.
+    pub(crate) fn blocked(&self) -> bool {
+        let shut = self.origin.is_some_and(crate::window::native_modal::blocks);
+        !crate::window::native_modal::command_runs(self.fenced, shut, false)
     }
 
     pub(crate) fn shortcut(&self) -> Option<&Shortcut> {
@@ -132,8 +151,18 @@ impl Performed {
     /// main queue after the UIKit call on the stack returns, so GPUI's app
     /// borrow is never nested.
     pub(crate) fn dispatch_action(&self) {
+        if self.blocked() {
+            return;
+        }
         let tag = self.tag;
+        let origin = self.origin;
         shared::later(move |shared| {
+            // Checked again on delivery: a search opened in the origin window
+            // after the command was performed stops it too.
+            let shut = origin.is_some_and(crate::window::native_modal::blocks);
+            if !crate::window::native_modal::command_runs(false, false, shut) {
+                return;
+            }
             deliver(shared, tag);
         });
     }
@@ -263,6 +292,17 @@ pub(crate) fn validate(command: &UICommand) {
     let Some(tag) = tag(command) else {
         return;
     };
+    // The app's commands are disabled while the key window's native modal
+    // gate is shut; the panel's field keeps its own Edit commands.
+    let modal = MainThreadMarker::new()
+        .and_then(crate::window::native_modal::key_window_handle)
+        .is_some_and(crate::window::native_modal::blocks);
+    if !crate::window::native_modal::command_enabled(modal) {
+        let mut attributes = command.attributes();
+        attributes.set(UIMenuElementAttributes::Disabled, true);
+        command.setAttributes(attributes);
+        return;
+    }
     let shared = shared::current();
     let entry = shared.as_ref().and_then(|shared| {
         let menus = shared.menus.borrow();

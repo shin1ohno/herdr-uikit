@@ -58,6 +58,7 @@ pub(super) enum ResignReason {
     FocusChange,
     Inactive,
     LeavingWindow,
+    NativeModal,
     Restart,
     // keep-sorted end
 }

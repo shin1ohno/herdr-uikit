@@ -53,6 +53,8 @@ pub(crate) struct Window {
     pub(super) state: RefCell<State>,
     pub(super) text_input: TextInputView,
     pub(super) view: Retained<GpuiView>,
+    /// The native search session this window presents, if any.
+    pub(super) native_search: RefCell<Option<super::native_modal::Session>>,
 }
 
 pub(super) struct State {
@@ -63,6 +65,13 @@ pub(super) struct State {
     pub(super) native_hardware_observed: bool,
     /// The presses seen begin and not yet end (`press_ledger`).
     pub(super) press_ledger: press_ledger::PressLedger<Retained<UIPress>>,
+    /// The native modal gate (`native_modal`), shut while a native search
+    /// session is presenting, up, closing or restoring.
+    pub(super) native_modal: super::native_modal::Gate,
+    /// GPUI's keyboard requests while the gate holds the responder.
+    pub(super) modal_intent: super::native_modal::Intent,
+    /// Keys kept from GPUI until released (`native_modal::fence`).
+    pub(super) press_fence: super::native_modal::Fence,
     pub(super) appearance: WindowAppearance,
     pub(super) background_appearance: WindowBackgroundAppearance,
     /// The window's frame in its scene, in points; the size is the content
@@ -115,6 +124,9 @@ impl State {
             native_request_pending: None,
             native_hardware_observed: false,
             press_ledger: press_ledger::PressLedger::default(),
+            native_modal: super::native_modal::Gate::default(),
+            modal_intent: super::native_modal::Intent::default(),
+            press_fence: super::native_modal::Fence::default(),
             appearance: WindowAppearance::default(),
             background_appearance: WindowBackgroundAppearance::Opaque,
             bounds,

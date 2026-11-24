@@ -111,7 +111,7 @@ pub(crate) fn present(handle: AnyWindowHandle, at: Point<Pixels>) -> Option<Nati
     let valid = {
         let s = window.state.borrow();
         can_present(
-            s.native_edit_availability.is_some(),
+            s.native_edit_availability.is_some() && !s.modal_blocks_input(),
             s.closed,
             s.is_active,
             window.view.isFirstResponder() || window.text_input.view().isFirstResponder(),
