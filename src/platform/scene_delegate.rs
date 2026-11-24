@@ -14,7 +14,8 @@ use objc2::{ClassType, MainThreadOnly, define_class, msg_send, rc::Retained, run
 use objc2_foundation::{NSObjectProtocol, NSSet};
 use objc2_ui_kit::{
     UIOpenURLContext, UIResponder, UIScene, UISceneConnectionOptions, UISceneDelegate,
-    UISceneSession, UIWindowScene, UIWindowSceneDelegate, UIWindowSceneGeometry,
+    UISceneSession, UISceneWindowingControlStyle, UIWindowScene, UIWindowSceneDelegate,
+    UIWindowSceneGeometry,
 };
 
 use super::{
@@ -128,9 +129,21 @@ define_class!(
         }
     }
 
-    // SAFETY: Every method of the protocol is optional, and the method below
+    // SAFETY: Every method of the protocol is optional, and each one below
     // has the signature objc2-ui-kit declares for its selector.
     unsafe impl UIWindowSceneDelegate for SceneDelegate {
+        /// iOS 26 and later ask each scene; see `windowing_controls`.
+        #[unsafe(method_id(preferredWindowingControlStyleForScene:))]
+        fn preferred_windowing_control_style(
+            &self,
+            _scene: &UIWindowScene,
+        ) -> Retained<UISceneWindowingControlStyle> {
+            let _native_entry = crate::native_operation::refused();
+            let style = windowing_controls::control_style(windowing_controls::ios_app_on_mac());
+            tracing::debug!(?style, "windowing control style requested");
+            windowing_controls::uikit_style(style)
+        }
+
         #[unsafe(method(windowScene:didUpdateEffectiveGeometry:))]
         fn did_update_effective_geometry(
             &self,
@@ -176,6 +189,8 @@ fn urls(contexts: &NSSet<UIOpenURLContext>) -> Vec<String> {
         .map(|url| url.to_string())
         .collect()
 }
+
+mod windowing_controls;
 
 #[cfg(test)]
 mod tests;

@@ -207,6 +207,13 @@ UIKit layout callbacks sample and cache it; GPUI redraws the window when it
 changes. Herdr UI should use it to pad only top-bar content so its leading
 button stays clear of the controls.
 
+On a Mac running the iPad app ("Designed for iPad",
+`NSProcessInfo.isiOSAppOnMac`), each window scene asks UIKit for the unified
+windowing-control style (`preferredWindowingControlStyleForScene:`, iOS 26),
+so the window has no separate title bar and the traffic lights sit over the
+app's own top row; the same insets report them. On an iPad the scene asks
+for the automatic style, which UIKit uses when the method is absent.
+
 ## Building
 
 Requires macOS with Xcode and the iOS simulator runtime. `rust-toolchain.toml`
