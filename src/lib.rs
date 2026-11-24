@@ -34,6 +34,7 @@ mod error;
 mod gpui_call;
 mod key_routing;
 mod layout_direction;
+mod mac_titlebar;
 mod menu;
 mod native_edit_action;
 mod native_edit_availability;
