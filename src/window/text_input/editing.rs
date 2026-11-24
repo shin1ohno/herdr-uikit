@@ -50,7 +50,7 @@ impl GPUITextInputView {
     /// key reaches a terminal as `enter`. A hardware key that UIKit typed
     /// after GPUI declined it is not dispatched a second time, and an
     /// unhandled key types nothing, as on macOS.
-    fn insert_control(&self, text: &str) {
+    pub(super) fn insert_control(&self, text: &str) {
         let Some(keystroke) = keymap::control_keystroke(text) else {
             return;
         };
