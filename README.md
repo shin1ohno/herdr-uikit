@@ -214,10 +214,16 @@ button stays clear of the controls.
 
 On a Mac running the iPad app ("Designed for iPad",
 `NSProcessInfo.isiOSAppOnMac`), each window scene asks UIKit for the unified
-windowing-control style (`preferredWindowingControlStyleForScene:`, iOS 26),
-so the window has no separate title bar and the traffic lights sit over the
-app's own top row; the same insets report them. On an iPad the scene asks
-for the automatic style, which UIKit uses when the method is absent.
+windowing-control style (`preferredWindowingControlStyleForScene:`, iOS 26).
+The scene also hides its window's title (`UITitlebar.titleVisibility`, with
+no toolbar), which removes the separate title bar so the content fills the
+window and the traffic lights sit over the app's own top row. The SDK
+declares `titlebar` for Mac Catalyst only, so herdr-uikit sends it through
+the runtime after `respondsToSelector:`; a Mac without it keeps its title
+bar. While the title is hidden, the insets above are at least 80 pt on the
+traffic lights' side (the left, or the right in a right-to-left app) even if
+the Mac reports less. On an iPad the scene asks for the automatic style,
+which UIKit uses when the method is absent, and nothing else changes.
 
 ## Building
 

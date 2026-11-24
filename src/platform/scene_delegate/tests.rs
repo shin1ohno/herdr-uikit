@@ -31,7 +31,7 @@ fn an_ipad_scene_keeps_the_automatic_style() {
 
 #[test]
 fn the_simulator_is_not_a_mac_running_the_ipad_app() {
-    assert!(!windowing_controls::ios_app_on_mac());
+    assert!(!crate::mac_titlebar::ios_app_on_mac());
 }
 
 /// UIKit makes a new object per call and does not define equality for it,

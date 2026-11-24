@@ -17,6 +17,11 @@ impl Window {
         self.text_input
             .view()
             .setSemanticContentAttribute(attribute);
+        if crate::mac_titlebar::title_hidden() {
+            // The traffic lights' clearance follows the direction; layout
+            // samples it again (`crate::mac_titlebar::clear_traffic_lights`).
+            self.view.setNeedsLayout();
+        }
     }
 }
 

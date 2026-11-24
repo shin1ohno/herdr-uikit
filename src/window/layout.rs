@@ -148,7 +148,11 @@ impl Window {
     pub(super) fn safe_area_changed(&self) {
         let raw = self.view.safeAreaInsets();
         let safe_area = convert::edges(raw);
-        let controls = convert::edges(corner_region::sample(&self.view, raw));
+        let controls = convert::edges(crate::mac_titlebar::clear_traffic_lights(
+            crate::mac_titlebar::title_hidden(),
+            crate::layout_direction(),
+            corner_region::sample(&self.view, raw),
+        ));
         let (insets, controls_changed) = {
             let mut state = self.state.borrow_mut();
             let stored = (&state.insets.safe_area, &state.window_controls);

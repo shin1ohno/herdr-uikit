@@ -10,7 +10,6 @@
 //! uses when the delegate does not implement the method.
 
 use objc2::rc::Retained;
-use objc2_foundation::NSProcessInfo;
 use objc2_ui_kit::UISceneWindowingControlStyle;
 
 /// The style a scene asks for, apart from the UIKit object.
@@ -30,12 +29,6 @@ pub(super) fn control_style(ios_app_on_mac: bool) -> ControlStyle {
     } else {
         ControlStyle::Automatic
     }
-}
-
-/// Whether this process is the iPad app running on a Mac. Mac Catalyst
-/// builds, which herdr-uikit does not make, report false.
-pub(super) fn ios_app_on_mac() -> bool {
-    NSProcessInfo::processInfo().isiOSAppOnMac()
 }
 
 /// The UIKit object for `style`. UIKit asks for a style only on iOS 26 and

@@ -53,6 +53,9 @@ define_class!(
                 return;
             };
             let mtm = self.mtm();
+            // On a Mac only: the content fills the window under the traffic
+            // lights (`crate::mac_titlebar`).
+            crate::mac_titlebar::hide_title(window_scene);
             window::scene_connected(window_scene, mtm);
             shared.scene_connected(shared::scene_key(scene), mtm);
             shared::later(|shared| {
@@ -139,7 +142,7 @@ define_class!(
             _scene: &UIWindowScene,
         ) -> Retained<UISceneWindowingControlStyle> {
             let _native_entry = crate::native_operation::refused();
-            let style = windowing_controls::control_style(windowing_controls::ios_app_on_mac());
+            let style = windowing_controls::control_style(crate::mac_titlebar::ios_app_on_mac());
             tracing::debug!(?style, "windowing control style requested");
             windowing_controls::uikit_style(style)
         }
