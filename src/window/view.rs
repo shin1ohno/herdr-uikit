@@ -280,6 +280,14 @@ define_class!(
             }
         }
 
+        #[unsafe(method(handleWheel:))]
+        fn handle_wheel(&self, recognizer: &UIPanGestureRecognizer) {
+            let _native_entry = crate::native_operation::refused();
+            if let Some(window) = self.owner() {
+                window.handle_wheel(recognizer);
+            }
+        }
+
         #[unsafe(method(keyboardWillChangeFrame:))]
         fn keyboard_will_change_frame(&self, notification: &NSNotification) {
             let _native_entry = crate::native_operation::refused();

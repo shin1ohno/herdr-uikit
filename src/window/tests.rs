@@ -1,6 +1,7 @@
 mod hover;
 mod menu_commands;
 mod scene_requests;
+mod scroll;
 mod text_state;
 mod window_kind;
 

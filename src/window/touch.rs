@@ -70,6 +70,11 @@ impl Window {
             };
             (id, phase)
         };
+        // A finger on the screen stops a trackpad coast, as it stops a
+        // scroll view's.
+        if phase == TouchPhase::Started {
+            self.stop_scroll_momentum();
+        }
         let predicted_position = match (stage, event) {
             (TouchStage::Moved, Some(event)) => self.predicted_position(touch, event),
             _ => None,
