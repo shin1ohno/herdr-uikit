@@ -44,6 +44,7 @@ impl GPUITextInputView {
         tracing::debug!("text input view resigned first responder");
         self.ivars().applied_mode.set(None);
         self.ivars().acquire.set(Acquire::Settled);
+        self.selection_display(|display| display.deactivate());
         self.ivars().target.text_input_did_resign(context);
     }
 
@@ -54,6 +55,9 @@ impl GPUITextInputView {
 
     pub(super) fn set_caret(&self, bounds: Bounds<Pixels>) {
         self.ivars().caret.set(Some(bounds));
+        // The system's input mode indicator follows the caret; a moved caret
+        // only makes UIKit re-read it, with no input delegate call.
+        self.selection_display(|display| display.caret_moved(bounds));
         // GPUI reports the caret when its selection moved, which UIKit must
         // hear about for the IME and the keyboard's suggestions.
         self.schedule_flush();
@@ -140,6 +144,7 @@ impl GPUITextInputView {
                 ivars.acquire.set(Acquire::Settled);
                 if requested {
                     ivars.target.text_input_did_acquire();
+                    self.selection_display(|display| display.activate());
                 }
                 let mode_changed = ivars.applied_mode.replace(Some(mode)) != Some(mode);
                 if mode_changed {
@@ -162,6 +167,7 @@ impl GPUITextInputView {
         let became = switch.acquire(&**self);
         if became {
             ivars.target.text_input_did_acquire();
+            self.selection_display(|display| display.activate());
             ivars.applied_mode.set(Some(mode));
             ivars.target.reconcile_keyboard_layout();
             self.accessibility_text_entry_acquired();
@@ -236,5 +242,13 @@ impl GPUITextInputView {
 
     pub(super) fn cancel_repeat_timer(&self) {
         self.cancel_performs(Some(sel!(herdrRepeatKey:)));
+    }
+
+    /// Runs `f` with this view's selection display; nothing before the
+    /// window attached one, or after it was removed.
+    fn selection_display(&self, f: impl FnOnce(&super::selection_display::SelectionDisplay)) {
+        if let Some(display) = self.ivars().selection_display.borrow().as_ref() {
+            f(display);
+        }
     }
 }

@@ -85,6 +85,7 @@ impl Window {
                 UIViewAutoresizing::FlexibleWidth | UIViewAutoresizing::FlexibleHeight,
             );
             view.addSubview(&text_view);
+            text_input.attach_selection_display(&view);
 
             Self {
                 callbacks: Callbacks::default(),
@@ -283,6 +284,7 @@ impl Window {
             state.keyboard.expect_hide(ResignReason::LeavingWindow);
             state.input_handler = None;
             state.keyboard_animation = None;
+            state.scroll_momentum = Default::default();
             state.touches.clear();
             state.ui_window.take()
         };

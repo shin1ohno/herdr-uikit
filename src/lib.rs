@@ -111,3 +111,5 @@ pub fn test_native_edit_menu_contract() {
 pub use native_edit_menu::{
     NativeEditMenuSwitchObservation, take_native_edit_menu_switch_observations,
 };
+#[cfg(target_abi = "sim")]
+pub use window::{InputModeIndicatorState, input_mode_indicator_state};

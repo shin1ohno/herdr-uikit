@@ -28,6 +28,9 @@ pub(crate) struct Run {
 
 thread_local! {
     static RUN: RefCell<Option<Run>> = const { RefCell::new(None) };
+    /// Every `DelegateNotify` since launch, armed run or not (issue #139's
+    /// fixture checks that a caret move tells the input delegate nothing).
+    static DELEGATE_NOTIFIES: Cell<u64> = const { Cell::new(0) };
     static CONTENDED: Cell<bool> = const { Cell::new(false) };
     static NEXT_ID: Cell<Option<u64>> = const { Cell::new(Some(1)) };
 }
@@ -123,8 +126,17 @@ impl Drop for PhaseScope {
     }
 }
 
+/// How often the text view told UIKit's input delegate about a change it did
+/// not make (`notify`), since launch.
+pub fn delegate_notifications() -> u64 {
+    DELEGATE_NOTIFIES.get()
+}
+
 impl NativeCutRefusal {
     pub(crate) fn record(self) {
+        if self == NativeCutRefusal::DelegateNotify {
+            DELEGATE_NOTIFIES.set(DELEGATE_NOTIFIES.get().saturating_add(1));
+        }
         with_run(|run| {
             run.refuse(self);
             if self == NativeCutRefusal::DeferredExecuted {

@@ -670,6 +670,12 @@ impl Panel {
         self.table.reloadData();
     }
 
+    /// Replaces the field's text. A programmatic `setText:` sends no
+    /// editing-changed action, so no `QueryChanged` follows.
+    pub(super) fn set_query(&self, query: &str) {
+        self.field.setText(Some(&NSString::from_str(query)));
+    }
+
     fn show(&self, results: &NativeSearchResults, clear: Option<&UIButton>) {
         let text = |value: &Option<String>| value.as_deref().map(NSString::from_str);
         self.status.setText(text(&results.status).as_deref());

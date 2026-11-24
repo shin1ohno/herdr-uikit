@@ -56,6 +56,9 @@ impl TextInputView {
     ) {
         old.cancel_pending();
         let old_was_responder = old.isFirstResponder();
+        // The old interaction is off and gone before the successor can
+        // acquire, so two are never active at once.
+        old.detach_selection_display();
         let requested = old_was_responder || old.ivars().acquire.get().wants_first_responder();
         let view = GPUITextInputView::new(old.mtm(), next);
         view.ivars().mode.set(old.ivars().mode.get());
@@ -77,6 +80,8 @@ impl TextInputView {
         }
         if let Some(parent) = old.superview() {
             parent.addSubview(&view);
+            // `textInput` is fixed at creation: the successor gets its own.
+            view.attach_selection_display(&parent);
         }
         // didMoveToWindow may schedule a normal flush. Consume it here once,
         // after copying the original acquisition intent, without a timer gap.

@@ -107,6 +107,8 @@ pub(super) struct State {
     pub(super) pressed_button: Option<MouseButton>,
     pub(super) scale_factor: f32,
     pub(super) scene: Option<Retained<UIWindowScene>>,
+    /// The trackpad gesture and its coast after the fingers lift (`pointer`).
+    pub(super) scroll_momentum: super::pointer::momentum::Gesture,
     /// GPUI's focused element takes text input.
     pub(super) text_input_focused: bool,
     pub(super) native_edit_availability: Option<crate::NativeEditAvailability>,
@@ -149,6 +151,7 @@ impl State {
             pressed_button: None,
             scale_factor,
             scene: None,
+            scroll_momentum: Default::default(),
             text_input_focused: false,
             native_edit_availability: None,
             title,
