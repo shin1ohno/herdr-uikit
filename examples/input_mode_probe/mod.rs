@@ -24,6 +24,7 @@ pub(super) const CARET: (f32, f32, f32, f32) = (300.0, 200.0, 2.0, 24.0);
 pub(super) struct Sink {
     pub taps: u32,
     pub control_downs: u32,
+    pub unmarks: u32,
     pub marked: String,
     pub commits: Vec<String>,
 }
@@ -120,7 +121,9 @@ impl EntityInputHandler for Host {
         (!sink.marked.is_empty()).then(|| 0..sink.marked.encode_utf16().count())
     }
     fn unmark_text(&mut self, _: &mut Window, _: &mut Context<Self>) {
-        self.sink.borrow_mut().marked.clear();
+        let mut sink = self.sink.borrow_mut();
+        sink.unmarks += 1;
+        sink.marked.clear();
     }
     fn replace_text_in_range(
         &mut self,

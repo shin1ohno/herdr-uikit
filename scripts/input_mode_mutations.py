@@ -53,7 +53,7 @@ DROP_DETACH = '        current.detach_selection_display();\n'
 # (label, [(file, before, after)], Simulator unit assertion message that must appear)
 UNIT = [
     ('g9-successor-not-attached', [(RETIREMENT, ATTACH_SUCCESSOR, '')], 'retirement-moves-the-interaction'),
-    ('g10-old-not-detached', [(RETIREMENT, DETACH_OLD, '')], 'retirement-moves-the-interaction'),
+    ('g10-old-not-detached', [(RETIREMENT, DETACH_OLD, '')], 'old-display-removed'),
     ('g12-drop-keeps-interaction', [(MOD, DROP_DETACH, '')], 'drop-detaches'),
 ]
 
@@ -163,7 +163,10 @@ def unit():
             restore(originals)
         failed = (result.returncode != 0 and message in result.stdout
                   and 'selection_display_attaches_moves_on_retirement_and_detaches ... FAILED' in result.stdout)
-        print(result.stdout[-1500:], flush=True)
+        lines = result.stdout.splitlines()
+        for n, text in enumerate(lines):
+            if 'panicked at' in text:
+                print('\n'.join(lines[n:n + 2]), flush=True)
         print(f'UNIT_MUTATION {label}: {message} ' + ('FAILED AS REQUIRED' if failed else 'DID NOT FAIL'),
               flush=True)
         failures += not failed

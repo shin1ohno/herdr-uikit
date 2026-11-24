@@ -392,17 +392,36 @@ async fn im4_adjacent_to_caret_after_move(probe: &Probe, acts: &mut Acts, observ
 }
 
 /// AC7 and gate G7: marked text survives caret moves, and a move tells the
-/// input delegate nothing.
+/// input delegate nothing. The composition is set once the last switch's
+/// indicator is gone and held for 3 s with no move (the control), so a
+/// composition UIKit ends on its own is told apart from one a move ends.
 async fn im7_marked_survives_caret_moves(probe: &Probe, window: &UIWindow) {
     precondition(probe, "im7").await;
     let Some(text) = native::gpui_text_view(window) else {
         check(false, "im7-text-view");
         return;
     };
+    probe
+        .wait(6_000, |p| uikit::accessories(p.mtm).is_empty())
+        .await;
+    probe.sleep(2_000).await;
     native::set_marked(&text, "かな");
     let marked = probe.wait(3_000, |p| p.sink().marked == "かな").await;
     check(marked && uikit::has_marked(&text), "im7-marked-before");
-    probe.sleep(500).await;
+    let unmarks = probe.sink().unmarks;
+    probe.sleep(3_000).await;
+    let control = probe.sink();
+    record(format!(
+        "im7 control (3 s, no move): marked {:?}, unmarks {} -> {}, uikit marked {}",
+        control.marked,
+        unmarks,
+        control.unmarks,
+        uikit::has_marked(&text)
+    ));
+    check(
+        control.marked == "かな" && uikit::has_marked(&text),
+        "im7-control-composition-held",
+    );
     let notified = sdk::delegate_notifications();
     let commits = probe.sink().commits.len();
     for n in 1..=5_u8 {
@@ -414,14 +433,24 @@ async fn im7_marked_survives_caret_moves(probe: &Probe, window: &UIWindow) {
             })
             .await;
         check(moved, &format!("im7-caret-move-{n}"));
+        probe.sleep(300).await;
+        let sink = probe.sink();
+        record(format!(
+            "im7 move {n}: marked {:?}, unmarks {}, uikit marked {}, delegate {}",
+            sink.marked,
+            sink.unmarks,
+            uikit::has_marked(&text),
+            sdk::delegate_notifications()
+        ));
     }
     probe.sleep(500).await;
     let sink = probe.sink();
     record(format!(
-        "im7: delegate notifications {notified} -> {}, marked {:?}, commits {:?}",
+        "im7: delegate notifications {notified} -> {}, marked {:?}, commits {:?}, unmarks {}",
         sdk::delegate_notifications(),
         sink.marked,
-        sink.commits
+        sink.commits,
+        sink.unmarks
     ));
     check(
         sdk::delegate_notifications() == notified,
