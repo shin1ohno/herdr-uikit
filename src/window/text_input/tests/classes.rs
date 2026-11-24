@@ -31,3 +31,25 @@ fn position_and_range_classes_register() {
     assert_eq!(position.superclass(), Some(UITextPosition::class()));
     assert_eq!(range.superclass(), Some(UITextRange::class()));
 }
+
+// On a Mac, AppKit takes control-A and other control letters bound to text
+// commands before UIKit unless the responder lists key commands for them
+// (`control_keys`). The view must override `keyCommands` and answer the
+// commands' action.
+#[test]
+fn text_input_view_lists_its_own_key_commands_and_answers_control_keys() {
+    use objc2::sel;
+    let view = GPUITextInputView::class();
+    let ui_view = UIView::class();
+    let imp = |class: &objc2::runtime::AnyClass| {
+        class
+            .instance_method(sel!(keyCommands))
+            .map(|method| method.implementation() as usize)
+    };
+    assert!(imp(view).is_some(), "keyCommands");
+    assert_ne!(imp(view), imp(ui_view), "keyCommands is UIView's");
+    assert!(
+        view.instance_method(sel!(herdrControlKey:)).is_some(),
+        "herdrControlKey:"
+    );
+}

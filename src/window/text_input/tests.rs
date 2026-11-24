@@ -4,6 +4,7 @@ mod classes;
 #[cfg(feature = "test-support")]
 mod composition_commit;
 mod configuration;
+mod control_keys;
 mod external_edits;
 mod first_responder;
 mod geometry_rects;
