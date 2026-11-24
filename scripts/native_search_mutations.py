@@ -116,6 +116,14 @@ UIKIT = [
      [('src/window/native_modal.rs', '    session.last_query = query.to_owned();\n',
        '    if session.panel.is_none() {\n        session.last_query = query.to_owned();\n    }\n')],
      'set-query-no-echo'),
+    # The session id check: a handle whose session ended must not reach a newer one.
+    ('set-query-any-session',
+     [('src/window/native_modal.rs',
+       '        .filter(|s| s.id == id)\n        .ok_or(NativeSearchError::Ended)?;\n'
+       '    // The last query is what an edit or the dismissal compares against, so\n',
+       '        .ok_or(NativeSearchError::Ended)?;\n'
+       '    // The last query is what an edit or the dismissal compares against, so\n')],
+     'set-query-other-session'),
     ('set-query-lost-before-present',
      [('src/window/native_modal.rs', '            request.query.clone_from(&session.last_query);\n', '')],
      'set-query-before-present'),
