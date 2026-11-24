@@ -9,10 +9,10 @@
 use super::{Log, Probe, check, native, record};
 use gpui::{Bounds, point, px, size};
 use herdr_uikit::{
-    NativeSearchDismissReason as Reason, NativeSearchEvent as Event, NativeSearchFailure,
-    NativeSearchHandle, NativeSearchItem, NativeSearchPresentation, NativeSearchRequest,
-    NativeSearchResults, NativeSearchSection, NativeSearchStyle, RestoredResponder,
-    native_search_state, present_native_search,
+    NativeSearchDismissReason as Reason, NativeSearchError, NativeSearchEvent as Event,
+    NativeSearchFailure, NativeSearchHandle, NativeSearchItem, NativeSearchPresentation,
+    NativeSearchRequest, NativeSearchResults, NativeSearchSection, NativeSearchStyle,
+    RestoredResponder, native_search_state, present_native_search,
     retirement_probe::{
         self as sdk,
         held_press::{
@@ -140,6 +140,8 @@ pub(super) async fn run(probe: Probe) {
     c1_presenter_busy(&probe, &window).await;
     c2_responders_late_input_and_selection(&probe, &window).await;
     c3_held_key(&probe).await;
+    c4_set_query(&probe).await;
+    c5_set_query_after_the_session_ended(&probe, &window).await;
     xcuitest_cases(&probe).await;
     native::set_phase("done");
     eprintln!("PROBE_PASS: native search session, gate and restore");
@@ -458,6 +460,112 @@ async fn c3_held_key(probe: &Probe) {
         HeldProbePhase::Ended,
         HeldProbeTarget::Current,
     );
+}
+
+/// `set_query`: made before UIKit presents the panel it is the field's
+/// initial text; afterwards it replaces the field's text; no `QueryChanged`
+/// echoes it, not even at the dismissal (the field holds "final", a text the
+/// session never had before `set_query`).
+async fn c4_set_query(probe: &Probe) {
+    let (handle, mut log) = open(probe, NativeSearchPresentation::Popover);
+    let early = handle.set_query("early");
+    opened(probe, &mut log, "c4").await;
+    let s = state(probe);
+    record(format!("c4: set before present {early:?}, {s:?}"));
+    check(
+        early.is_ok() && s.field_text == "early",
+        "set-query-before-present",
+    );
+    let replaced = handle.set_query("pro");
+    probe.sleep(300).await;
+    let s = state(probe);
+    record(format!(
+        "c4: replaced {replaced:?}, field {:?}",
+        s.field_text
+    ));
+    check(
+        replaced.is_ok() && s.field_text == "pro",
+        "set-query-replaces-field-text",
+    );
+    let cleared = handle.set_query("");
+    probe.sleep(300).await;
+    let s = state(probe);
+    record(format!("c4: cleared {cleared:?}, field {:?}", s.field_text));
+    check(
+        cleared.is_ok() && s.field_text.is_empty(),
+        "set-query-clears-field",
+    );
+    // A text other than the last one the field was given: the dismissal's
+    // flush would echo it if `set_query` had not recorded it.
+    let last = handle.set_query("final");
+    probe.sleep(300).await;
+    record(format!(
+        "c4: final {last:?}, field {:?}",
+        state(probe).field_text
+    ));
+    let _ = handle.dismiss();
+    let dismissed = probe
+        .wait(3_000, |_| log.has(&Event::Dismissed(Reason::Requested)))
+        .await;
+    let echoes = log.count(|e| matches!(e, Event::QueryChanged(_)));
+    record(format!("c4: dismissed {dismissed}, query events {echoes}"));
+    check(dismissed && echoes == 0, "set-query-no-echo");
+    let restored = finish(probe, handle, log, "c4").await;
+    check(
+        matches!(
+            restored,
+            Some(RestoredResponder::Text | RestoredResponder::Drawing)
+        ),
+        "c4-restored",
+    );
+}
+
+/// `set_query` on a handle whose session ended: a failed presentation is
+/// restored while its handle is still held. The call returns `Ended`, then
+/// and while a newer session is up, and never writes that session's field.
+async fn c5_set_query_after_the_session_ended(probe: &Probe, window: &objc2_ui_kit::UIWindow) {
+    let Some(root) = window.rootViewController() else {
+        check(false, "c5-root-controller");
+        return;
+    };
+    let blocker = UIViewController::new(probe.mtm);
+    root.presentViewController_animated_completion(&blocker, false, None);
+    probe.sleep(300).await;
+    let (ended, mut ended_log) = open(probe, NativeSearchPresentation::Popover);
+    let restored = probe
+        .wait(5_000, |_| {
+            ended_log.count(|e| matches!(e, Event::InputRestored(_))) == 1
+        })
+        .await;
+    blocker.dismissViewControllerAnimated_completion(false, None);
+    probe.sleep(500).await;
+    check(restored, "c5-failed-session-restored-while-held");
+    let after_end = ended.set_query("stale");
+    record(format!("c5: set on the ended session {after_end:?}"));
+    check(
+        after_end == Err(NativeSearchError::Ended),
+        "set-query-ended-session",
+    );
+    let (handle, mut log) = open(probe, NativeSearchPresentation::Popover);
+    opened(probe, &mut log, "c5").await;
+    let stale = ended.set_query("stale");
+    probe.sleep(300).await;
+    let s = state(probe);
+    record(format!(
+        "c5: stale handle {stale:?}, field {:?}",
+        s.field_text
+    ));
+    check(
+        stale == Err(NativeSearchError::Ended) && s.field_text.is_empty(),
+        "set-query-other-session",
+    );
+    drop(ended);
+    let _ = handle.dismiss();
+    probe
+        .wait(3_000, |_| log.has(&Event::Dismissed(Reason::Requested)))
+        .await;
+    let restored = finish(probe, handle, log, "c5").await;
+    check(restored.is_some(), "c5-restored");
 }
 
 /// Cases with real input from the XCUITest (`NativeSearch.testProbe`), on

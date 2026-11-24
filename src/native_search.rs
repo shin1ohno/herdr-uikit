@@ -12,7 +12,9 @@
 //! replacing an unread one), `ClearRequested` and `Selected`; one
 //! `Dismissed`; and, after the handle is dropped and a GPUI view is first
 //! responder again (or no view took it after a few attempts, `None`), one
-//! `InputRestored`. Every call is main-thread only.
+//! `InputRestored`. `set_query` replaces the field's text, for example after
+//! `ClearRequested`, without a `QueryChanged` echoing it. Every call is
+//! main-thread only.
 
 use std::{
     cell::RefCell,
@@ -226,6 +228,14 @@ impl NativeSearchHandle {
     pub fn update(&self, results: NativeSearchResults) -> Result<u64, NativeSearchError> {
         MainThreadMarker::new().ok_or(NativeSearchError::NotMainThread)?;
         modal::update(self.window, self.session, results)
+    }
+
+    /// Replaces the field's text, e.g. after `ClearRequested`. The text
+    /// becomes the session's last query, so no `QueryChanged` echoes it;
+    /// before the panel is up it becomes the field's initial text.
+    pub fn set_query(&self, query: &str) -> Result<(), NativeSearchError> {
+        MainThreadMarker::new().ok_or(NativeSearchError::NotMainThread)?;
+        modal::set_query(self.window, self.session, query)
     }
 
     /// Closes the panel with `DismissReason::Requested`.
