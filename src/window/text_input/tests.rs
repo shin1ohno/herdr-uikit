@@ -48,5 +48,8 @@ mod composition_selection;
 #[cfg(feature = "test-support")]
 mod retirement;
 
+#[cfg(all(feature = "test-support", target_abi = "sim"))]
+mod selection_display;
+
 #[cfg(feature = "test-support")]
 pub(super) mod native_queries;

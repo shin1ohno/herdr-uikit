@@ -75,6 +75,8 @@ pub(crate) use self::scene::{
     scene_geometry_changed, set_native_edit_availability, window_control_insets, window_stack,
 };
 pub(crate) use self::state::Window;
+#[cfg(target_abi = "sim")]
+pub use self::text_input::{InputModeIndicatorState, input_mode_indicator_state};
 pub(crate) use self::text_input::{named_key_char, us_shifted};
 use crate::renderer;
 

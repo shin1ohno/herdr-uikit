@@ -85,6 +85,7 @@ impl Window {
                 UIViewAutoresizing::FlexibleWidth | UIViewAutoresizing::FlexibleHeight,
             );
             view.addSubview(&text_view);
+            text_input.attach_selection_display(&view);
 
             Self {
                 callbacks: Callbacks::default(),

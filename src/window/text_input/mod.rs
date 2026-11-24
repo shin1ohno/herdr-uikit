@@ -35,6 +35,7 @@ pub(super) mod probe;
 mod query;
 mod retirement;
 mod run_loop;
+mod selection_display;
 mod state;
 mod sync;
 mod traits;
@@ -53,6 +54,8 @@ use objc2_ui_kit::UIView;
 pub(crate) use self::keymap::{named_key_char, us_shifted};
 use super::{input_target::InputTarget, keyboard::ResignReason};
 use crate::menu::Shortcut;
+#[cfg(target_abi = "sim")]
+pub use selection_display::qa::{InputModeIndicatorState, input_mode_indicator_state};
 use state::Mode;
 use traits::Traits;
 use view_class::GPUITextInputView;
@@ -120,6 +123,22 @@ impl TextInputView {
     /// which are GPUI's window coordinates.
     pub(crate) fn view(&self) -> Retained<UIView> {
         Retained::into_super(self.current())
+    }
+
+    /// Puts the current view's selection display, which shows the system's
+    /// input mode indicator at the caret, on `host`, the window's drawing
+    /// view. The window calls it once, after adding `view()` to `host`.
+    pub(crate) fn attach_selection_display(&self, host: &UIView) {
+        self.current().attach_selection_display(host);
+    }
+
+    /// Simulator QA: the current view's selection display on `drawing_view`.
+    #[cfg(target_abi = "sim")]
+    pub(crate) fn input_mode_indicator_state(
+        &self,
+        drawing_view: &UIView,
+    ) -> InputModeIndicatorState {
+        self.current().input_mode_indicator_state(drawing_view)
     }
 
     /// Simulator QA: the view's requested and applied mode and its pending
@@ -260,8 +279,11 @@ impl NativeEndpoint {
 
 impl Drop for TextInputView {
     /// Queued flushes and key repeats retain the view; cancel them so a
-    /// closed window's view is not kept alive or driven afterwards.
+    /// closed window's view is not kept alive or driven afterwards. The
+    /// selection display is switched off and taken off the drawing view.
     fn drop(&mut self) {
-        self.current().cancel_pending();
+        let current = self.current();
+        current.cancel_pending();
+        current.detach_selection_display();
     }
 }

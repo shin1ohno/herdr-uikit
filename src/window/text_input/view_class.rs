@@ -619,4 +619,33 @@ impl GPUITextInputView {
     pub(super) fn as_text_input(&self) -> &ProtocolObject<dyn UITextInput> {
         ProtocolObject::from_ref(self)
     }
+
+    /// Creates this view's selection display, if it has none, and puts it on
+    /// `host`. A switched-off display is attached; acquiring first responder
+    /// switches it on (`sync.rs`).
+    pub(super) fn attach_selection_display(&self, host: &UIView) {
+        let mut slot = self.ivars().selection_display.borrow_mut();
+        let display = slot.get_or_insert_with(|| {
+            super::selection_display::SelectionDisplay::new(self.mtm(), self)
+        });
+        display.attach(host);
+    }
+
+    /// Switches this view's selection display off and removes it. Idempotent.
+    pub(super) fn detach_selection_display(&self) {
+        let display = self.ivars().selection_display.borrow_mut().take();
+        if let Some(display) = display {
+            display.detach();
+        }
+    }
+
+    /// Simulator QA: this view's selection display on `drawing_view`.
+    #[cfg(target_abi = "sim")]
+    pub(super) fn input_mode_indicator_state(
+        &self,
+        drawing_view: &UIView,
+    ) -> super::InputModeIndicatorState {
+        let display = self.ivars().selection_display.borrow();
+        super::selection_display::qa::sample(self, display.as_ref(), drawing_view)
+    }
 }
