@@ -42,6 +42,10 @@ What it provides:
   field and results list as a popover or sheet whose field owns the keyboard,
   behind a per-window gate that keeps GPUI's responders, keys, menus and
   edits out until GPUI's responder is back; see `docs/native-search.md`.
+- **Input mode indicator.** The system's input mode indicator ("A", "あ",
+  the input source switcher) shows at the text input caret, as in a standard
+  text field, through a `UITextSelectionDisplayInteraction` with a
+  transparent cursor view; see `docs/input-mode-indicator.md`.
 - **Window controls.** Per-window insets for iPadOS 26's window controls;
   see [Window controls](#window-controls).
 - **Everything else.** A GCD dispatcher, the pasteboard, thermal state, and
