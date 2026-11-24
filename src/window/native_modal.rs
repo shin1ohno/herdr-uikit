@@ -209,6 +209,27 @@ pub(crate) fn update(
     Ok(revision)
 }
 
+pub(crate) fn set_query(
+    handle: AnyWindowHandle,
+    id: SessionId,
+    query: &str,
+) -> Result<(), NativeSearchError> {
+    let window = window(handle).ok_or(NativeSearchError::Ended)?;
+    let mut slot = window.native_search.borrow_mut();
+    let session = slot
+        .as_mut()
+        .filter(|s| s.id == id)
+        .ok_or(NativeSearchError::Ended)?;
+    // The last query is what an edit or the dismissal compares against, so
+    // the replaced text is never echoed back as `QueryChanged`.
+    session.last_query = query.to_owned();
+    if let Some(panel) = session.panel.clone() {
+        drop(slot);
+        panel.set_query(query);
+    }
+    Ok(())
+}
+
 pub(crate) fn dismiss(
     handle: AnyWindowHandle,
     id: SessionId,
@@ -260,7 +281,7 @@ impl Window {
     fn present_panel(
         &self,
         id: SessionId,
-        request: NativeSearchRequest,
+        mut request: NativeSearchRequest,
         weak: std::rc::Weak<Window>,
     ) {
         let (phase, ui_window) = {
@@ -304,6 +325,10 @@ impl Window {
             window: weak.clone(),
             session: id,
         };
+        // A `set_query` between `present` and now replaced the last query.
+        if let Some(session) = self.native_search.borrow().as_ref().filter(|s| s.id == id) {
+            request.query.clone_from(&session.last_query);
+        }
         let panel = Rc::new(Panel::new(binding, &request, self.mtm));
         panel.configure(&request, &self.view);
         if let Some(session) = self.native_search.borrow_mut().as_mut() {

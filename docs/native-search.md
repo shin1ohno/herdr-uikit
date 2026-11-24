@@ -30,6 +30,11 @@ Events arrive in order on `NativeSearchEvents` (a `futures::Stream`):
 | `Dismissed(reason)` | `Return`, `Escape` (not composing), `Cancel`, `OutsideTap` (outside the popover), `SwipedDown` (a completed sheet swipe; an abandoned swipe changes nothing), `System` (UIKit removed the panel, seen on reactivation), `Selected(id)`, `Requested`, `WindowClosed` |
 | `InputRestored(responder)` | after the handle was dropped: `Text` or `Drawing` became first responder, `WindowClosed`, or `None`: no GPUI view took first responder after 3 attempts 500 ms apart, and the gate opened anyway (a tap or focus change takes it later) |
 
+`set_query(text)` replaces the field's text (for example after
+`ClearRequested`). It becomes the session's last query: no `QueryChanged`
+echoes it, and before UIKit presents the panel it becomes the field's initial
+text.
+
 Dropping `NativeSearchHandle` ends the session; while the panel is up it is
 dismissed first. Hold the handle until a selection's target has opened, so the
 terminal never takes input in between. The stream ends after `InputRestored`.
@@ -80,6 +85,14 @@ release. Modifiers are not fenced: GPUI adopts the flags every key reports.
   Shift-Command-B: on Command-B UIKit's Bold keeps the shortcut, the command
   gets no key command, and the press never reaches the menu's validate and
   perform paths.
+- The fixture's `set_query` case (`c4`) sets a query before UIKit presents
+  the panel (`set-query-before-present`), replaces and clears the field's text
+  (`set-query-replaces-field-text`, `set-query-clears-field`), sets "final" and
+  requires no `QueryChanged` through the dismissal (`set-query-no-echo`). Its
+  UIKit mutations drop the field write (`set-query-not-applied`), the last
+  query once the panel is up (`set-query-echoes`; the early text is kept, so
+  the run reaches the echo check) and the early query
+  (`set-query-lost-before-present`).
 
 Hosted CI compiles the fixtures and runs the host tests; it cannot run the
 `UIApplicationMain` fixtures (its Simulator runner spawns a bare process).

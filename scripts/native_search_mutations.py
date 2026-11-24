@@ -108,6 +108,17 @@ UIKIT = [
        'self.with_window(|window, session| window.native_modal_dismissed(session, reason));',
        'let _ = reason;')],
      'f2-outside-tap-dismissed'),
+    ('set-query-not-applied',
+     [('src/window/native_modal/panel.rs', '        self.field.setText(Some(&NSString::from_str(query)));\n', '')],
+     'set-query-replaces-field-text'),
+    # Keeps the early (pre-present) text, so only the echo suppression breaks.
+    ('set-query-echoes',
+     [('src/window/native_modal.rs', '    session.last_query = query.to_owned();\n',
+       '    if session.panel.is_none() {\n        session.last_query = query.to_owned();\n    }\n')],
+     'set-query-no-echo'),
+    ('set-query-lost-before-present',
+     [('src/window/native_modal.rs', '            request.query.clone_from(&session.last_query);\n', '')],
+     'set-query-before-present'),
 ]
 
 
