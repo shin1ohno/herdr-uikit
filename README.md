@@ -32,7 +32,8 @@ What it provides:
 - **Text.** The Core Text text system, also ported from GPUI's macOS platform.
 - **Input.** Raw touches (GPUI's core turns them into clicks, scrolling, and
   drags), pointer and hover, hardware keys, and `UITextInput` for the software
-  keyboard and IME composition.
+  keyboard and IME composition. Two-finger trackpad scrolls coast after the
+  fingers lift, and wheel notches arrive as whole lines.
 - **Menus.** GPUI's application menus in UIKit's main menu (the iPadOS menu
   bar and the keyboard shortcut overlay), with their shortcuts as key
   commands; see [Menus](#menus).

@@ -283,6 +283,7 @@ impl Window {
             state.keyboard.expect_hide(ResignReason::LeavingWindow);
             state.input_handler = None;
             state.keyboard_animation = None;
+            state.scroll_momentum = Default::default();
             state.touches.clear();
             state.ui_window.take()
         };
