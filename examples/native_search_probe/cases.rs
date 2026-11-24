@@ -276,12 +276,41 @@ async fn c2_responders_late_input_and_selection(probe: &Probe, window: &objc2_ui
         "selected-after-update-carries-new-revision",
     );
 
+    // F9: composition in the field is not a query; committing it and
+    // closing at once still sends the committed text before the dismissal.
+    let field = native::find_class(window, "HerdrNativeSearchField");
+    if let Some(field) = &field {
+        native::set_marked(field, "x");
+    }
+    probe.sleep(500).await;
+    let marked_sent = log.count(|e| matches!(e, Event::QueryChanged(q) if q.contains('x')));
+    record(format!("c2: marked {:?}", state(probe)));
+    check(
+        field.is_some() && state(probe).field_marked && marked_sent == 0,
+        "f9-marked-text-is-not-a-query",
+    );
+    if let Some(field) = &field {
+        native::unmark(field);
+    }
+
     // F6: dismissed but still held: GPUI does not get first responder.
     let _ = handle.dismiss_selected(21);
     let dismissed = probe
         .wait(3_000, |_| log.has(&Event::Dismissed(Reason::Selected(21))))
         .await;
     check(dismissed, "dismissed-selected");
+    let order: Vec<_> = log.drain().to_vec();
+    let committed = order
+        .iter()
+        .position(|e| *e == Event::QueryChanged("prox".into()));
+    let closed = order
+        .iter()
+        .position(|e| *e == Event::Dismissed(Reason::Selected(21)));
+    record(format!("c2: after commit {order:?}"));
+    check(
+        committed.is_some_and(|q| closed.is_some_and(|d| q < d)),
+        "f9-committed-query-before-dismissed",
+    );
     probe.sleep(800).await;
     let s = state(probe);
     record(format!("c2: awaiting consumer {s:?}"));

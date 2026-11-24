@@ -67,8 +67,9 @@ release. Modifiers are not fenced: GPUI adopts the flags every key reports.
 
 - `tests/native_modal.rs`: the gate's transitions (presentation failure, OS
   dismissal, late callbacks, window close in every phase, restore only after
-  release), the key fence, the keyboard intent, the menu decision and the
-  event queue. `scripts/native_search_mutations.py host` removes each guarded
+  release, a restore retried and given up with `None`), the key fence, the
+  keyboard intent, the menu decision, the late-input drop (F5), the field's
+  Escape decision and the event queue. `scripts/native_search_mutations.py host` removes each guarded
   transition and requires the named test to fail.
 - `examples/native_search_probe.rs` with the `NativeSearch/testProbe` XCUITest
   (`scripts/native-search-qa`), run by `scripts/check-native-search.py` on a
@@ -95,16 +96,29 @@ delivered after it is covered by the host test of the decision, not by a
 Simulator run. Escape is not in the fixture: XCUITest's Escape key never
 reached the field (its `pressesBegan:` saw no such press, and a key command
 for Escape did not fire either), so the field's Escape handling, read from the
-press, is untested on the Simulator. An abandoned sheet swipe is not in the
-fixture: when a drag begins the software keyboard hides and the sheet falls to its medium detent by
-itself, so the same XCUITest drag was abandoned on some runs and completed on
+press, is untested on the Simulator; the decision itself
+(`escape_dismisses`) has a host test. An abandoned sheet swipe is not in the
+fixture: when a drag begins the software keyboard hides and the sheet falls to
+its medium detent by itself, so the same XCUITest drag was abandoned on some runs and completed on
 others. On the runs where it was abandoned, the field had lost first responder
 before the refocus on cancellation was added and kept it after.
 
-The text view's own check (`text_input_can_acquire`) has no Simulator
-mutation. With it removed, the window active, a text element focused and no
-keyboard dismissal, moving GPUI's text view out of its window and back while
-the popover was up still left the panel's field first responder; what else
-kept it there was not found. The fixture keeps that step as a check
-(`t-u2-text-view-rejoined-stays-off`), and the responder requests before it
-are covered by the `update_first_responder` mutation.
+Some readers have no Simulator mutation, because on every path the fixture
+reaches another check already decides (each removal was run on the head tree,
+`probe-30`, and the fixture still passed):
+
+- The text view's own check (`text_input_can_acquire`): GPUI's text view was
+  first responder in key-only mode (`mode=KeyOnly`, `probe-31`), so moving it
+  out of its window and back, with the popover up or after it closed, made a
+  request that settles without acquiring. The check matters for a text view
+  in text mode, which the fixture did not reach. The steps stay as checks
+  (`t-u2-text-view-rejoined-stays-off`, `...-while-awaiting-stays-off`).
+- Dropping input at `dispatch` and at the native edit dispatch: the fixture's
+  late Paste is refused earlier, since `edit_window_active` also needs a GPUI
+  key responder, which the gate keeps from them. The input handler's drop is
+  mutated (`late-input-delivered`) and the decision has a host test.
+- The final query flush before a dismissal (F9): `unmarkText` itself sent the
+  committed text, so `f9-committed-query-before-dismissed` held without it.
+- The menu gate in a second window (a command performed in one window and
+  delivered to GPUI's active window in another), and two keys held across
+  `sendEvent:` with one released: neither was set up in the fixture.

@@ -71,8 +71,11 @@ pub fn native_search_state(handle: AnyWindowHandle) -> Option<NativeSearchState>
         dismissals_begun: panel.as_ref().map_or(0, |p| p.dismissals_begun()),
         field_presses: panel::FIELD_PRESSES.get(),
         text_acquire_inputs: format!(
-            "active={} focused={} dismissal={:?}",
-            state.is_active, state.text_input_focused, state.keyboard.dismissal
+            "active={} focused={} dismissal={:?} {}",
+            state.is_active,
+            state.text_input_focused,
+            state.keyboard.dismissal,
+            window.text_input.qa_acquisition()
         ),
     })
 }

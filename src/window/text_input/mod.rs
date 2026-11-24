@@ -122,6 +122,21 @@ impl TextInputView {
         Retained::into_super(self.current())
     }
 
+    /// Simulator QA: the view's requested and applied mode and its pending
+    /// acquisition.
+    #[cfg(all(target_abi = "sim", feature = "test-support"))]
+    pub(crate) fn qa_acquisition(&self) -> String {
+        let view = self.current();
+        let ivars = view.ivars();
+        format!(
+            "mode={:?} applied={:?} acquire={:?} live={}",
+            ivars.mode.get(),
+            ivars.applied_mode.get(),
+            ivars.acquire.get(),
+            ivars.target.client.live()
+        )
+    }
+
     pub(super) fn editing_enabled(&self, selector: Sel) -> bool {
         self.current().editing_enabled(selector)
     }
