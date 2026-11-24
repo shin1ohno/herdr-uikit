@@ -25,6 +25,7 @@
 
 mod accessibility;
 pub(super) mod actions;
+mod control_keys;
 mod editing;
 mod geometry;
 mod keymap;

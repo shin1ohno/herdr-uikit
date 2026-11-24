@@ -15,16 +15,18 @@ use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_clas
 use objc2_core_foundation::{CGPoint, CGRect};
 use objc2_foundation::{NSArray, NSComparisonResult, NSInteger, NSRange, NSSet, NSString};
 use objc2_ui_kit::{
-    NSWritingDirection, UICommand, UIDictationPhrase, UIEvent, UIKeyInput, UIPress, UIPressesEvent,
-    UIResponder, UIReturnKeyType, UITextAutocapitalizationType, UITextAutocorrectionType,
-    UITextInlinePredictionType, UITextInput, UITextInputDelegate, UITextInputStringTokenizer,
-    UITextInputTokenizer, UITextInputTraits, UITextLayoutDirection, UITextPosition, UITextRange,
-    UITextSelectionRect, UITextSmartDashesType, UITextSmartInsertDeleteType, UITextSmartQuotesType,
-    UITextSpellCheckingType, UITextStorageDirection, UIView, UIWindow,
+    NSWritingDirection, UICommand, UIDictationPhrase, UIEvent, UIKeyCommand, UIKeyInput, UIPress,
+    UIPressesEvent, UIResponder, UIReturnKeyType, UITextAutocapitalizationType,
+    UITextAutocorrectionType, UITextInlinePredictionType, UITextInput, UITextInputDelegate,
+    UITextInputStringTokenizer, UITextInputTokenizer, UITextInputTraits, UITextLayoutDirection,
+    UITextPosition, UITextRange, UITextSelectionRect, UITextSmartDashesType,
+    UITextSmartInsertDeleteType, UITextSmartQuotesType, UITextSpellCheckingType,
+    UITextStorageDirection, UIView, UIWindow,
 };
 
 use super::super::state::press_ledger::PressPhase;
 use super::super::{input_target::InputTarget, keyboard::ResignReason};
+use super::control_keys;
 use super::positions::{self, TextPosition, TextRange};
 use super::state::{Ivars, Mode};
 use super::utf16;
@@ -94,7 +96,19 @@ define_class!(
         #[unsafe(method(canPerformAction:withSender:))]
         fn __can_perform_action(&self, action: Sel, _: Option<&AnyObject>) -> bool {
             let _native_entry = crate::native_operation::refused();
-            self.editing_enabled(action)
+            (action == control_keys::action() && control_keys::on_mac())
+                || self.editing_enabled(action)
+        }
+
+        #[unsafe(method_id(keyCommands))]
+        fn __key_commands(&self) -> Option<Retained<NSArray<UIKeyCommand>>> {
+            control_keys::key_commands(control_keys::on_mac(), self.mtm())
+        }
+
+        #[unsafe(method(herdrControlKey:))]
+        fn __control_key(&self, sender: Option<&AnyObject>) {
+            let _native_entry = crate::native_operation::refused();
+            self.control_key(sender);
         }
 
         #[unsafe(method(validateCommand:))]
