@@ -76,3 +76,8 @@ embed-resource = { path = "support/embed-resource" }
 name = "edit_menu_uikit"
 harness = false
 required-features = ["test-support"]
+
+[[test]]
+name = "native_inline_field_uikit"
+harness = false
+required-features = ["test-support"]

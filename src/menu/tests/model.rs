@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use gpui::{KeyBinding, Keymap, Menu, MenuItem, Modifiers, OsAction, OsMenu, SystemMenuType};
 
 use super::*;
@@ -219,4 +221,31 @@ fn undo_or_redo_items_replace_uikits() {
 
     let without = Menu::new("Edit").items([MenuItem::os_action("Copy", Copy, OsAction::Copy)]);
     assert!(!MenuModel::new(&[without], &keymap()).has_undo_redo());
+}
+
+#[test]
+fn subtitle_only_when_disabled() {
+    let menus = [Menu::new("Terminal").items([
+        MenuItem::action("Rename Tab", NewTab).disabled(true),
+        MenuItem::action("Rename Pane", Find),
+    ])];
+    let mut model = MenuModel::new(&menus, &keymap());
+    let table: HashMap<String, String> = [
+        ("Rename Tab", "Not available on Herdr 2 yet"),
+        ("Rename Pane", "Not available on Herdr 2 yet"),
+    ]
+    .into_iter()
+    .map(|(name, subtitle)| (name.to_owned(), subtitle.to_owned()))
+    .collect();
+    model.apply_subtitles(&table);
+    let subtitle =
+        |model: &MenuModel, index: usize| model.command(index).and_then(|c| c.subtitle.clone());
+    assert_eq!(
+        subtitle(&model, 0).as_deref(),
+        Some("Not available on Herdr 2 yet"),
+        "a disabled item shows its subtitle"
+    );
+    assert_eq!(subtitle(&model, 1), None, "an enabled item shows none");
+    model.apply_subtitles(&HashMap::new());
+    assert_eq!(subtitle(&model, 0), None, "an empty table clears it");
 }

@@ -36,6 +36,7 @@ mod input_target;
 mod keyboard;
 mod layout;
 mod lifecycle;
+pub(crate) mod native_inline_field;
 pub(crate) mod native_modal;
 mod native_retirement_request;
 mod platform_window;

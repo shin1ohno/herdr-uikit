@@ -1,4 +1,6 @@
-//! The per-window native modal gate and the native search session it guards.
+//! The per-window native modal gate and the session it guards: the native
+//! search panel's or the inline field's (`super::native_inline_field`). Both
+//! kinds share the one gate, so they are never up together.
 //!
 //! While the gate is shut, every reader listed in `docs/native-search.md`
 //! keeps GPUI out: first responder acquisition (`update_first_responder`,
@@ -10,7 +12,7 @@
 //! handle (`InputRestored`).
 
 mod fence;
-mod gate;
+pub(super) mod gate;
 mod intent;
 mod panel;
 mod queue;
@@ -18,15 +20,19 @@ mod queue;
 use std::rc::Rc;
 
 use gpui::AnyWindowHandle;
-use objc2::MainThreadMarker;
+use objc2::{MainThreadMarker, Message, rc::Retained};
+use objc2_ui_kit::{UIView, UIViewController};
 
 pub(crate) use self::fence::Fence;
 pub use self::gate::{DismissReason, PresentFailure, Responder};
 pub(crate) use self::gate::{Effect, Gate, Note, Phase, SessionId, command_enabled, command_runs};
 pub(crate) use self::intent::{Intent, Request as IntentRequest};
 use self::panel::{Binding, Panel};
+pub(crate) use self::panel::{
+    color, committed_text, marked, set_accessibility_label, set_identifier, set_return_key_type,
+};
 pub(crate) use self::queue::{Coalesce, Queue};
-use super::{keyboard::ResignReason, scene, state::Window};
+use super::{keyboard::ResignReason, native_inline_field::Inline, scene, state::Window};
 use crate::native_search::{
     NativeSearchError, NativeSearchEvent, NativeSearchRequest, NativeSearchResults, SharedQueue,
 };
@@ -34,14 +40,91 @@ use crate::native_search::{
 /// How long a restore attempt may take before it is retried.
 const RESTORE_CHECK: std::time::Duration = std::time::Duration::from_millis(500);
 
-/// The live session's consumer side, beside the window's gate.
-pub(crate) struct Session {
+/// The live session's consumer side, beside the window's gate: the search
+/// panel's or the inline field's.
+pub(crate) enum Session {
+    Search(Search),
+    Inline(Inline),
+}
+
+/// The search panel's consumer side.
+pub(crate) struct Search {
     id: SessionId,
     queue: SharedQueue,
     panel: Option<Rc<Panel>>,
     last_query: String,
     revision: u64,
     window: std::rc::Weak<Window>,
+}
+
+impl Session {
+    pub(super) fn id(&self) -> SessionId {
+        match self {
+            Self::Search(s) => s.id,
+            Self::Inline(s) => s.id,
+        }
+    }
+    fn window(&self) -> &std::rc::Weak<Window> {
+        match self {
+            Self::Search(s) => &s.window,
+            Self::Inline(s) => &s.window,
+        }
+    }
+    fn search(&self) -> Option<&Search> {
+        match self {
+            Self::Search(s) => Some(s),
+            Self::Inline(_) => None,
+        }
+    }
+    fn search_mut(&mut self) -> Option<&mut Search> {
+        match self {
+            Self::Search(s) => Some(s),
+            Self::Inline(_) => None,
+        }
+    }
+    pub(super) fn inline(&self) -> Option<&Inline> {
+        match self {
+            Self::Inline(s) => Some(s),
+            Self::Search(_) => None,
+        }
+    }
+    pub(super) fn inline_mut(&mut self) -> Option<&mut Inline> {
+        match self {
+            Self::Inline(s) => Some(s),
+            Self::Search(_) => None,
+        }
+    }
+    /// The presented controller and its field, once UIKit was asked.
+    fn presented(&self) -> Option<(Retained<UIViewController>, Retained<UIView>)> {
+        match self {
+            Self::Search(s) => s.panel.as_ref().map(|panel| {
+                let field: &UIView = &panel.field;
+                (panel.controller.clone(), field.retain())
+            }),
+            Self::Inline(s) => s
+                .controller
+                .as_ref()
+                .map(|c| (c.controller.clone(), c.field_view().retain())),
+        }
+    }
+}
+
+/// Why a native modal session could not open.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum OpenError {
+    AlreadyPresented,
+    RetirementInProgress,
+    WindowUnavailable,
+}
+
+impl From<OpenError> for NativeSearchError {
+    fn from(error: OpenError) -> Self {
+        match error {
+            OpenError::WindowUnavailable => Self::WindowUnavailable,
+            OpenError::AlreadyPresented => Self::AlreadyPresented,
+            OpenError::RetirementInProgress => Self::RetirementInProgress,
+        }
+    }
 }
 
 impl super::state::State {
@@ -55,7 +138,7 @@ impl super::state::State {
     }
 }
 
-fn window(handle: AnyWindowHandle) -> Option<Rc<Window>> {
+pub(super) fn window(handle: AnyWindowHandle) -> Option<Rc<Window>> {
     scene::menu_window(handle).filter(|window| !window.state.borrow().closed)
 }
 
@@ -151,17 +234,43 @@ pub(crate) fn present(
     queue: SharedQueue,
     _mtm: MainThreadMarker,
 ) -> Result<SessionId, NativeSearchError> {
-    let window = window(handle).ok_or(NativeSearchError::WindowUnavailable)?;
+    let last_query = request.query.clone();
+    open_session(
+        handle,
+        move |id, window| {
+            Session::Search(Search {
+                id,
+                queue,
+                panel: None,
+                last_query,
+                revision: 0,
+                window,
+            })
+        },
+        move |w, id, this| w.present_panel(id, request, this),
+    )
+    .map_err(NativeSearchError::from)
+}
+
+/// Accepts a session of either kind: the gate shuts at once, `session` is
+/// stored as the window's consumer side, and `deferred` presents it on the
+/// next main-queue turn.
+pub(super) fn open_session(
+    handle: AnyWindowHandle,
+    session: impl FnOnce(SessionId, std::rc::Weak<Window>) -> Session,
+    deferred: impl FnOnce(&Window, SessionId, std::rc::Weak<Window>) + 'static,
+) -> Result<SessionId, OpenError> {
+    let window = window(handle).ok_or(OpenError::WindowUnavailable)?;
     {
         let state = window.state.borrow();
         if state.ui_window.is_none() || state.scene.is_none() {
-            return Err(NativeSearchError::WindowUnavailable);
+            return Err(OpenError::WindowUnavailable);
         }
         if state.native_modal.blocks() {
-            return Err(NativeSearchError::AlreadyPresented);
+            return Err(OpenError::AlreadyPresented);
         }
         if state.native_request_pending.is_some() || window.text_input.replacing.get() {
-            return Err(NativeSearchError::RetirementInProgress);
+            return Err(OpenError::RetirementInProgress);
         }
     }
     // GPUI hears the release of every key it saw pressed while it can still
@@ -172,20 +281,13 @@ pub(crate) fn present(
         .borrow_mut()
         .native_modal
         .request()
-        .map_err(|_| NativeSearchError::AlreadyPresented)?;
-    *window.native_search.borrow_mut() = Some(Session {
-        id,
-        queue,
-        panel: None,
-        last_query: request.query.clone(),
-        revision: 0,
-        window: Rc::downgrade(&window),
-    });
+        .map_err(|_| OpenError::AlreadyPresented)?;
+    *window.native_search.borrow_mut() = Some(session(id, Rc::downgrade(&window)));
     window.shut_gate(held);
     // UIKit answers a presentation and a responder change by querying text
     // clients synchronously; present outside GPUI's update.
     let this = Rc::downgrade(&window);
-    window.defer(move |w| w.present_panel(id, request, this));
+    window.defer(move |w| deferred(w, id, this));
     Ok(id)
 }
 
@@ -198,6 +300,7 @@ pub(crate) fn update(
     let mut slot = window.native_search.borrow_mut();
     let session = slot
         .as_mut()
+        .and_then(Session::search_mut)
         .filter(|s| s.id == id)
         .ok_or(NativeSearchError::Ended)?;
     session.revision += 1;
@@ -218,6 +321,7 @@ pub(crate) fn set_query(
     let mut slot = window.native_search.borrow_mut();
     let session = slot
         .as_mut()
+        .and_then(Session::search_mut)
         .filter(|s| s.id == id)
         .ok_or(NativeSearchError::Ended)?;
     // The last query is what an edit or the dismissal compares against, so
@@ -255,7 +359,7 @@ impl Window {
         self.native_search
             .borrow()
             .as_ref()
-            .map_or_else(std::rc::Weak::new, |s| s.window.clone())
+            .map_or_else(std::rc::Weak::new, |s| s.window().clone())
     }
 
     fn native_modal_session(&self) -> Option<SessionId> {
@@ -278,12 +382,11 @@ impl Window {
         objc2_ui_kit::UIMenuSystem::mainSystem(self.mtm).setNeedsRevalidate();
     }
 
-    fn present_panel(
-        &self,
-        id: SessionId,
-        mut request: NativeSearchRequest,
-        weak: std::rc::Weak<Window>,
-    ) {
+    /// The deferred present's checks, for either kind: whether session `id`
+    /// still waits for UIKit and the window can present it. Otherwise the
+    /// gate has been told (nothing presented, or a failure). On `true`,
+    /// GPUI's views have given up first responder.
+    pub(super) fn ready_to_present(&self, id: SessionId) -> bool {
         let (phase, ui_window) = {
             let state = self.state.borrow();
             (state.native_modal.phase(), state.ui_window.clone())
@@ -296,9 +399,9 @@ impl Window {
             {
                 let effects = self.state.borrow_mut().native_modal.not_presented(id);
                 self.apply(id, effects);
-                return;
+                return false;
             }
-            _ => return,
+            _ => return false,
         }
         let failure = if ui_window.is_none() {
             Some(PresentFailure::WindowDetached)
@@ -310,7 +413,7 @@ impl Window {
         if let Some(failure) = failure {
             let effects = self.state.borrow_mut().native_modal.failed(id, failure);
             self.apply(id, effects);
-            return;
+            return false;
         }
         // GPUI's views give up first responder before the field takes it;
         // their resignation is expected, not a user's keyboard dismissal.
@@ -321,17 +424,40 @@ impl Window {
                 switch.resign(&**self.view);
             }
         }
+        true
+    }
+
+    fn present_panel(
+        &self,
+        id: SessionId,
+        mut request: NativeSearchRequest,
+        weak: std::rc::Weak<Window>,
+    ) {
+        if !self.ready_to_present(id) {
+            return;
+        }
         let binding = || Binding {
             window: weak.clone(),
             session: id,
         };
         // A `set_query` between `present` and now replaced the last query.
-        if let Some(session) = self.native_search.borrow().as_ref().filter(|s| s.id == id) {
+        if let Some(session) = self
+            .native_search
+            .borrow()
+            .as_ref()
+            .and_then(Session::search)
+            .filter(|s| s.id == id)
+        {
             request.query.clone_from(&session.last_query);
         }
         let panel = Rc::new(Panel::new(binding, &request, self.mtm));
         panel.configure(&request, &self.view);
-        if let Some(session) = self.native_search.borrow_mut().as_mut() {
+        if let Some(session) = self
+            .native_search
+            .borrow_mut()
+            .as_mut()
+            .and_then(Session::search_mut)
+        {
             session.panel = Some(panel.clone());
         }
         let done = weak.clone();
@@ -351,7 +477,9 @@ impl Window {
                 // An active scene's field may take first responder a turn
                 // later; if it still refuses, the panel is unusable.
                 let field = field.clone();
-                window.defer(move |w| w.retry_field_focus(id, &field));
+                window.defer(move |w| {
+                    w.retry_field_focus(id, &field);
+                });
             }
         });
         self.controller.presentViewController_animated_completion(
@@ -361,15 +489,18 @@ impl Window {
         );
     }
 
-    fn retry_field_focus(&self, id: SessionId, field: &panel::SearchField) {
+    /// A later attempt for a field that refused first responder; returns
+    /// whether it took it (otherwise the session failed).
+    pub(super) fn retry_field_focus(&self, id: SessionId, field: &UIView) -> bool {
         let unfocused = matches!(
             self.state.borrow().native_modal.phase(),
             Some((current, Phase::Presented { focused: false })) if current == id
         );
         if !unfocused {
-            return;
+            return false;
         }
-        let effects = if self.acquire_field(field) {
+        let focused = self.acquire_field(field);
+        let effects = if focused {
             self.state.borrow_mut().native_modal.focused(id)
         } else {
             self.state
@@ -378,12 +509,13 @@ impl Window {
                 .failed(id, PresentFailure::FieldRefused)
         };
         self.apply(id, effects);
+        focused
     }
 
     /// The field takes first responder through the window's responder guard.
-    fn acquire_field(&self, field: &panel::SearchField) -> bool {
+    pub(super) fn acquire_field(&self, field: &UIView) -> bool {
         let switch = super::edit_menu::responder_switch::ResponderSwitch::new(self);
-        switch.acquire(AsRef::<objc2_ui_kit::UIView>::as_ref(field))
+        switch.acquire(field)
     }
 
     pub(super) fn native_modal_dismiss(&self, id: SessionId, reason: DismissReason) {
@@ -400,7 +532,11 @@ impl Window {
 
     pub(super) fn native_modal_query(&self, id: SessionId, text: String) {
         let mut slot = self.native_search.borrow_mut();
-        let Some(session) = slot.as_mut().filter(|s| s.id == id) else {
+        let Some(session) = slot
+            .as_mut()
+            .and_then(Session::search_mut)
+            .filter(|s| s.id == id)
+        else {
             return;
         };
         if session.last_query != text {
@@ -418,6 +554,7 @@ impl Window {
             .native_search
             .borrow()
             .as_ref()
+            .and_then(Session::search)
             .filter(|s| s.id == id)
             .and_then(|s| s.panel.clone());
         if let Some(panel) = panel {
@@ -444,6 +581,7 @@ impl Window {
             .native_search
             .borrow()
             .as_ref()
+            .and_then(Session::search)
             .filter(|s| s.id == id)
             .map(|s| s.queue.clone());
         if let Some(queue) = queue {
@@ -452,7 +590,7 @@ impl Window {
     }
 
     /// Carries out a transition's effects, in order.
-    fn apply(&self, id: SessionId, effects: Vec<Effect>) {
+    pub(super) fn apply(&self, id: SessionId, effects: Vec<Effect>) {
         for effect in effects {
             match effect {
                 Effect::Emit(note) => self.emit(id, note),
@@ -470,30 +608,36 @@ impl Window {
     }
 
     fn emit(&self, id: SessionId, note: Note) {
-        let event = match note {
-            Note::Opened => NativeSearchEvent::Opened,
-            Note::Dismissed(reason) => NativeSearchEvent::Dismissed(reason),
-            Note::Failed(failure) => NativeSearchEvent::Failed(failure),
-            Note::Restored(responder) => NativeSearchEvent::InputRestored(responder),
-        };
         let restored = matches!(note, Note::Restored(_));
-        let queue = {
+        let sink = {
             let mut slot = self.native_search.borrow_mut();
-            let queue = slot
-                .as_ref()
-                .filter(|s| s.id == id)
-                .map(|s| s.queue.clone());
+            let sink = slot.as_ref().filter(|s| s.id() == id).map(|s| match s {
+                Session::Search(s) => Sink::Search(s.queue.clone()),
+                Session::Inline(s) => Sink::Inline(s.queue.clone(), s.decision.clone()),
+            });
             if restored {
                 *slot = None;
             }
-            queue
+            sink
         };
-        if let Some(queue) = queue {
-            let mut queue = queue.borrow_mut();
-            queue.push(event);
-            if restored {
-                queue.close();
+        match sink {
+            Some(Sink::Search(queue)) => {
+                let event = match note {
+                    Note::Opened => NativeSearchEvent::Opened,
+                    Note::Dismissed(reason) => NativeSearchEvent::Dismissed(reason),
+                    Note::Failed(failure) => NativeSearchEvent::Failed(failure),
+                    Note::Restored(responder) => NativeSearchEvent::InputRestored(responder),
+                };
+                let mut queue = queue.borrow_mut();
+                queue.push(event);
+                if restored {
+                    queue.close();
+                }
             }
+            Some(Sink::Inline(queue, decision)) => {
+                super::native_inline_field::emit(&queue, note, decision.as_ref());
+            }
+            None => {}
         }
         if restored {
             objc2_ui_kit::UIMenuSystem::mainSystem(self.mtm).setNeedsRevalidate();
@@ -501,13 +645,14 @@ impl Window {
     }
 
     fn dismiss_panel(&self, id: SessionId, animated: bool) {
-        let panel = self
+        let presented = self
             .native_search
             .borrow()
             .as_ref()
-            .filter(|s| s.id == id)
-            .and_then(|s| s.panel.clone());
-        let Some(panel) = panel else {
+            .filter(|s| s.id() == id)
+            // The inline field comes and goes without animation.
+            .and_then(|s| Some((s.presented()?.0, animated && s.search().is_some())));
+        let Some((controller, animated)) = presented else {
             return;
         };
         let weak = self.weak();
@@ -521,9 +666,7 @@ impl Window {
                 window.apply(id, effects);
             }
         });
-        panel
-            .controller
-            .dismissViewControllerAnimated_completion(animated, Some(&completion));
+        controller.dismissViewControllerAnimated_completion(animated, Some(&completion));
     }
 
     /// GPUI's keyboard intent is replayed and its responder taken again; the
@@ -597,19 +740,19 @@ impl Window {
         let Some((id, Phase::Presented { focused })) = phase else {
             return;
         };
-        let panel = self
+        let presented = self
             .native_search
             .borrow()
             .as_ref()
-            .and_then(|s| s.panel.clone());
-        let Some(panel) = panel else {
+            .and_then(Session::presented);
+        let Some((controller, field)) = presented else {
             return;
         };
-        if panel.controller.presentingViewController().is_none() {
+        if controller.presentingViewController().is_none() {
             self.native_modal_dismissed(id, DismissReason::System);
             return;
         }
-        if !panel.field.isFirstResponder() && self.acquire_field(&panel.field) && !focused {
+        if !field.isFirstResponder() && self.acquire_field(&field) && !focused {
             let effects = self.state.borrow_mut().native_modal.focused(id);
             self.apply(id, effects);
         }
@@ -639,15 +782,13 @@ impl Window {
             match effect {
                 Effect::Emit(note) => self.emit(id, note),
                 Effect::Dismiss { .. } => {
-                    let panel = self
+                    let presented = self
                         .native_search
                         .borrow()
                         .as_ref()
-                        .and_then(|s| s.panel.clone());
-                    if let Some(panel) = panel {
-                        panel
-                            .controller
-                            .dismissViewControllerAnimated_completion(false, None);
+                        .and_then(Session::presented);
+                    if let Some((controller, _)) = presented {
+                        controller.dismissViewControllerAnimated_completion(false, None);
                     }
                 }
                 Effect::Restore | Effect::RetryRestore(_) => {}
@@ -661,6 +802,15 @@ impl Window {
     pub(super) fn native_modal_drops_input(&self) -> bool {
         self.state.borrow_mut().native_modal.drops_late_input()
     }
+}
+
+/// Where a session's events go.
+enum Sink {
+    Search(SharedQueue),
+    Inline(
+        crate::native_inline_field::InlineQueue,
+        Option<super::native_inline_field::Decision>,
+    ),
 }
 
 #[cfg(all(target_abi = "sim", feature = "test-support"))]

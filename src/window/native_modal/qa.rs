@@ -42,6 +42,7 @@ pub fn native_search_state(handle: AnyWindowHandle) -> Option<NativeSearchState>
         .native_search
         .borrow()
         .as_ref()
+        .and_then(super::Session::search)
         .and_then(|s| s.panel.clone());
     let state = window.state.borrow();
     let (session, phase) = match state.native_modal.phase() {

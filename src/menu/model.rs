@@ -3,6 +3,8 @@
 //! one command per action item, numbered so a `UICommand`'s property list
 //! can name it.
 
+use std::collections::HashMap;
+
 use gpui::{Action, KeyContext, Keymap, Menu, MenuItem, OsAction};
 
 use super::shortcut::Shortcut;
@@ -14,6 +16,9 @@ pub(crate) struct Command {
     /// Disabled by GPUI, or inside a disabled menu.
     pub(crate) disabled: bool,
     pub(crate) shortcut: Option<Shortcut>,
+    /// The small line under a disabled item (`UIMenuElement.subtitle`): why
+    /// it is disabled. Never set on an enabled item.
+    pub(crate) subtitle: Option<String>,
     pub(crate) title: String,
 }
 
@@ -84,7 +89,19 @@ impl MenuModel {
             let submenu = model.submenu(menu, false, keymap, &contexts);
             model.menus.push(submenu);
         }
+        model.apply_subtitles(&super::subtitles());
         model
+    }
+
+    /// Gives each disabled command the subtitle `table` has for its title
+    /// (item name to subtitle); enabled commands get none.
+    pub(crate) fn apply_subtitles(&mut self, table: &HashMap<String, String>) {
+        for command in &mut self.commands {
+            command.subtitle = command
+                .disabled
+                .then(|| table.get(&command.title).cloned())
+                .flatten();
+        }
     }
 
     /// The top-level menus, in GPUI's order.
@@ -140,6 +157,7 @@ impl MenuModel {
                             checked: *checked,
                             disabled: disabled || *item_disabled,
                             shortcut: shortcut(keymap, action.as_ref(), contexts),
+                            subtitle: None,
                             title: name.to_string(),
                         });
                         Element::Command(self.commands.len() - 1)

@@ -53,7 +53,8 @@ pub(crate) struct Window {
     pub(super) state: RefCell<State>,
     pub(super) text_input: TextInputView,
     pub(super) view: Retained<GpuiView>,
-    /// The native search session this window presents, if any.
+    /// The native modal session (search panel or inline field) this window
+    /// presents, if any.
     pub(super) native_search: RefCell<Option<super::native_modal::Session>>,
 }
 

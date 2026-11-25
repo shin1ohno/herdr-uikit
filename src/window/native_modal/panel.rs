@@ -358,7 +358,7 @@ impl Target {
     }
 }
 
-pub(super) fn color(rgba: gpui::Rgba) -> Retained<UIColor> {
+pub(crate) fn color(rgba: gpui::Rgba) -> Retained<UIColor> {
     UIColor::colorWithRed_green_blue_alpha(
         f64::from(rgba.r),
         f64::from(rgba.g),
@@ -368,14 +368,14 @@ pub(super) fn color(rgba: gpui::Rgba) -> Retained<UIColor> {
 }
 
 /// Whether the field holds marked (composing) text.
-pub(super) fn marked(field: &UITextField) -> bool {
+pub(crate) fn marked(field: &UITextField) -> bool {
     // SAFETY: UITextInput's getter on UITextField.
     let range: Option<Retained<AnyObject>> = unsafe { msg_send![field, markedTextRange] };
     range.is_some()
 }
 
 /// The field's text without its marked range: the committed query.
-pub(super) fn committed_text(field: &UITextField) -> String {
+pub(crate) fn committed_text(field: &UITextField) -> String {
     let text = field.text().map(|t| t.to_string()).unwrap_or_default();
     // SAFETY: UITextInput's getters on UITextField; offsets are UTF-16.
     let (start, length): (NSInteger, NSInteger) = unsafe {
@@ -401,13 +401,13 @@ pub(super) fn committed_text(field: &UITextField) -> String {
     String::from_utf16_lossy(&kept)
 }
 
-fn set_identifier(view: &UIView, identifier: &str) {
+pub(crate) fn set_identifier(view: &UIView, identifier: &str) {
     let identifier = NSString::from_str(identifier);
     // SAFETY: UIAccessibilityIdentification's setter on UIView.
     let () = unsafe { msg_send![view, setAccessibilityIdentifier: &*identifier] };
 }
 
-fn set_accessibility_label(view: &UIView, text: &str) {
+pub(crate) fn set_accessibility_label(view: &UIView, text: &str) {
     let text = NSString::from_str(text);
     // SAFETY: UIAccessibility's informal-protocol setter on UIView.
     let () = unsafe { msg_send![view, setAccessibilityLabel: &*text] };
@@ -710,7 +710,7 @@ impl Panel {
 /// `UITextField` answers the `UITextInputTraits` setters by forwarding: the
 /// class has no `setReturnKeyType:` method, so objc2's debug signature check
 /// panics on `setReturnKeyType`. Send the message as Objective-C does.
-fn set_return_key_type(field: &UITextField, value: UIReturnKeyType) {
+pub(crate) fn set_return_key_type(field: &UITextField, value: UIReturnKeyType) {
     // SAFETY: `-[UITextField setReturnKeyType:]` takes one `NSInteger` and
     // returns nothing; `objc_msgSend` is called with exactly that signature on
     // a live text field, on the main thread like every caller of this module.

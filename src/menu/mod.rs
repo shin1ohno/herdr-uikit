@@ -54,6 +54,8 @@ mod shortcut;
 #[cfg(test)]
 mod tests;
 
+use std::{cell::RefCell, collections::HashMap};
+
 use objc2_ui_kit::UIKeyModifierFlags;
 
 pub(crate) use self::model::{Command, Element, MenuModel, StandardEdit, Submenu};
@@ -231,4 +233,28 @@ pub(crate) fn trigger(
             }
         }
     }
+}
+
+thread_local! {
+    /// Item name to subtitle, as `set_menu_subtitles` last set it.
+    static SUBTITLES: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
+}
+
+/// The subtitles disabled menu items show, as last set.
+pub(crate) fn subtitles() -> HashMap<String, String> {
+    SUBTITLES.with_borrow(Clone::clone)
+}
+
+/// Sets the small line UIKit shows under a disabled menu item (its
+/// `subtitle`), by item name, replacing the whole table: GPUI's
+/// `MenuItem::Action` has no field for it. Only disabled items show one;
+/// an enabled item with an entry shows none. The menus are rebuilt. Main
+/// thread only; does nothing elsewhere.
+pub fn set_menu_subtitles(subtitles: impl IntoIterator<Item = (String, String)>) {
+    let Some(mtm) = objc2::MainThreadMarker::new() else {
+        return;
+    };
+    let table: HashMap<String, String> = subtitles.into_iter().collect();
+    SUBTITLES.with_borrow_mut(|current| current.clone_from(&table));
+    crate::platform::menus::subtitles_changed(&table, mtm);
 }

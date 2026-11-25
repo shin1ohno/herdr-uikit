@@ -41,6 +41,7 @@ mod native_edit_availability;
 mod native_edit_menu;
 #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
 pub mod native_edit_observer;
+mod native_inline_field;
 mod native_operation;
 mod native_retirement_request;
 mod native_search;
@@ -55,12 +56,22 @@ mod window_controls;
 pub use background_task::BackgroundTask;
 pub use error::{Error, Result};
 pub use layout_direction::{LayoutDirection, layout_direction, set_layout_direction};
+pub use menu::set_menu_subtitles;
 pub use native_edit_action::{NativeEditAction, native_edit_action};
 pub use native_edit_availability::{NativeEditAvailability, set_native_edit_availability};
 pub use native_edit_menu::{
     EDIT_MENU_IDENTIFIER_PREFIX, EDIT_MENU_PROPERTY_KEY, NativeEditMenuStatus, NativeEditMenuToken,
     RevokeReason, dismiss_native_edit_menu, native_edit_menu_status, native_edit_menu_token,
     present_native_edit_menu,
+};
+pub use native_inline_field::{
+    NativeInlineDismissReason, NativeInlineFieldError, NativeInlineFieldEvent,
+    NativeInlineFieldEvents, NativeInlineFieldHandle, NativeInlineFieldIdentifiers,
+    NativeInlineFieldRequest, NativeInlineFieldStyle, present_native_inline_field,
+};
+#[cfg(all(target_abi = "sim", feature = "test-support"))]
+pub use native_inline_field::{
+    NativeInlineFieldState, native_inline_field_press, native_inline_field_state,
 };
 pub use native_retirement_request::{
     NativeHardwareHold, NativeInputOrigin, NativeRetirementCancellation,
@@ -106,6 +117,13 @@ pub fn application() -> gpui::Application {
 #[doc(hidden)]
 pub fn test_native_edit_menu_contract() {
     window::edit_menu::tests::run();
+}
+
+/// Simulator contract runner for the inline field's UIKit objects.
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub fn test_native_inline_field_contract() {
+    window::native_inline_field::tests::run();
 }
 
 #[cfg(target_abi = "sim")]
