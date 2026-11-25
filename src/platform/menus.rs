@@ -73,6 +73,10 @@ impl Menus {
         self.owned.clone()
     }
 
+    fn apply_subtitles(&mut self, table: &std::collections::HashMap<String, String>) {
+        self.model.apply_subtitles(table);
+    }
+
     /// The command a tag names, unless the tag is from older menus.
     fn command(&self, tag: MenuTag) -> Option<&Command> {
         (tag.generation == self.generation)
@@ -90,6 +94,18 @@ pub(crate) fn action_selector() -> Sel {
 /// inside a GPUI update, as nothing runs before this returns.
 pub(crate) fn request_rebuild(mtm: MainThreadMarker) {
     UIMenuSystem::mainSystem(mtm).setNeedsRebuild();
+}
+
+/// `crate::menu::set_menu_subtitles` replaced the table: the current
+/// commands take it, and UIKit builds the menus again.
+pub(crate) fn subtitles_changed(
+    table: &std::collections::HashMap<String, String>,
+    mtm: MainThreadMarker,
+) {
+    if let Some(shared) = shared::current() {
+        shared.menus.borrow_mut().apply_subtitles(table);
+    }
+    request_rebuild(mtm);
 }
 
 /// A command UIKit performed.
@@ -570,6 +586,9 @@ impl Context<'_> {
         };
         if command.disabled {
             element.setAttributes(UIMenuElementAttributes::Disabled);
+        }
+        if let Some(subtitle) = &command.subtitle {
+            element.setSubtitle(Some(&NSString::from_str(subtitle)));
         }
         element.setState(state(command.checked));
         Some(Retained::into_super(element))
