@@ -361,6 +361,7 @@ impl Window {
             local,
             screen_matches,
             text_requested,
+            user_dismissable: !crate::mac_titlebar::ios_app_on_mac(),
         }
     }
 

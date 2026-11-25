@@ -32,6 +32,7 @@ mod direction;
 pub(crate) mod edit_menu;
 mod error;
 mod frame;
+pub(crate) mod input_diagnostics;
 mod input_target;
 mod keyboard;
 mod layout;

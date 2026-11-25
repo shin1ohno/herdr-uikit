@@ -101,6 +101,11 @@ pub use text_input_retirement::{
     TextInputRetirementStatus, TextInputSessionState, retire_text_input_session,
     text_input_session_state,
 };
+/// The tracing target and static codes of the input diagnostics: which view
+/// is first responder and why, keyboard dismissal transitions, GPUI text
+/// focus, and printable presses the drawing view recovered or dropped. Each
+/// event carries one `code` field, always one of `DIAGNOSTIC_CODES`.
+pub use window::input_diagnostics::{CODES as DIAGNOSTIC_CODES, TARGET as DIAGNOSTIC_TARGET};
 #[cfg(feature = "test-support")]
 #[doc(hidden)]
 pub use window::retirement_probe;
