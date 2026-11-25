@@ -104,7 +104,7 @@ pub use text_input_retirement::{
 #[cfg(feature = "test-support")]
 #[doc(hidden)]
 pub use window::retirement_probe;
-pub use window_controls::window_control_insets;
+pub use window_controls::{traffic_lights_over_content, window_control_insets};
 
 /// The GPUI application on iPadOS, the counterpart of
 /// `gpui_platform::application()` on desktop targets.
