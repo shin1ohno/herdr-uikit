@@ -516,8 +516,10 @@ async fn xcuitest_cases(probe: &Probe, window: &UIWindow) {
     opened(probe, window, &mut log, "s2").await;
     native::set_phase("s2-open");
     let taps = probe.sink().taps;
+    // The test taps about 12 s after s1's Return; bounded well inside the
+    // harness's wait, so a missing dismissal fails here.
     let outside = probe
-        .wait(150_000, |_| log.has(&Event::Dismissed(Reason::OutsideTap)))
+        .wait(45_000, |_| log.has(&Event::Dismissed(Reason::OutsideTap)))
         .await;
     probe.sleep(1_500).await;
     let s = state(probe);
