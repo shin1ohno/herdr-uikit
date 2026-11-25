@@ -92,6 +92,8 @@ pub(super) struct State {
     pub(super) hover_ending: bool,
     pub(super) hovered: bool,
     pub(super) input_handler: Option<PlatformInputHandler>,
+    /// What the diagnostic codes last said (`input_diagnostics`).
+    pub(super) input_diagnostics: super::input_diagnostics::Dedup,
     pub(super) insets: WindowInsets,
     pub(super) is_active: bool,
     pub(super) keyboard: Keyboard,
@@ -141,6 +143,7 @@ impl State {
             hover_ending: false,
             hovered: false,
             input_handler: None,
+            input_diagnostics: Default::default(),
             insets: WindowInsets::default(),
             is_active: false,
             keyboard: Keyboard::default(),

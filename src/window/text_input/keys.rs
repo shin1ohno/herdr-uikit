@@ -225,6 +225,16 @@ impl GPUITextInputView {
                 self.forward(&press, event, Phase::Began);
                 continue;
             };
+            // From the drawing view, a printable press only reaches GPUI's
+            // text through UIKit's keyboard, which serves first responders
+            // alone; take first responder back while GPUI takes text.
+            if crate::window::input_diagnostics::is_printable(
+                keystroke.key_char.as_deref(),
+                keystroke.modifiers.platform,
+                keystroke.modifiers.control,
+            ) {
+                self.ivars().target.recover_text_responder();
+            }
             if keystroke.key == "escape" {
                 self.trace_escape("native-press");
             }

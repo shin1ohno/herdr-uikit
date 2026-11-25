@@ -293,8 +293,22 @@ impl InputTarget {
 
     pub(super) fn text_input_did_resign(&self, context: ResignContext) {
         if let Some(window) = self.live_window() {
-            window.state.borrow_mut().keyboard.resigned(context);
+            window.change_dismissal(
+                super::input_diagnostics::DismissalCause::Resign,
+                |keyboard| {
+                    keyboard.resigned(context);
+                },
+            );
         }
+    }
+
+    /// A printable press reached the text input view; see
+    /// `Window::recover_text_responder`.
+    pub(super) fn recover_text_responder(&self) -> super::input_diagnostics::Recovery {
+        self.live_window()
+            .map_or(super::input_diagnostics::Recovery::None, |window| {
+                window.recover_text_responder()
+            })
     }
 
     pub(super) fn expect_keyboard_hide(&self, reason: ResignReason) {

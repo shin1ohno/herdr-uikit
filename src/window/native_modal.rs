@@ -680,8 +680,14 @@ impl Window {
             state.modal_intent.take()
         };
         match request {
-            IntentRequest::Show => self.state.borrow_mut().keyboard.show(),
-            IntentRequest::Hide => self.state.borrow_mut().keyboard.hide(),
+            IntentRequest::Show => self.change_dismissal(
+                super::input_diagnostics::DismissalCause::Show,
+                super::keyboard::Keyboard::show,
+            ),
+            IntentRequest::Hide => self.change_dismissal(
+                super::input_diagnostics::DismissalCause::Hide,
+                super::keyboard::Keyboard::hide,
+            ),
             IntentRequest::None => {}
         }
         if let Some(window) = self.weak().upgrade() {
