@@ -221,14 +221,23 @@ On a Mac running the iPad app ("Designed for iPad",
 `NSProcessInfo.isiOSAppOnMac`), each window scene asks UIKit for the unified
 windowing-control style (`preferredWindowingControlStyleForScene:`, iOS 26).
 The scene also hides its window's title (`UITitlebar.titleVisibility`, with
-no toolbar), which removes the separate title bar so the content fills the
-window and the traffic lights sit over the app's own top row. The SDK
-declares `titlebar` for Mac Catalyst only, so herdr-uikit sends it through
-the runtime after `respondsToSelector:`; a Mac without it keeps its title
-bar. While the title is hidden, the insets above are at least 80 pt on the
-traffic lights' side (the left, or the right in a right-to-left app) even if
-the Mac reports less. On an iPad the scene asks for the automatic style,
-which UIKit uses when the method is absent, and nothing else changes.
+no toolbar), and once its NSWindow exists it adds
+`NSWindowStyleMaskFullSizeContentView` to it, so the content fills the window
+and the traffic lights sit over the app's own top row. The title bar's band,
+which UIKit then reports as top safe area, is left to that top row: the safe
+area's top is 0. The SDK declares `titlebar` for Mac Catalyst only and an iOS
+app has no NSWindow API, so herdr-uikit sends both through the runtime after
+`respondsToSelector:` (the window through
+`NSApplication.sharedApplication.windows`). A Mac without the titlebar keeps
+its title bar, and one whose window cannot be extended within five seconds
+shows the title again. While the content sits under the title bar, the insets
+above are at least the Mac's 80 pt (about 104 UIKit points at the Mac's
+default 0.77 scale) on the traffic lights' side (the left, or the right in a
+right-to-left app) even if the Mac reports less, and
+`herdr_uikit::traffic_lights_over_content()` is true: any top-row content,
+not only a sidebar header, then starts past the insets. On an iPad the scene
+asks for the automatic style, which UIKit uses when the method is absent,
+`traffic_lights_over_content()` is false, and nothing else changes.
 
 ## Building
 

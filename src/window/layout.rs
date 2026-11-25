@@ -21,9 +21,10 @@ use objc2_core_foundation::{CGFloat, CGRect};
 use objc2_foundation::{NSDictionary, NSNotification, NSNumber, NSString, NSValue};
 use objc2_quartz_core::CATransaction;
 use objc2_ui_kit::{
-    NSValueUIGeometryExtensions, UICoordinateSpace, UIKeyboardAnimationDurationUserInfoKey,
-    UIKeyboardFrameEndUserInfoKey, UIKeyboardIsLocalUserInfoKey, UILayoutGuide,
-    UISceneActivationState, UIScreen, UITraitEnvironment, UIUserInterfaceStyle,
+    NSValueUIGeometryExtensions, UICoordinateSpace, UIEdgeInsets,
+    UIKeyboardAnimationDurationUserInfoKey, UIKeyboardFrameEndUserInfoKey,
+    UIKeyboardIsLocalUserInfoKey, UILayoutGuide, UISceneActivationState, UIScreen,
+    UITraitEnvironment, UIUserInterfaceStyle,
 };
 
 use super::{
@@ -147,9 +148,16 @@ impl Window {
 
     pub(super) fn safe_area_changed(&self) {
         let raw = self.view.safeAreaInsets();
-        let safe_area = convert::edges(raw);
+        let title_hidden = crate::mac_titlebar::title_hidden();
+        // On a Mac with the content under the hidden title bar, the band
+        // UIKit reports as top safe area is the content's top row
+        // (`crate::mac_titlebar`).
+        let safe_area = convert::edges(UIEdgeInsets {
+            top: crate::mac_titlebar::content_top_inset(title_hidden, raw.top),
+            ..raw
+        });
         let controls = convert::edges(crate::mac_titlebar::clear_traffic_lights(
-            crate::mac_titlebar::title_hidden(),
+            title_hidden,
             crate::layout_direction(),
             corner_region::sample(&self.view, raw),
         ));
