@@ -74,6 +74,13 @@ impl EditMenuDelegate {
             || EditMenuState::default().menu_for(identifier.as_deref()),
             |w| w.edit_menu.state.borrow().menu_for(identifier.as_deref()),
         );
+        #[cfg(all(target_os = "ios", target_abi = "sim"))]
+        crate::platform::qa_input::edit_menu_menu(
+            decision,
+            identifier
+                .as_deref()
+                .is_some_and(|id| id.starts_with(EDIT_MENU_IDENTIFIER_PREFIX)),
+        );
         let enabled = owner.as_ref().map_or([false; 2], |w| {
             [
                 w.text_input.editing_enabled(sel!(copy:)),
