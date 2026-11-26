@@ -46,10 +46,13 @@ mod view_class;
 #[cfg(test)]
 mod tests;
 
-use std::cell::{Cell, RefCell};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+};
 
 use gpui::{Bounds, Pixels, TextInputConfiguration};
-use objc2::{DefinedClass, MainThreadMarker, rc::Retained, runtime::Sel};
+use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, rc::Retained, runtime::Sel};
 use objc2_ui_kit::UIView;
 
 pub(crate) use self::keymap::{named_key_char, us_shifted};
@@ -66,6 +69,9 @@ pub(super) use view_class::GPUITextInputView as NativeEndpoint;
 pub(crate) struct TextInputView {
     view: RefCell<Retained<GPUITextInputView>>,
     pub(super) replacing: Cell<bool>,
+    /// The consumer's shortcuts bar, put on every view this one replaces too.
+    keyboard_bar: RefCell<crate::keyboard_bar::KeyboardBar>,
+    keyboard_bar_presses: Rc<RefCell<crate::keyboard_bar::PressQueue>>,
 }
 
 impl TextInputView {
@@ -89,7 +95,7 @@ impl TextInputView {
                 retired: old.ivars().target.client.identity,
                 replacement: successor.client,
             },
-            status: std::rc::Rc::new(Cell::new(Legacy::Pending)),
+            status: Rc::new(Cell::new(Legacy::Pending)),
         };
         self.finish_retirement(old, next, &receipt);
         // The new request's Window reservation remains held through terminal
@@ -115,6 +121,34 @@ impl TextInputView {
         Self {
             view: RefCell::new(GPUITextInputView::new(mtm, target)),
             replacing: Cell::new(false),
+            keyboard_bar: RefCell::default(),
+            keyboard_bar_presses: Rc::default(),
+        }
+    }
+
+    /// Shows `bar` on the shortcuts bar unless it is already there.
+    pub(crate) fn set_keyboard_bar(&self, bar: &crate::keyboard_bar::KeyboardBar) {
+        if *self.keyboard_bar.borrow() == *bar {
+            return;
+        }
+        *self.keyboard_bar.borrow_mut() = bar.clone();
+        let view = self.current();
+        self.apply_keyboard_bar(&view);
+    }
+
+    fn apply_keyboard_bar(&self, view: &GPUITextInputView) {
+        let bar = self.keyboard_bar.borrow().clone();
+        super::keyboard_bar::apply(view, &bar, &self.keyboard_bar_presses, view.mtm());
+    }
+
+    pub(crate) fn keyboard_bar_presses(&self) -> Rc<RefCell<crate::keyboard_bar::PressQueue>> {
+        Rc::clone(&self.keyboard_bar_presses)
+    }
+
+    /// The window closed: the press stream ends.
+    pub(crate) fn close_keyboard_bar(&self) {
+        if let Ok(mut presses) = self.keyboard_bar_presses.try_borrow_mut() {
+            presses.close();
         }
     }
 

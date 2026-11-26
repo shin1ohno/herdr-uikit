@@ -251,6 +251,49 @@ pub(crate) fn window_fills_screen(handle: AnyWindowHandle, _mtm: MainThreadMarke
         .is_some_and(|window| !window.state.borrow().closed && window.controller.hides_status_bar())
 }
 
+/// Shows `bar` on `handle`'s shortcuts bar (`crate::keyboard_bar`).
+pub(crate) fn set_keyboard_bar(
+    handle: AnyWindowHandle,
+    bar: &crate::keyboard_bar::KeyboardBar,
+    _mtm: MainThreadMarker,
+) -> bool {
+    let Some(window) = menu_window(handle) else {
+        return false;
+    };
+    if window.state.borrow().closed {
+        return false;
+    }
+    window.text_input.set_keyboard_bar(bar);
+    true
+}
+
+/// `handle`'s shortcuts bar press queue, `None` for a closed window.
+pub(crate) fn keyboard_bar_queue(
+    handle: AnyWindowHandle,
+    _mtm: MainThreadMarker,
+) -> Option<Rc<RefCell<crate::keyboard_bar::PressQueue>>> {
+    let window = menu_window(handle)?;
+    if window.state.borrow().closed {
+        return None;
+    }
+    Some(window.text_input.keyboard_bar_presses())
+}
+
+/// Where `handle`'s software keyboard is (`keyboard_placement`).
+pub(crate) fn keyboard_placement(
+    handle: AnyWindowHandle,
+    _mtm: MainThreadMarker,
+) -> super::KeyboardPlacement {
+    menu_window(handle).map_or(super::KeyboardPlacement::Hidden, |window| {
+        let state = window.state.borrow();
+        if state.closed {
+            super::KeyboardPlacement::Hidden
+        } else {
+            state.keyboard_placement
+        }
+    })
+}
+
 /// Windows front to back, as best UIKit reports scene order: UIKit has no
 /// z-order across scenes, so active scenes come first, then the rest by how
 /// recently each was active.

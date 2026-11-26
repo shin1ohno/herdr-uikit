@@ -100,6 +100,9 @@ pub(super) struct State {
     pub(super) is_active: bool,
     pub(super) keyboard: Keyboard,
     pub(super) keyboard_animation: Option<InsetAnimation>,
+    /// Where the software keyboard's last relevant frame notification put it
+    /// (`keyboard_placement`); a floating keyboard has no bottom inset.
+    pub(super) keyboard_placement: super::KeyboardPlacement,
     /// The focused element's text state after the last frame, or `None`
     /// while no element takes text (`frame`, `text_state`).
     pub(super) last_text_state: Option<TextState>,
@@ -150,6 +153,7 @@ impl State {
             is_active: false,
             keyboard: Keyboard::default(),
             keyboard_animation: None,
+            keyboard_placement: super::KeyboardPlacement::Hidden,
             last_text_state: None,
             modifiers: Modifiers::default(),
             mouse_position: Point::default(),

@@ -35,6 +35,8 @@ mod frame;
 pub(crate) mod input_diagnostics;
 mod input_target;
 mod keyboard;
+pub(crate) mod keyboard_bar;
+mod keyboard_placement;
 mod layout;
 mod lifecycle;
 pub(crate) mod native_inline_field;
@@ -69,6 +71,7 @@ use objc2_ui_kit::UIApplication;
 
 pub(crate) use self::direction::layout_direction_changed;
 pub(crate) use self::error::Error;
+pub use self::keyboard_placement::KeyboardPlacement;
 pub(crate) use self::native_retirement_request::{
     complete_native_retirement, interrupt_native_retirement, legacy_interrupt_native_retirement,
     native_input_origin, request_native_edit_retirement,
@@ -76,9 +79,9 @@ pub(crate) use self::native_retirement_request::{
 pub(crate) use self::pointer::set_cursor_style;
 pub(crate) use self::retirement::{retire_text_input_session, text_input_session_state};
 pub(crate) use self::scene::{
-    active_window, scene_activation_changed, scene_connected, scene_disconnected,
-    scene_geometry_changed, set_native_edit_availability, window_control_insets,
-    window_fills_screen, window_stack,
+    active_window, keyboard_bar_queue, keyboard_placement, scene_activation_changed,
+    scene_connected, scene_disconnected, scene_geometry_changed, set_keyboard_bar,
+    set_native_edit_availability, window_control_insets, window_fills_screen, window_stack,
 };
 pub(crate) use self::state::Window;
 #[cfg(target_abi = "sim")]

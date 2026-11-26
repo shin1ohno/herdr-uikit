@@ -290,6 +290,7 @@ impl Window {
         #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
         self.text_input
             .with_observation_registration(|registration| registration.remove());
+        self.text_input.close_keyboard_bar();
         pointer::clear_window(self);
         self.pointer.detach();
         self.stop_display_link();

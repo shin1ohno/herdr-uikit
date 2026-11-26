@@ -243,6 +243,30 @@ impl Window {
         self.force_frame();
     }
 
+    /// Records where the keyboard's frame notification puts it. Only the
+    /// placement can change while the inset stays 0 (a floating keyboard
+    /// shows or hides), so a change draws a frame of its own.
+    fn keyboard_placed(&self, screen: CGRect, keyboard: CGRect) {
+        let tuple = |rect: CGRect| {
+            (
+                rect.origin.x,
+                rect.origin.y,
+                rect.size.width,
+                rect.size.height,
+            )
+        };
+        let placement = super::keyboard_placement::placement(tuple(screen), tuple(keyboard));
+        let changed = {
+            let mut state = self.state.borrow_mut();
+            !state.closed
+                && std::mem::replace(&mut state.keyboard_placement, placement) != placement
+        };
+        if changed {
+            tracing::debug!(?placement, ?keyboard, "keyboard placement changed");
+            self.force_frame();
+        }
+    }
+
     /// A first-responder or input-view transition can leave the keyboard in
     /// place, with no frame notification. Reconcile after UIKit has applied
     /// that transition, even if only GPUI's content changed in the meantime.
@@ -279,6 +303,9 @@ impl Window {
         let relevant = self
             .keyboard_notification_context(notification)
             .is_relevant();
+        if relevant {
+            self.keyboard_placed(screen.bounds(), end_frame);
+        }
         let screen_matches = notification
             .object()
             .and_then(|object| object.downcast::<UIScreen>().ok())
