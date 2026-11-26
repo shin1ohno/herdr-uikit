@@ -85,6 +85,7 @@ impl Window {
             );
             view.addSubview(&text_view);
             text_input.attach_selection_display(&view);
+            let keyboard_probe = super::keyboard_probe::install(&view, mtm);
 
             Self {
                 callbacks: Callbacks::default(),
@@ -96,6 +97,7 @@ impl Window {
                 mtm,
                 pointer,
                 edit_menu,
+                keyboard_probe,
                 renderer: RefCell::new(renderer),
                 state: RefCell::new(State::new(bounds, scale_factor, title)),
                 text_input,

@@ -47,11 +47,22 @@ So a consumer that needs its keys in every state draws them itself while
   `Docked`, full width elsewhere `Undocked`, narrower `Floating`, empty or
   off screen `Hidden`. A change draws a frame, because a floating keyboard
   that shows or hides leaves the bottom inset at 0.
+- The frame alone is not enough. On the iPad Pro 13-inch (M5) Simulator,
+  after the floating frame UIKit posts one more Will/Did pair whose end frame
+  is `{{0, 1376}, {1032, 0}}` while the floating keyboard stays up. So the
+  window also reads a transparent probe subview's `keyboardLayoutGuide` with
+  `followsUndockedKeyboard` (`window/keyboard_probe.rs`): it keeps the
+  floating frame, and returns to the bottom safe area (`{{0, 1356}, {1032,
+  20}}`) when the keyboard is dismissed. `combine` reports the notification's
+  placement, except that `Hidden` with a floating guide is `Floating`. The
+  guide can lag the notification, so it is read again on the next
+  foreground-executor turn and on every layout pass.
 
 ## Tests
 
 - `tests/keyboard_placement.rs`, `tests/keyboard_bar_queue.rs`: host tests of
-  the classification (the Simulator's frames) and the queue.
+  the classification and `combine` (the Simulator's frame and guide
+  sequences) and the queue.
 - `tests/keyboard_bar_uikit.rs`: the UIKit objects `apply` builds (groups,
   identifiers, the selected state, the menu, the empty bar), on the
   Simulator's main thread outside UIApplicationMain.

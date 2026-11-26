@@ -209,6 +209,8 @@ impl Window {
     /// its frame notifications, and scene geometry changes with no keyboard
     /// movement. Offscreen and floating keyboards leave a zero-height guide.
     pub(super) fn sample_keyboard_layout(&self) {
+        // A layout pass also settles the probe's guide.
+        self.refresh_keyboard_placement();
         // SAFETY: UIView returns its UIKeyboardLayoutGuide, a UILayoutGuide
         // subclass. These selectors exist on the minimum supported iOS 26;
         // objc2's typed subclass needs the unused UITrackingLayoutGuide feature.
@@ -243,9 +245,11 @@ impl Window {
         self.force_frame();
     }
 
-    /// Records where the keyboard's frame notification puts it. Only the
-    /// placement can change while the inset stays 0 (a floating keyboard
-    /// shows or hides), so a change draws a frame of its own.
+    /// Records where the keyboard's frame notification puts it, and reports
+    /// the placement with the probe's guide (`keyboard_placement::combine`).
+    /// The guide can lag the notification by a run loop turn (it still shows
+    /// a floating keyboard that is going away), so it is read again on the
+    /// next turn.
     fn keyboard_placed(&self, screen: CGRect, keyboard: CGRect) {
         let tuple = |rect: CGRect| {
             (
@@ -255,14 +259,60 @@ impl Window {
                 rect.size.height,
             )
         };
-        let placement = super::keyboard_placement::placement(tuple(screen), tuple(keyboard));
+        let notified = super::keyboard_placement::placement(tuple(screen), tuple(keyboard));
+        {
+            let mut state = self.state.borrow_mut();
+            if state.closed {
+                return;
+            }
+            state.keyboard_notified = notified;
+        }
+        tracing::debug!(?notified, ?keyboard, "keyboard frame placement");
+        self.refresh_keyboard_placement();
+        let view = self.view.clone();
+        self.executor
+            .spawn(async move {
+                if let Some(window) = view.owner() {
+                    window.refresh_keyboard_placement();
+                }
+            })
+            .detach();
+    }
+
+    /// Combines the last notification with the guide now. Only the placement
+    /// can change while the inset stays 0 (a floating keyboard shows or
+    /// hides), so a change draws a frame of its own.
+    pub(super) fn refresh_keyboard_placement(&self) {
+        let (notified, ui_window) = {
+            let state = self.state.borrow();
+            if state.closed {
+                return;
+            }
+            (state.keyboard_notified, state.ui_window.clone())
+        };
+        let Some(ui_window) = ui_window else {
+            return;
+        };
+        let screen = ui_window.screen();
+        let bounds = screen.bounds();
+        let screen_rect = (
+            bounds.origin.x,
+            bounds.origin.y,
+            bounds.size.width,
+            bounds.size.height,
+        );
+        let guide = super::keyboard_placement::placement(
+            screen_rect,
+            super::keyboard_probe::keyboard_in_screen(&self.keyboard_probe, &screen),
+        );
+        let placement = super::keyboard_placement::combine(notified, guide);
         let changed = {
             let mut state = self.state.borrow_mut();
             !state.closed
                 && std::mem::replace(&mut state.keyboard_placement, placement) != placement
         };
         if changed {
-            tracing::debug!(?placement, ?keyboard, "keyboard placement changed");
+            tracing::debug!(?placement, ?notified, ?guide, "keyboard placement changed");
             self.force_frame();
         }
     }

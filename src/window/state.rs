@@ -51,6 +51,8 @@ pub(crate) struct Window {
     pub(super) mtm: MainThreadMarker,
     pub(super) pointer: Pointer,
     pub(super) edit_menu: super::edit_menu::EditMenu,
+    /// Follows undocked keyboards for `keyboard_placement` (`keyboard_probe`).
+    pub(super) keyboard_probe: Retained<objc2_ui_kit::UIView>,
     pub(super) renderer: RefCell<Renderer>,
     pub(super) state: RefCell<State>,
     pub(super) text_input: TextInputView,
@@ -103,6 +105,9 @@ pub(super) struct State {
     /// Where the software keyboard's last relevant frame notification put it
     /// (`keyboard_placement`); a floating keyboard has no bottom inset.
     pub(super) keyboard_placement: super::KeyboardPlacement,
+    /// What the last relevant frame notification alone said; combined with
+    /// the probe's guide into `keyboard_placement`.
+    pub(super) keyboard_notified: super::KeyboardPlacement,
     /// The focused element's text state after the last frame, or `None`
     /// while no element takes text (`frame`, `text_state`).
     pub(super) last_text_state: Option<TextState>,
@@ -154,6 +159,7 @@ impl State {
             keyboard: Keyboard::default(),
             keyboard_animation: None,
             keyboard_placement: super::KeyboardPlacement::Hidden,
+            keyboard_notified: super::KeyboardPlacement::Hidden,
             last_text_state: None,
             modifiers: Modifiers::default(),
             mouse_position: Point::default(),
