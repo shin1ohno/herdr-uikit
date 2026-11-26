@@ -47,6 +47,9 @@ fn guide(probe: &UIView) -> Retained<UILayoutGuide> {
 /// height). A hidden keyboard leaves a full-width guide on the bottom safe
 /// area.
 pub(super) fn keyboard_in_screen(probe: &UIView, screen: &UIScreen) -> (f64, f64, f64, f64) {
+    // Nothing else lays the probe out, so its guide's frame is resolved
+    // here; the probe is a leaf, and UIKit skips a pass already running.
+    probe.layoutIfNeeded();
     let frame = guide(probe).layoutFrame();
     let rect: CGRect = probe.convertRect_toCoordinateSpace(frame, &screen.coordinateSpace());
     (
