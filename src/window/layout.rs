@@ -207,7 +207,10 @@ impl Window {
     /// The layout guide is UIKit's window-local keyboard geometry. It also
     /// catches a keyboard that was already visible before this view observed
     /// its frame notifications, and scene geometry changes with no keyboard
-    /// movement. Offscreen and floating keyboards leave a zero-height guide.
+    /// movement. The guide follows undocked keyboards too
+    /// (`followsUndockedKeyboard`), for `keyboard_placement`; a floating or
+    /// undocked keyboard still makes no bottom inset beyond the safe area,
+    /// as the guide gave before it followed them.
     pub(super) fn sample_keyboard_layout(&self) {
         // SAFETY: UIView returns its UIKeyboardLayoutGuide, a UILayoutGuide
         // subclass. These selectors exist on the minimum supported iOS 26;
@@ -219,8 +222,21 @@ impl Window {
             // SAFETY: as above; the setter takes an Objective-C BOOL.
             let _: () = unsafe { msg_send![&*guide, setUsesBottomSafeArea: false] };
         }
+        // SAFETY: as above (iOS 15 selectors); the setter takes a BOOL.
+        let follows: bool = unsafe { msg_send![&*guide, followsUndockedKeyboard] };
+        if !follows {
+            // SAFETY: as above.
+            let _: () = unsafe { msg_send![&*guide, setFollowsUndockedKeyboard: true] };
+        }
         let keyboard = guide.layoutFrame();
-        let target = keyboard_geometry::bottom_inset(self.view.bounds(), keyboard) as f32;
+        let placement = self.guide_placement(keyboard);
+        let target = match placement {
+            super::KeyboardPlacement::Floating | super::KeyboardPlacement::Undocked => {
+                self.view.safeAreaInsets().bottom as f32
+            }
+            _ => keyboard_geometry::bottom_inset(self.view.bounds(), keyboard) as f32,
+        };
+        self.keyboard_guided(placement);
         let insets = {
             let mut state = self.state.borrow_mut();
             // The notification's target is animated on display-link ticks;
@@ -241,6 +257,97 @@ impl Window {
         );
         call(&self.callbacks.insets_changed, |callback| callback(insets));
         self.force_frame();
+    }
+
+    /// Where the guide's `keyboard` (in this view's coordinates) is on the
+    /// window's screen; `Hidden` before the window has one.
+    fn guide_placement(&self, keyboard: CGRect) -> super::KeyboardPlacement {
+        let ui_window = self.state.borrow().ui_window.clone();
+        let Some(ui_window) = ui_window else {
+            return super::KeyboardPlacement::Hidden;
+        };
+        let screen = ui_window.screen();
+        let rect = self
+            .view
+            .convertRect_toCoordinateSpace(keyboard, &screen.coordinateSpace());
+        let bounds = screen.bounds();
+        let tuple = |rect: CGRect| {
+            (
+                rect.origin.x,
+                rect.origin.y,
+                rect.size.width,
+                rect.size.height,
+            )
+        };
+        self.state.borrow_mut().keyboard_sample.guide = tuple(rect);
+        let safe_bottom = self.view.safeAreaInsets().bottom;
+        super::keyboard_placement::guide_placement(tuple(bounds), tuple(rect), safe_bottom)
+    }
+
+    /// Records where the keyboard's frame notification puts it, and reports
+    /// the placement with the guide's (`keyboard_placement::combine`).
+    fn keyboard_placed(&self, screen: CGRect, keyboard: CGRect) {
+        let tuple = |rect: CGRect| {
+            (
+                rect.origin.x,
+                rect.origin.y,
+                rect.size.width,
+                rect.size.height,
+            )
+        };
+        let notified = super::keyboard_placement::placement(tuple(screen), tuple(keyboard));
+        {
+            let mut state = self.state.borrow_mut();
+            if state.closed {
+                return;
+            }
+            state.keyboard_notified = notified;
+            state.keyboard_sample.end = tuple(keyboard);
+        }
+        tracing::debug!(?notified, ?keyboard, "keyboard frame placement");
+        self.report_keyboard_placement();
+        // UIKit moves the guide after this notification; lay out on the
+        // next turn so the guide's placement is read again.
+        let view = self.view.clone();
+        self.executor
+            .spawn(async move {
+                if let Some(window) = view.owner() {
+                    window.reconcile_keyboard_layout();
+                }
+            })
+            .detach();
+    }
+
+    /// Records the guide's placement from a layout pass and reports.
+    fn keyboard_guided(&self, guide: super::KeyboardPlacement) {
+        {
+            let mut state = self.state.borrow_mut();
+            if state.closed {
+                return;
+            }
+            state.keyboard_guide = guide;
+        }
+        self.report_keyboard_placement();
+    }
+
+    /// Combines the last notification with the guide. Only the placement
+    /// can change while the inset stays the same (a floating keyboard shows
+    /// or hides), so a change draws a frame of its own.
+    fn report_keyboard_placement(&self) {
+        let (placement, notified, guide, changed) = {
+            let mut state = self.state.borrow_mut();
+            if state.closed {
+                return;
+            }
+            let (notified, guide) = (state.keyboard_notified, state.keyboard_guide);
+            let placement = super::keyboard_placement::combine(notified, guide);
+            let changed = std::mem::replace(&mut state.keyboard_placement, placement) != placement;
+            (placement, notified, guide, changed)
+        };
+        if changed {
+            tracing::debug!(?placement, ?notified, ?guide, "keyboard placement changed");
+            self.force_frame();
+        }
     }
 
     /// A first-responder or input-view transition can leave the keyboard in
@@ -279,6 +386,14 @@ impl Window {
         let relevant = self
             .keyboard_notification_context(notification)
             .is_relevant();
+        {
+            let mut state = self.state.borrow_mut();
+            state.keyboard_sample.notifications += 1;
+            state.keyboard_sample.relevant += u32::from(relevant);
+        }
+        if relevant {
+            self.keyboard_placed(screen.bounds(), end_frame);
+        }
         let screen_matches = notification
             .object()
             .and_then(|object| object.downcast::<UIScreen>().ok())

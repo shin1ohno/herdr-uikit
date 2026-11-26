@@ -33,6 +33,7 @@ mod display_link;
 mod error;
 mod gpui_call;
 mod key_routing;
+mod keyboard_bar;
 mod layout_direction;
 mod mac_titlebar;
 mod menu;
@@ -55,6 +56,12 @@ mod window_controls;
 
 pub use background_task::BackgroundTask;
 pub use error::{Error, Result};
+#[cfg(target_abi = "sim")]
+pub use keyboard_bar::keyboard_placement_sample;
+pub use keyboard_bar::{
+    KeyboardBar, KeyboardBarItem, KeyboardBarMenuEntry, KeyboardBarPresses, KeyboardPlacement,
+    keyboard_bar_presses, keyboard_placement, set_keyboard_bar,
+};
 pub use layout_direction::{LayoutDirection, layout_direction, set_layout_direction};
 pub use menu::set_menu_subtitles;
 pub use native_edit_action::{NativeEditAction, native_edit_action};
@@ -124,6 +131,13 @@ pub fn application() -> gpui::Application {
 #[doc(hidden)]
 pub fn test_native_edit_menu_contract() {
     window::edit_menu::tests::run();
+}
+
+/// Simulator contract runner for the shortcuts bar's UIKit objects.
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub fn test_keyboard_bar_contract() {
+    window::keyboard_bar::contract::run();
 }
 
 /// Simulator contract runner for the inline field's UIKit objects.

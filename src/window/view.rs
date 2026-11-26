@@ -435,7 +435,7 @@ impl GpuiView {
     }
 
     /// The window this view draws, while it is open.
-    fn owner(&self) -> Option<Rc<Window>> {
+    pub(super) fn owner(&self) -> Option<Rc<Window>> {
         self.ivars().window.upgrade()
     }
 

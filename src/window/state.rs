@@ -100,6 +100,17 @@ pub(super) struct State {
     pub(super) is_active: bool,
     pub(super) keyboard: Keyboard,
     pub(super) keyboard_animation: Option<InsetAnimation>,
+    /// Where the software keyboard's last relevant frame notification put it
+    /// (`keyboard_placement`); a floating keyboard has no bottom inset.
+    pub(super) keyboard_placement: super::KeyboardPlacement,
+    /// What the last relevant frame notification alone said, and where the
+    /// drawing view's keyboard guide (which follows undocked keyboards) put
+    /// the keyboard at the last layout; combined into `keyboard_placement`.
+    pub(super) keyboard_notified: super::KeyboardPlacement,
+    pub(super) keyboard_guide: super::KeyboardPlacement,
+    /// What the placement was made from, for Simulator QA
+    /// (`keyboard_placement_sample`).
+    pub(super) keyboard_sample: KeyboardSample,
     /// The focused element's text state after the last frame, or `None`
     /// while no element takes text (`frame`, `text_state`).
     pub(super) last_text_state: Option<TextState>,
@@ -122,6 +133,17 @@ pub(super) struct State {
     pub(super) ui_window: Option<Retained<UIWindow>>,
     pub(super) visibility: WindowVisibility,
     pub(super) window_controls: Edges<Pixels>,
+}
+
+/// The inputs of `keyboard_placement`: frame notifications seen and taken
+/// as this window's, the last end frame, and the keyboard guide's frame (all
+/// in screen points).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct KeyboardSample {
+    pub(crate) notifications: u32,
+    pub(crate) relevant: u32,
+    pub(crate) end: (f64, f64, f64, f64),
+    pub(crate) guide: (f64, f64, f64, f64),
 }
 
 impl State {
@@ -150,6 +172,10 @@ impl State {
             is_active: false,
             keyboard: Keyboard::default(),
             keyboard_animation: None,
+            keyboard_placement: super::KeyboardPlacement::Hidden,
+            keyboard_notified: super::KeyboardPlacement::Hidden,
+            keyboard_guide: super::KeyboardPlacement::Hidden,
+            keyboard_sample: KeyboardSample::default(),
             last_text_state: None,
             modifiers: Modifiers::default(),
             mouse_position: Point::default(),
