@@ -280,7 +280,8 @@ impl Window {
             )
         };
         self.state.borrow_mut().keyboard_sample.guide = tuple(rect);
-        super::keyboard_placement::placement(tuple(bounds), tuple(rect))
+        let safe_bottom = self.view.safeAreaInsets().bottom;
+        super::keyboard_placement::guide_placement(tuple(bounds), tuple(rect), safe_bottom)
     }
 
     /// Records where the keyboard's frame notification puts it, and reports

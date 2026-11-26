@@ -62,16 +62,34 @@ pub fn placement(
     }
 }
 
-/// The placement to report from the last frame notification's (`notified`)
-/// and the drawing view's undocked-following keyboard guide's (`guide`,
-/// `layout.rs` `sample_keyboard_layout`). The
-/// notification decides, except that a notification saying `Hidden` while
-/// the guide follows a floating keyboard is that keyboard: UIKit ends the
-/// float with a zero-tall frame while the keyboard stays up. A guide that
-/// lags behind a real frame never overrides it.
+/// The placement of the drawing view's keyboard guide, which follows
+/// undocked keyboards: `guide` in screen points, over a window whose bottom
+/// safe area is `safe_bottom` points. With no keyboard up the guide is a
+/// full-width strip as tall as that safe area, which is `Hidden`.
+pub fn guide_placement(
+    screen: (f64, f64, f64, f64),
+    guide: (f64, f64, f64, f64),
+    safe_bottom: f64,
+) -> KeyboardPlacement {
+    match placement(screen, guide) {
+        KeyboardPlacement::Docked if guide.3 <= safe_bottom.max(0.0) + TOLERANCE => {
+            KeyboardPlacement::Hidden
+        }
+        placement => placement,
+    }
+}
+
+/// The placement to report from the last relevant frame notification's
+/// (`notified`) and the keyboard guide's (`guide`, `guide_placement`). A
+/// notification with a keyboard frame decides. One saying `Hidden` defers to
+/// the guide: UIKit ends a float with a zero-tall frame while the keyboard
+/// stays up, and a floating keyboard's own frame notification can be another
+/// screen object's (not taken as this window's). A guide that lags a real
+/// frame never overrides it; after a hide, the next layout pass brings the
+/// guide back to the safe area.
 pub fn combine(notified: KeyboardPlacement, guide: KeyboardPlacement) -> KeyboardPlacement {
-    match (notified, guide) {
-        (KeyboardPlacement::Hidden, KeyboardPlacement::Floating) => KeyboardPlacement::Floating,
-        (notified, _) => notified,
+    match notified {
+        KeyboardPlacement::Hidden => guide,
+        notified => notified,
     }
 }

@@ -5,7 +5,7 @@
 #[path = "../src/window/keyboard_placement.rs"]
 mod keyboard_placement;
 
-use keyboard_placement::{KeyboardPlacement, TOLERANCE, combine, placement};
+use keyboard_placement::{KeyboardPlacement, TOLERANCE, combine, guide_placement, placement};
 
 const SCREEN: (f64, f64, f64, f64) = (0.0, 0.0, 834.0, 1210.0);
 
@@ -96,16 +96,17 @@ fn nothing_was_reported_yet() {
 }
 
 /// The sequences the iPadOS 27.2 Simulator posted on an iPad Pro 13-inch (M5),
-/// 1032 x 1376 points (yebisu#229 spike runs 8 and 9): each frame
-/// notification's end frame, and the undocked-following guide read in it.
+/// 1032 x 1376 points, 20 pt bottom safe area (yebisu#229 spike runs 8 and 9,
+/// yebisu keyboard-bar-check run 6): each frame notification's end frame,
+/// and the drawing view's undocked-following guide.
 #[test]
 fn the_guide_keeps_a_floating_keyboard_the_last_notification_drops() {
     let screen = (0.0, 0.0, 1032.0, 1376.0);
     let floating = (349.0, 877.5, 334.0, 335.0);
     let docked = (0.0, 973.0, 1032.0, 403.0);
     let zero_at_bottom = (0.0, 1376.0, 1032.0, 0.0);
-    let hidden_guide = (0.0, 1356.0, 1032.0, 20.0);
-    let report = |end, guide| combine(placement(screen, end), placement(screen, guide));
+    let safe_area = (0.0, 1356.0, 1032.0, 20.0);
+    let report = |end, guide| combine(placement(screen, end), guide_placement(screen, guide, 20.0));
     // Docked, then pinched: the floating frame, then a zero-tall one.
     assert_eq!(report(docked, docked), KeyboardPlacement::Docked);
     assert_eq!(report(floating, floating), KeyboardPlacement::Floating);
@@ -113,20 +114,36 @@ fn the_guide_keeps_a_floating_keyboard_the_last_notification_drops() {
         report(zero_at_bottom, floating),
         KeyboardPlacement::Floating
     );
-    // The floating keyboard resigns: an empty frame; the guide returns to
-    // the bottom safe area a turn later.
+    // The floating keyboard resigns: an empty frame, the guide on the safe area.
     assert_eq!(
-        report((0.0, 0.0, 0.0, 0.0), hidden_guide),
+        report((0.0, 0.0, 0.0, 0.0), safe_area),
         KeyboardPlacement::Hidden
     );
     // A docked keyboard hides.
-    assert_eq!(
-        report(zero_at_bottom, hidden_guide),
-        KeyboardPlacement::Hidden
-    );
+    assert_eq!(report(zero_at_bottom, safe_area), KeyboardPlacement::Hidden);
     // Pinched back to docked while the guide still shows the float: the
     // notification's real frame wins.
     assert_eq!(report(docked, floating), KeyboardPlacement::Docked);
+    // Relaunched docked after a zero-tall last frame (run 6's redock).
+    assert_eq!(report(zero_at_bottom, docked), KeyboardPlacement::Docked);
+}
+
+#[test]
+fn a_guide_no_taller_than_the_safe_area_is_no_keyboard() {
+    let screen = (0.0, 0.0, 1032.0, 1376.0);
+    let strip = (0.0, 1356.0, 1032.0, 20.0);
+    assert_eq!(
+        guide_placement(screen, strip, 20.0),
+        KeyboardPlacement::Hidden
+    );
+    assert_eq!(
+        guide_placement(screen, strip, 0.0),
+        KeyboardPlacement::Docked
+    );
+    assert_eq!(
+        guide_placement(screen, (0.0, 1009.0, 1032.0, 367.0), 20.0),
+        KeyboardPlacement::Docked
+    );
 }
 
 #[test]
@@ -134,11 +151,7 @@ fn only_a_hidden_notification_defers_to_the_guide() {
     use KeyboardPlacement::*;
     for notified in [Hidden, Docked, Undocked, Floating] {
         for guide in [Hidden, Docked, Undocked, Floating] {
-            let expected = if notified == Hidden && guide == Floating {
-                Floating
-            } else {
-                notified
-            };
+            let expected = if notified == Hidden { guide } else { notified };
             assert_eq!(combine(notified, guide), expected, "{notified:?} {guide:?}");
         }
     }

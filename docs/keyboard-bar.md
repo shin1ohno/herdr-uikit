@@ -49,22 +49,28 @@ So a consumer that needs its keys in every state draws them itself while
   that shows or hides leaves the bottom inset at 0.
 - The frame alone is not enough. On the iPad Pro 13-inch (M5) Simulator,
   after the floating frame UIKit posts one more Will/Did pair whose end frame
-  is `{{0, 1376}, {1032, 0}}` while the floating keyboard stays up. So the
-  window also reads a transparent probe subview's `keyboardLayoutGuide` with
-  `followsUndockedKeyboard` (`window/keyboard_probe.rs`): it keeps the
-  floating frame, and returns to the bottom safe area (`{{0, 1356}, {1032,
-  20}}`) when the keyboard is dismissed. `combine` reports the notification's
-  placement, except that `Hidden` with a floating guide is `Floating`. The
-  guide can lag the notification, so it is read again on the next
-  foreground-executor turn and on every layout pass.
+  is `{{0, 1376}, {1032, 0}}` while the floating keyboard stays up, and the
+  floating frame's own notification can carry another `UIScreen` object, so
+  the window does not take it as its own (yebisu's run: 5 notifications, 3
+  taken). So the drawing view's own `keyboardLayoutGuide` follows undocked
+  keyboards (`followsUndockedKeyboard`); a probe subview's guide did not
+  follow them. `guide_placement` classifies the guide at each layout pass;
+  a guide no taller than the bottom safe area is `Hidden`. `combine` reports
+  the notification's placement, except that `Hidden` defers to the guide.
+  The next foreground-executor turn after a frame notification lays the
+  view out again, so a lagging guide is read again.
+- The bottom inset keeps its policy: a floating or undocked guide makes no
+  inset beyond the bottom safe area, as the guide gave before it followed
+  undocked keyboards.
 
 ## Tests
 
 - `tests/keyboard_placement.rs`, `tests/keyboard_bar_queue.rs`: host tests of
-  the classification and `combine` (the Simulator's frame and guide
-  sequences) and the queue.
+  the classification, `guide_placement` and `combine` (the Simulator's
+  frame and guide sequences) and the queue.
 - `tests/keyboard_bar_uikit.rs`: the UIKit objects `apply` builds (groups,
   identifiers, the selected state, the menu, the empty bar), on the
   Simulator's main thread outside UIApplicationMain.
 - Whether UIKit draws the bar in each state, and that a tap reaches the
-  consumer, is yebisu's Simulator E2E and device checks.
+  consumer, is yebisu's Simulator E2E (`scripts/ios/keyboard-bar-check.py`,
+  which also reads `keyboard_placement_sample`) and device checks.
