@@ -86,19 +86,21 @@ def main():
     out.mkdir(parents=True)
     log = (out / 'run.log').open('w')
     bundle = f'be.ohno.herdruikit.{args.example.replace("_", "")}'
-    restores = []
-    for spec in args.mutate:
-        relative, before, after = json.loads(spec)
-        path = ROOT / relative
-        original = path.read_bytes()
-        text = original.decode()
-        if text.count(before) != 1:
-            sys.exit(f'mutation anchor not unique in {relative}: {before!r}')
-        restores.append((path, original))
-        path.write_text(text.replace(before, after))
-        log.write(f'MUTATION {relative} sha256={hashlib.sha256(original).hexdigest()} {before!r} -> {after!r}\n')
+    # Bytes of each file as first seen: a second edit of one file must not
+    # record the first edit as the file's original (herdr-uikit#27).
+    originals = {}
     udid = None
     try:
+        for spec in args.mutate:
+            relative, before, after = json.loads(spec)
+            path = ROOT / relative
+            current = path.read_bytes()
+            originals.setdefault(path, current)
+            text = current.decode()
+            if text.count(before) != 1:
+                sys.exit(f'mutation anchor not unique in {relative}: {before!r}')
+            path.write_text(text.replace(before, after))
+            log.write(f'MUTATION {relative} sha256={hashlib.sha256(current).hexdigest()} {before!r} -> {after!r}\n')
         run(log, 'cargo', 'build', '--locked', '--features', 'test-support', '--example', args.example,
             '--target', 'aarch64-apple-ios-sim')
         app = out / f'{args.example}.app'
@@ -160,10 +162,11 @@ def main():
         if not ok:
             sys.exit(1)
     finally:
-        for path, original in restores:
+        for path, original in originals.items():
             path.write_bytes(original)
             if path.read_bytes() != original:
                 print(f'RESTORE FAILED {path}', flush=True)
+                log.write(f'RESTORE FAILED {path}\n')
         if udid:
             subprocess.run(['xcrun', 'simctl', 'shutdown', udid], check=False)
             subprocess.run(['xcrun', 'simctl', 'delete', udid], check=False)

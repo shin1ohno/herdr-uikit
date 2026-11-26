@@ -66,8 +66,7 @@ UIKIT = [
      [(CONTROLLER, '        overlay.setUserInteractionEnabled(true);', '        overlay.setUserInteractionEnabled(false);')],
      'outside-tap-dismissed'),
     # `selectAll:` alone makes a UITextField first responder, so the select
-    # goes too: what is left is `Opened` for a field never acquired. One edit:
-    # check-native-search.py restores two edits of one file in the wrong order.
+    # goes too: what is left is `Opened` for a field never acquired.
     ('opened-before-acquire',
      [(PRESENT, '            let focused = window.acquire_field(presented.field_view());\n'
                 '            if focused && select_all {\n                presented.select_all();\n            }',
