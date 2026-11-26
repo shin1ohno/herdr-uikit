@@ -109,7 +109,9 @@ pub use window::input_diagnostics::{CODES as DIAGNOSTIC_CODES, TARGET as DIAGNOS
 #[cfg(feature = "test-support")]
 #[doc(hidden)]
 pub use window::retirement_probe;
-pub use window_controls::{traffic_lights_over_content, window_control_insets};
+pub use window_controls::{
+    traffic_lights_over_content, window_control_insets, window_fills_screen,
+};
 
 /// The GPUI application on iPadOS, the counterpart of
 /// `gpui_platform::application()` on desktop targets.

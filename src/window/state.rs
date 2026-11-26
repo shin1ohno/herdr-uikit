@@ -23,7 +23,7 @@ use gpui::{
 use objc2::{MainThreadMarker, rc::Retained};
 use objc2_foundation::NSSet;
 use objc2_quartz_core::CALayer;
-use objc2_ui_kit::{UIPress, UIViewController, UIWindow, UIWindowScene};
+use objc2_ui_kit::{UIPress, UIWindow, UIWindowScene};
 
 use super::{
     frame::InsetAnimation,
@@ -38,7 +38,9 @@ use crate::{display_link::DisplayLink, renderer::Renderer};
 
 pub(crate) struct Window {
     pub(super) callbacks: Callbacks,
-    pub(super) controller: Retained<UIViewController>,
+    /// The root view controller; it hides the status bar while the window
+    /// fills its screen (`root_controller`).
+    pub(super) controller: Retained<super::root_controller::RootController>,
     /// `None` only until `open` installs it, and again after close.
     pub(super) display_link: RefCell<Option<DisplayLink>>,
     pub(super) executor: ForegroundExecutor,

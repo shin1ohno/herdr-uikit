@@ -21,9 +21,7 @@ use gpui::{
 use objc2::{MainThreadMarker, MainThreadOnly, rc::Retained, sel};
 use objc2_foundation::{NSNotification, NSObjectProtocol, NSString};
 use objc2_quartz_core::CALayer;
-use objc2_ui_kit::{
-    UISceneActivationState, UIViewAutoresizing, UIViewController, UIWindow, UIWindowScene,
-};
+use objc2_ui_kit::{UISceneActivationState, UIViewAutoresizing, UIWindow, UIWindowScene};
 
 use super::{
     convert,
@@ -73,7 +71,7 @@ impl Window {
             let edit_menu = super::edit_menu::EditMenu::new(&view, window.clone(), mtm);
             view.observe_keyboard();
 
-            let controller = UIViewController::new(mtm);
+            let controller = super::root_controller::RootController::new(mtm);
             controller.setView(Some(&view));
 
             let text_input = TextInputView::new(mtm, InputTarget::new(window.clone()));
