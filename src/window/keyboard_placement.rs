@@ -4,7 +4,7 @@
 //! from a hidden keyboard, and UIKit shows no shortcuts bar on a floating
 //! keyboard (yebisu#229: measured on the iPadOS 27.2 Simulator).
 //!
-//! The frame alone is not enough: see `combine` and `keyboard_probe`.
+//! The frame alone is not enough: see `combine`.
 //!
 //! Plain arithmetic in points, with no UIKit types, so host tests can run it
 //! (`tests/keyboard_placement.rs`).
@@ -63,7 +63,8 @@ pub fn placement(
 }
 
 /// The placement to report from the last frame notification's (`notified`)
-/// and the undocked-following guide's (`guide`, `keyboard_probe`). The
+/// and the drawing view's undocked-following keyboard guide's (`guide`,
+/// `layout.rs` `sample_keyboard_layout`). The
 /// notification decides, except that a notification saying `Hidden` while
 /// the guide follows a floating keyboard is that keyboard: UIKit ends the
 /// float with a zero-tall frame while the keyboard stays up. A guide that

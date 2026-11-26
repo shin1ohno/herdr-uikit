@@ -285,8 +285,11 @@ pub(crate) fn keyboard_placement_sample(handle: AnyWindowHandle) -> Option<Strin
     let window = menu_window(handle)?;
     let state = window.state.borrow();
     Some(format!(
-        "{:?} notified={:?} {:?}",
-        state.keyboard_placement, state.keyboard_notified, state.keyboard_sample
+        "{:?} notified={:?} guide={:?} {:?}",
+        state.keyboard_placement,
+        state.keyboard_notified,
+        state.keyboard_guide,
+        state.keyboard_sample
     ))
 }
 

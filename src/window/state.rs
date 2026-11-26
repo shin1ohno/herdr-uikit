@@ -51,8 +51,6 @@ pub(crate) struct Window {
     pub(super) mtm: MainThreadMarker,
     pub(super) pointer: Pointer,
     pub(super) edit_menu: super::edit_menu::EditMenu,
-    /// Follows undocked keyboards for `keyboard_placement` (`keyboard_probe`).
-    pub(super) keyboard_probe: Retained<objc2_ui_kit::UIView>,
     pub(super) renderer: RefCell<Renderer>,
     pub(super) state: RefCell<State>,
     pub(super) text_input: TextInputView,
@@ -105,9 +103,11 @@ pub(super) struct State {
     /// Where the software keyboard's last relevant frame notification put it
     /// (`keyboard_placement`); a floating keyboard has no bottom inset.
     pub(super) keyboard_placement: super::KeyboardPlacement,
-    /// What the last relevant frame notification alone said; combined with
-    /// the probe's guide into `keyboard_placement`.
+    /// What the last relevant frame notification alone said, and where the
+    /// drawing view's keyboard guide (which follows undocked keyboards) put
+    /// the keyboard at the last layout; combined into `keyboard_placement`.
     pub(super) keyboard_notified: super::KeyboardPlacement,
+    pub(super) keyboard_guide: super::KeyboardPlacement,
     /// What the placement was made from, for Simulator QA
     /// (`keyboard_placement_sample`).
     pub(super) keyboard_sample: KeyboardSample,
@@ -136,7 +136,7 @@ pub(super) struct State {
 }
 
 /// The inputs of `keyboard_placement`: frame notifications seen and taken
-/// as this window's, the last end frame, and the probe guide's frame (all
+/// as this window's, the last end frame, and the keyboard guide's frame (all
 /// in screen points).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct KeyboardSample {
@@ -174,6 +174,7 @@ impl State {
             keyboard_animation: None,
             keyboard_placement: super::KeyboardPlacement::Hidden,
             keyboard_notified: super::KeyboardPlacement::Hidden,
+            keyboard_guide: super::KeyboardPlacement::Hidden,
             keyboard_sample: KeyboardSample::default(),
             last_text_state: None,
             modifiers: Modifiers::default(),
