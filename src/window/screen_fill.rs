@@ -1,9 +1,14 @@
 //! Whether a window fills its screen: full screen, or an iPadOS 26 window the
-//! user maximized. Such a window hides the OS status bar (owner decision for
-//! yebisu#221, 2026-11-26): in an iPadOS 26 window the status bar is drawn
-//! over the window's top edge, so with the window filling the screen its time
-//! and date cover the app's top row. A smaller window, one on a Mac and one
-//! not yet laid out keep the status bar.
+//! user maximized, and whether a window hides the OS status bar.
+//!
+//! #37 hid the status bar while the window filled its screen (owner decision
+//! for yebisu#221, 2026-11-26). On iPadOS 27 that took the menu bar's touch
+//! path with it: the menu bar opens from the app's name in the status bar,
+//! and in full screen no top-edge swipe or tap brought a hidden status bar
+//! back (yebisu#242, iOS 27.2 Simulator, 2026-11-27). So the status bar stays
+//! (`hides_status_bar`); an app keeps its top row below it through the top
+//! safe area, which UIKit reports with the status bar shown. The fill itself
+//! is still reported to apps (`window_fills_screen`).
 //!
 //! `UIWindowScene.isFullScreen` exists only on Mac Catalyst (UIKit
 //! `UIWindowScene.h`, iOS 27.2 SDK), so the sizes are compared instead.
@@ -28,4 +33,11 @@ pub fn fills_screen(window: (f64, f64), screen: (f64, f64), on_mac: bool) -> boo
         return false;
     }
     (window.0 - screen.0).abs() <= TOLERANCE && (window.1 - screen.1).abs() <= TOLERANCE
+}
+
+/// Whether a window hides the OS status bar: never, whether it fills its
+/// screen or not (yebisu#242 option B). The status bar holds the app's name,
+/// the touch path to the iPadOS 27 menu bar.
+pub fn hides_status_bar(_fills_screen: bool) -> bool {
+    false
 }

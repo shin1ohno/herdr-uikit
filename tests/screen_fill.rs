@@ -1,10 +1,24 @@
-//! Host tests for whether a window fills its screen (std only). The window
-//! hides the status bar exactly when `fills_screen` is true
-//! (`src/window/root_controller.rs`, sampled in `src/window/layout.rs`).
+//! Host tests for whether a window fills its screen (std only), and whether
+//! it hides the status bar (`hides_status_bar`, answered by
+//! `src/window/root_controller.rs`, sampled in `src/window/layout.rs`).
 #[path = "../src/window/screen_fill.rs"]
 mod screen_fill;
 
-use screen_fill::{TOLERANCE, fills_screen};
+use screen_fill::{TOLERANCE, fills_screen, hides_status_bar};
+
+/// yebisu#242: a window that fills its screen keeps the status bar, whose
+/// app name is the touch path to the iPadOS 27 menu bar; so does any other.
+#[test]
+fn no_window_hides_the_status_bar() {
+    for window in [SCREEN, (1467.0, 750.0), (SCREEN.0 / 2.0, SCREEN.1)] {
+        for on_mac in [false, true] {
+            let fills = fills_screen(window, SCREEN, on_mac);
+            assert!(!hides_status_bar(fills), "{window:?} on_mac={on_mac}");
+        }
+    }
+    assert!(fills_screen(SCREEN, SCREEN, false));
+    assert!(!hides_status_bar(true));
+}
 
 /// An iPad Pro 13-inch (M5) in landscape, in points.
 const SCREEN: (f64, f64) = (1376.0, 1032.0);

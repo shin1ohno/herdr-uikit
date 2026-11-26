@@ -147,11 +147,10 @@ impl Window {
     }
 
     pub(super) fn safe_area_changed(&self) {
-        // A window that fills its screen hides the status bar; the safe area
-        // read below already reflects a status bar UIKit has hidden.
-        let fill_changed = self
-            .controller
-            .set_hides_status_bar(self.sample_fills_screen());
+        // Whether the window fills its screen, for apps (`window_fills_screen`);
+        // the status bar stays (`screen_fill::hides_status_bar`), so the safe
+        // area read below keeps the app's top row below it.
+        let fill_changed = self.controller.set_fills_screen(self.sample_fills_screen());
         let raw = self.view.safeAreaInsets();
         let title_hidden = crate::mac_titlebar::title_hidden();
         // On a Mac with the content under the hidden title bar, the band

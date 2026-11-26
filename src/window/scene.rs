@@ -237,8 +237,8 @@ pub(crate) fn window_control_insets(
     (!state.closed).then_some(state.window_controls)
 }
 
-/// Whether a window in a connected scene fills its screen, so its status bar
-/// is hidden (`screen_fill`); false for a window not found or closed.
+/// Whether a window in a connected scene fills its screen (`screen_fill`);
+/// false for a window not found or closed.
 pub(crate) fn window_fills_screen(handle: AnyWindowHandle, _mtm: MainThreadMarker) -> bool {
     let window = REGISTRY.with_borrow(|registry| {
         registry
@@ -247,8 +247,7 @@ pub(crate) fn window_fills_screen(handle: AnyWindowHandle, _mtm: MainThreadMarke
             .filter_map(SceneEntry::live_window)
             .find(|window| window.handle == handle)
     });
-    window
-        .is_some_and(|window| !window.state.borrow().closed && window.controller.hides_status_bar())
+    window.is_some_and(|window| !window.state.borrow().closed && window.controller.fills_screen())
 }
 
 /// Shows `bar` on `handle`'s shortcuts bar (`crate::keyboard_bar`).

@@ -38,8 +38,8 @@ use crate::{display_link::DisplayLink, renderer::Renderer};
 
 pub(crate) struct Window {
     pub(super) callbacks: Callbacks,
-    /// The root view controller; it hides the status bar while the window
-    /// fills its screen (`root_controller`).
+    /// The root view controller; it holds whether the window fills its
+    /// screen and answers the status bar from it (`root_controller`).
     pub(super) controller: Retained<super::root_controller::RootController>,
     /// `None` only until `open` installs it, and again after close.
     pub(super) display_link: RefCell<Option<DisplayLink>>,
