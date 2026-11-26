@@ -207,9 +207,10 @@ fn other_targets_are_not_receipts() {
 }
 
 /// The sources that call into this module.
-const CALLERS: [(&str, &str); 2] = [
+const CALLERS: [(&str, &str); 3] = [
     ("src/window/touch.rs", include_str!("../../window/touch.rs")),
     ("src/platform/menus.rs", include_str!("../menus.rs")),
+    ("src/renderer/mod.rs", include_str!("../../renderer/mod.rs")),
 ];
 
 const SIMULATOR_ONLY: &str = r#"#[cfg(all(target_os = "ios", target_abi = "sim"))]"#;
@@ -251,7 +252,9 @@ fn every_receipt_is_compiled_for_the_simulator_only() {
                 || code.starts_with("fn current_generation(")
                 || code.starts_with("self.receipt(")
                 || code.starts_with("receipt(")
-                || code.starts_with("super::qa_input::menu_perform(");
+                || code.starts_with("super::qa_input::menu_perform(")
+                || code.starts_with("frame_runs:")
+                || code.starts_with("if let Some((previous, count)) = self.frame_runs.note(");
             if !names_receipt {
                 continue;
             }
@@ -263,4 +266,93 @@ fn every_receipt_is_compiled_for_the_simulator_only() {
             assert_eq!(guard, Some(SIMULATOR_ONLY), "{path}:{}", number + 1);
         }
     }
+}
+
+#[test]
+fn frame_runs_report_only_a_change_of_outcome_with_the_run_it_ended() {
+    let mut runs = FrameRuns::default();
+    assert_eq!(
+        runs.note(FrameOutcome::ZeroSize),
+        Some((None, 0)),
+        "the first draw"
+    );
+    assert_eq!(runs.note(FrameOutcome::ZeroSize), None);
+    assert_eq!(
+        runs.note(FrameOutcome::Presented),
+        Some((Some(FrameOutcome::ZeroSize), 2))
+    );
+    for _ in 0..59 {
+        assert_eq!(
+            runs.note(FrameOutcome::Presented),
+            None,
+            "a steady outcome stays quiet"
+        );
+    }
+    assert_eq!(
+        runs.note(FrameOutcome::NoDrawable),
+        Some((Some(FrameOutcome::Presented), 60))
+    );
+    assert_eq!(
+        runs.note(FrameOutcome::Presented),
+        Some((Some(FrameOutcome::NoDrawable), 1))
+    );
+}
+
+#[test]
+fn a_frame_receipt_names_its_outcome_and_the_run_before_it() {
+    let capture = Capture::default();
+    capture.during(|| {
+        frame(FrameOutcome::PathsNotReady, None, 0);
+        frame(
+            FrameOutcome::Presented,
+            Some(FrameOutcome::PathsNotReady),
+            3,
+        );
+        frame(
+            FrameOutcome::RenderFailed,
+            Some(FrameOutcome::Presented),
+            120,
+        );
+        frame(FrameOutcome::ZeroSize, Some(FrameOutcome::RenderFailed), 1);
+        frame(FrameOutcome::NoDrawable, Some(FrameOutcome::ZeroSize), 2);
+    });
+    let names = |outcome: &str, previous: &str, count: &str| {
+        receipt(&[
+            ("receipt", "frame"),
+            ("outcome", outcome),
+            ("previous", previous),
+            ("previous_count", count),
+        ])
+    };
+    assert_eq!(
+        capture.take(),
+        [
+            names("paths_not_ready", "none", "0"),
+            names("presented", "paths_not_ready", "3"),
+            names("render_failed", "presented", "120"),
+            names("zero_size", "render_failed", "1"),
+            names("no_drawable", "zero_size", "2"),
+        ]
+    );
+}
+
+/// Every draw goes through `draw_frame`, whose outcome the Simulator build
+/// folds into runs and reports: removing the note, or drawing elsewhere, fails.
+#[test]
+fn every_draw_notes_its_outcome() {
+    let (_, renderer) = CALLERS[2];
+    let draw = renderer
+        .split("pub(crate) fn draw(&mut self, scene: &Scene) {")
+        .nth(1)
+        .and_then(|rest| rest.split("\n    fn ").next());
+    let Some(draw) = draw else {
+        panic!("no Renderer::draw");
+    };
+    let outcome = draw.find("let outcome = self.draw_frame(scene);");
+    let note = draw.find("self.frame_runs.note(outcome)");
+    assert!(
+        outcome.is_some() && outcome < note,
+        "draw notes the outcome of draw_frame"
+    );
+    assert!(draw.contains("crate::platform::qa_input::frame(outcome, previous, count);"));
 }

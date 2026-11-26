@@ -25,10 +25,16 @@
 //!   `no_callback`, `callback_running` or `delivered`), `generation`,
 //!   `index` and `current`.
 //!
+//! - `frame`: a window's draw came to a different outcome than the draw
+//!   before it (each draw would flood the record). Fields: `outcome`
+//!   (`presented`, `zero_size`, `paths_not_ready`, `no_drawable`,
+//!   `render_failed`), `previous`, the outcome of the run it ends (`none` for
+//!   a window's first draw), and `previous_count`, how many draws that run had.
+//!
 //! A `menu-perform` that is `performed` and keyed with no `menu-deliver`
 //! after it was handled as a key shortcut by the text input view.
 
-use crate::menu::MenuTag;
+use crate::{menu::MenuTag, renderer::FrameOutcome};
 
 /// The `tracing` target of every receipt.
 #[cfg(test)]
@@ -132,6 +138,50 @@ pub(crate) fn menu_deliver(tag: MenuTag, current: u32, delivery: Delivery) {
         generation = u64::from(tag.generation),
         index = u64::from(tag.index),
         current = i64::from(current),
+    );
+}
+
+impl FrameOutcome {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Presented => "presented",
+            Self::ZeroSize => "zero_size",
+            Self::PathsNotReady => "paths_not_ready",
+            Self::NoDrawable => "no_drawable",
+            Self::RenderFailed => "render_failed",
+        }
+    }
+}
+
+/// One window's draws, folded into runs of one outcome.
+#[derive(Debug, Default)]
+pub(crate) struct FrameRuns {
+    current: Option<FrameOutcome>,
+    count: u64,
+}
+
+impl FrameRuns {
+    /// Counts `outcome`. When it starts a new run, returns the run it ended:
+    /// that run's outcome (`None` before a window's first draw) and length.
+    pub(crate) fn note(&mut self, outcome: FrameOutcome) -> Option<(Option<FrameOutcome>, u64)> {
+        if self.current == Some(outcome) {
+            self.count = self.count.saturating_add(1);
+            return None;
+        }
+        let ended = (self.current.replace(outcome), self.count);
+        self.count = 1;
+        Some(ended)
+    }
+}
+
+/// A window's draws changed outcome (`FrameRuns::note`).
+pub(crate) fn frame(outcome: FrameOutcome, previous: Option<FrameOutcome>, previous_count: u64) {
+    tracing::info!(
+        target: "herdr_uikit::qa_input",
+        receipt = "frame",
+        outcome = outcome.name(),
+        previous = previous.map_or("none", FrameOutcome::name),
+        previous_count,
     );
 }
 
