@@ -1285,8 +1285,7 @@ checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
 [[package]]
 name = "gpui-pre"
 version = "0.3.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29db89613527079737f53752eab27fb65c9a7dd94979256c65a0e590c9fd34d8"
+source = "git+https://github.com/shin1ohno/gpui-pre?rev=ab418c0c1422bc36c05adffaa1c20b8895089a7e#ab418c0c1422bc36c05adffaa1c20b8895089a7e"
 dependencies = [
  "accesskit",
  "anyhow",
