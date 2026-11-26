@@ -71,7 +71,7 @@ Checks:
 - Fixture under `UIApplicationMain`, with real keys from XCUITest:
 
   ```sh
-  IPHONEOS_DEPLOYMENT_TARGET=17.0 python3 scripts/check-native-search.py \
+  IPHONEOS_DEPLOYMENT_TARGET=26.0 python3 scripts/check-native-search.py \
     --example input_mode_probe --test InputMode/testInputMode --prefix INPUTMODE \
     --output /abs/new/dir
   python3 scripts/input_mode_mutations.py uikit /abs/new/dir

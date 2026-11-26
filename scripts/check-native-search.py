@@ -110,7 +110,7 @@ def main():
             'CFBundleName': args.example, 'CFBundlePackageType': 'APPL',
             'CFBundleShortVersionString': '1.0', 'CFBundleVersion': '1',
             'CFBundleSupportedPlatforms': ['iPhoneSimulator'], 'LSRequiresIPhoneOS': True,
-            'MinimumOSVersion': '17.0', 'UIDeviceFamily': [2], 'UILaunchScreen': {},
+            'MinimumOSVersion': '26.0', 'UIDeviceFamily': [2], 'UILaunchScreen': {},
             'UIApplicationSceneManifest': {'UIApplicationSupportsMultipleScenes': True},
         }))
         run(log, 'codesign', '--force', '--sign', '-', '--timestamp=none', str(app))

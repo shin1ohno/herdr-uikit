@@ -38,7 +38,7 @@ use super::{
 use crate::{layout_direction, renderer::Renderer};
 
 /// The scale to assume before the window is on a screen: every iPad that runs
-/// iPadOS 17 has a 2x display.
+/// iPadOS 26 has a 2x display.
 const DEFAULT_SCALE_FACTOR: f32 = 2.0;
 
 impl Window {

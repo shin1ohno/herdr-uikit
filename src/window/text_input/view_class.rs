@@ -81,9 +81,8 @@ define_class!(
         // text field would hide this responder's current keyboard focus.
 
         // Since iOS 18.1, accessibility asks custom text elements for their
-        // backing UITextInput responder. This view is both. Implementing the
-        // public getter is harmless on iOS 17, which does not query it, and
-        // avoids calling an unavailable framework selector there.
+        // backing UITextInput responder. This view is both, so it implements
+        // the public getter.
         #[unsafe(method_id(accessibilityTextInputResponder))]
         fn __accessibility_text_input_responder(
             &self,

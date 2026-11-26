@@ -1,7 +1,7 @@
 name: NativeSearchQA
 options:
   deploymentTarget:
-    iOS: "17.0"
+    iOS: "26.0"
 targets:
   NativeSearchQA:
     type: bundle.ui-testing

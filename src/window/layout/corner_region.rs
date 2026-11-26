@@ -1,8 +1,6 @@
 //! How far the corner-adapted safe area extends past the plain safe area.
 
 use gpui::{Edges, Pixels};
-use objc2::sel;
-use objc2_foundation::NSObjectProtocol;
 use objc2_ui_kit::{UIEdgeInsets, UIView, UIViewLayoutRegion, UIViewLayoutRegionAdaptivityAxis};
 
 #[cfg(test)]
@@ -19,16 +17,7 @@ pub(super) fn needs_update(
 }
 
 pub(super) fn sample(view: &UIView, safe_area: UIEdgeInsets) -> UIEdgeInsets {
-    // The selector and class both arrived in iOS 26. Check the selector
-    // before looking up the class, which would panic on an older system.
-    if !view.respondsToSelector(sel!(edgeInsetsForLayoutRegion:)) {
-        return UIEdgeInsets {
-            top: 0.0,
-            left: 0.0,
-            bottom: 0.0,
-            right: 0.0,
-        };
-    }
+    // The selector and class arrived in iOS 26.0, the minimum supported iOS.
     let region = UIViewLayoutRegion::safeAreaLayoutRegionWithCornerAdaptation(
         UIViewLayoutRegionAdaptivityAxis::Horizontal,
     );

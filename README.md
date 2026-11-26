@@ -211,8 +211,8 @@ the drawing view's safe area with horizontal corner adaptation, less
 With the controls showing, the value covers them: on the iPadOS 26.5
 simulator a narrow windowed window reports 66 pt on the left and 9.5 pt on
 the right. Without them UIKit still reports the window's corner allowance,
-5.5-9.5 pt, so the value is not zero on iOS 26 even when no controls show. It
-is zero on iOS 17-25, for a window in no live scene, and off the main thread.
+5.5-9.5 pt, so the value is not zero even when no controls show. It is zero
+for a window in no live scene, and off the main thread.
 UIKit layout callbacks sample and cache it; GPUI redraws the window when it
 changes. Herdr UI should use it to pad only top-bar content so its leading
 button stays clear of the controls.
@@ -249,7 +249,7 @@ Build and lint with the deployment target set, since rustc links the minimum
 OS version into every artifact:
 
 ```sh
-export IPHONEOS_DEPLOYMENT_TARGET=17.0
+export IPHONEOS_DEPLOYMENT_TARGET=26.0
 cargo clippy --locked --target aarch64-apple-ios --all-targets -- -D warnings
 cargo clippy --locked --target aarch64-apple-ios-sim --all-targets -- -D warnings
 cargo check --locked   # the host build, where the crate is empty
@@ -270,7 +270,7 @@ runner that boots the simulator when it is not running, never shuts it down,
 and runs each test binary there with `xcrun simctl spawn`:
 
 ```sh
-export IPHONEOS_DEPLOYMENT_TARGET=17.0
+export IPHONEOS_DEPLOYMENT_TARGET=26.0
 CARGO_TARGET_AARCH64_APPLE_IOS_SIM_RUNNER=scripts/sim-runner.sh \
   cargo test --locked --all-features --target aarch64-apple-ios-sim
 ```

@@ -11,7 +11,7 @@ use objc2::MainThreadMarker;
 /// Mac running the iPad app with its content under the hidden title bar, at
 /// least the Mac's 80 pt (in UIKit points at the window's scale) on the
 /// traffic lights' side (`crate::mac_titlebar`). Zero
-/// on iOS 17-25, for a window in no live scene, and off the main thread.
+/// for a window in no live scene, and off the main thread.
 /// Sampled on UIKit layout callbacks; GPUI redraws the window when it changes.
 pub fn window_control_insets(window: gpui::AnyWindowHandle) -> gpui::Edges<gpui::Pixels> {
     let Some(mtm) = MainThreadMarker::new() else {
