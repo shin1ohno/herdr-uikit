@@ -70,6 +70,10 @@ objc2-ui-kit = { default-features = false, features = ["NSText", "UIControl", "U
 # lockfile offline-resolvable. Consumers ignore this table.
 [patch.crates-io]
 embed-resource = { path = "support/embed-resource" }
+# Zed's GPUI as published (gpui-pre 0.3.12, zed@d2a4fb6) plus the changes listed
+# in the fork's README (yebisu#161: touch momentum ends at the edge of its
+# content). yebisu patches the same revision.
+gpui-pre = { git = "https://github.com/shin1ohno/gpui-pre", rev = "ab418c0c1422bc36c05adffaa1c20b8895089a7e" }
 
 # UIKit object tests run on the process main thread without UIApplicationMain.
 [[test]]
