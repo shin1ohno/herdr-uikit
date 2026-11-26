@@ -18,11 +18,15 @@ use block2::RcBlock;
 use dispatch2::{DispatchQueue, MainThreadBound};
 use gpui::{AnyWindowHandle, Edges, Pixels};
 use objc2::{MainThreadMarker, Message, rc::Retained};
+use objc2_core_foundation::{CGPoint, CGRect, CGSize};
 use objc2_foundation::NSError;
-use objc2_ui_kit::{UIApplication, UISceneSessionActivationRequest, UIWindowScene};
+use objc2_ui_kit::{
+    UIApplication, UICoordinateSpace, UISceneSessionActivationRequest, UIWindowScene,
+};
 
 use super::{
     requests::{Answer, RequestId, Requests},
+    scene_fit,
     state::Window,
 };
 
@@ -143,7 +147,7 @@ pub(crate) fn scene_activation_changed(
 }
 
 /// The scene's effective geometry changed, including its window controls.
-pub(crate) fn scene_geometry_changed(scene: &UIWindowScene, _mtm: MainThreadMarker) {
+pub(crate) fn scene_geometry_changed(scene: &UIWindowScene, mtm: MainThreadMarker) {
     let window = REGISTRY.with_borrow(|registry| {
         registry
             .scenes
@@ -152,8 +156,55 @@ pub(crate) fn scene_geometry_changed(scene: &UIWindowScene, _mtm: MainThreadMark
             .live_window()
     });
     if let Some(window) = window {
+        fit_to_scene(&window, scene, mtm);
         window.view.setNeedsLayout();
     }
+}
+
+/// Puts the window and its drawing view back over the whole scene when a
+/// geometry change left either at its old frame (`scene_fit`). Until then,
+/// the view's size does not change, so it is never laid out at the scene's
+/// new size and GPUI keeps drawing the old one.
+fn fit_to_scene(window: &Window, scene: &UIWindowScene, mtm: MainThreadMarker) {
+    let Some(ui_window) = window.state.borrow().ui_window.clone() else {
+        return;
+    };
+    // The geometry UIKit just reported, the one this callback announces.
+    let scene_bounds = scene.effectiveGeometry().coordinateSpace(mtm).bounds();
+    let window_frame = ui_window.frame();
+    let view_frame = window.view.frame();
+    let fit = scene_fit::fit(frame(scene_bounds), frame(window_frame), frame(view_frame));
+    if fit.is_empty() {
+        return;
+    }
+    tracing::warn!(
+        ?scene_bounds,
+        ?window_frame,
+        ?view_frame,
+        "the window kept its frame through a scene geometry change; fitting it to the scene"
+    );
+    if let Some(target) = fit.window {
+        ui_window.setFrame(cg_rect(target));
+    }
+    if let Some(target) = fit.view {
+        window.view.setFrame(cg_rect(target));
+    }
+}
+
+fn frame(rect: CGRect) -> scene_fit::Frame {
+    scene_fit::Frame::new(
+        rect.origin.x,
+        rect.origin.y,
+        rect.size.width,
+        rect.size.height,
+    )
+}
+
+fn cg_rect(frame: scene_fit::Frame) -> CGRect {
+    CGRect::new(
+        CGPoint::new(frame.x, frame.y),
+        CGSize::new(frame.width, frame.height),
+    )
 }
 
 /// The window in the active scene, if any. Side by side, several scenes can

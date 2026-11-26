@@ -47,6 +47,7 @@ mod retirement;
 #[cfg(feature = "test-support")]
 pub mod retirement_probe;
 mod scene;
+mod scene_fit;
 mod state;
 mod text_input;
 mod text_state;
