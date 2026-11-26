@@ -147,6 +147,11 @@ impl Window {
     }
 
     pub(super) fn safe_area_changed(&self) {
+        // A window that fills its screen hides the status bar; the safe area
+        // read below already reflects a status bar UIKit has hidden.
+        let fill_changed = self
+            .controller
+            .set_hides_status_bar(self.sample_fills_screen());
         let raw = self.view.safeAreaInsets();
         let title_hidden = crate::mac_titlebar::title_hidden();
         // On a Mac with the content under the hidden title bar, the band
@@ -164,7 +169,9 @@ impl Window {
         let (insets, controls_changed) = {
             let mut state = self.state.borrow_mut();
             let stored = (&state.insets.safe_area, &state.window_controls);
-            if state.closed || !corner_region::needs_update(stored, (&safe_area, &controls)) {
+            if state.closed
+                || (!fill_changed && !corner_region::needs_update(stored, (&safe_area, &controls)))
+            {
                 return;
             }
             let controls_changed = state.window_controls != controls;
@@ -177,6 +184,24 @@ impl Window {
         }
         call(&self.callbacks.insets_changed, |callback| callback(insets));
         self.force_frame();
+    }
+
+    /// Whether the window fills its screen now (`screen_fill`): its bounds
+    /// against its scene's screen, both in the interface's orientation.
+    fn sample_fills_screen(&self) -> bool {
+        let Some(ui_window) = self.view.window() else {
+            return false;
+        };
+        let Some(scene) = ui_window.windowScene() else {
+            return false;
+        };
+        let window = ui_window.bounds().size;
+        let screen = scene.screen().bounds().size;
+        super::screen_fill::fills_screen(
+            (window.width, window.height),
+            (screen.width, screen.height),
+            crate::mac_titlebar::ios_app_on_mac(),
+        )
     }
 
     /// The layout guide is UIKit's window-local keyboard geometry. It also

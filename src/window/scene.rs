@@ -237,6 +237,20 @@ pub(crate) fn window_control_insets(
     (!state.closed).then_some(state.window_controls)
 }
 
+/// Whether a window in a connected scene fills its screen, so its status bar
+/// is hidden (`screen_fill`); false for a window not found or closed.
+pub(crate) fn window_fills_screen(handle: AnyWindowHandle, _mtm: MainThreadMarker) -> bool {
+    let window = REGISTRY.with_borrow(|registry| {
+        registry
+            .scenes
+            .iter()
+            .filter_map(SceneEntry::live_window)
+            .find(|window| window.handle == handle)
+    });
+    window
+        .is_some_and(|window| !window.state.borrow().closed && window.controller.hides_status_bar())
+}
+
 /// Windows front to back, as best UIKit reports scene order: UIKit has no
 /// z-order across scenes, so active scenes come first, then the rest by how
 /// recently each was active.

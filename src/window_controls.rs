@@ -29,3 +29,15 @@ pub fn window_control_insets(window: gpui::AnyWindowHandle) -> gpui::Edges<gpui:
 pub fn traffic_lights_over_content() -> bool {
     crate::mac_titlebar::title_hidden()
 }
+
+/// Whether `window` fills its screen: full screen, or an iPadOS 26 window the
+/// user maximized. Such a window hides the OS status bar, which iPadOS 26
+/// otherwise draws over its top edge (yebisu#221). False on a Mac, for a
+/// window in no live scene, and off the main thread. Sampled on UIKit layout
+/// callbacks; a change redraws the window as an insets change.
+pub fn window_fills_screen(window: gpui::AnyWindowHandle) -> bool {
+    let Some(mtm) = MainThreadMarker::new() else {
+        return false;
+    };
+    crate::window::window_fills_screen(window, mtm)
+}

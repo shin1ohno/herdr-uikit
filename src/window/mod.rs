@@ -46,8 +46,10 @@ mod requests;
 mod retirement;
 #[cfg(feature = "test-support")]
 pub mod retirement_probe;
+mod root_controller;
 mod scene;
 mod scene_fit;
+mod screen_fill;
 mod state;
 mod text_input;
 mod text_state;
@@ -75,7 +77,8 @@ pub(crate) use self::pointer::set_cursor_style;
 pub(crate) use self::retirement::{retire_text_input_session, text_input_session_state};
 pub(crate) use self::scene::{
     active_window, scene_activation_changed, scene_connected, scene_disconnected,
-    scene_geometry_changed, set_native_edit_availability, window_control_insets, window_stack,
+    scene_geometry_changed, set_native_edit_availability, window_control_insets,
+    window_fills_screen, window_stack,
 };
 pub(crate) use self::state::Window;
 #[cfg(target_abi = "sim")]
