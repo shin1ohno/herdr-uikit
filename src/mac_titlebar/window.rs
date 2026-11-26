@@ -3,15 +3,18 @@
 //!
 //! An iOS app has no API for its NSWindow. On a Mac, AppKit runs in the
 //! process and `NSApplication.sharedApplication.windows` lists the scene
-//! windows; every selector below is public AppKit and is checked with
+//! windows. Which of them shows this scene only UIKitMacHelper tells, through
+//! two private getters ([`scene_identifier`]); without them every titled
+//! window is extended ([`targets`]). Every selector is checked with
 //! `respondsToSelector:` before it is sent. The window does not exist yet
 //! when the scene connects (it appeared within 100 ms on macOS 26.7.3), so
 //! this retries on the main queue and gives up after five seconds.
 
 #![allow(
     unsafe_code,
-    reason = "sends public AppKit selectors to the process's NSApplication and NSWindows, which \
-              an iOS SDK does not declare, after checking that the receiver responds to each"
+    reason = "sends AppKit and UIKitMacHelper selectors to the process's NSApplication and \
+              NSWindows, which an iOS SDK does not declare, after checking that the receiver \
+              responds to each"
 )]
 
 use dispatch2::{DispatchQueue, DispatchTime, MainThreadBound};
@@ -22,6 +25,7 @@ use objc2::{
     sel,
 };
 use objc2_core_foundation::CGRect;
+use objc2_foundation::NSString;
 use objc2_ui_kit::UIWindowScene;
 
 #[cfg(test)]
@@ -41,6 +45,31 @@ const ATTEMPTS: u32 = 50;
 pub(crate) fn extended_mask(mask: usize) -> Option<usize> {
     (mask & TITLED != 0 && mask & FULL_SIZE_CONTENT_VIEW == 0)
         .then_some(mask | FULL_SIZE_CONTENT_VIEW)
+}
+
+/// One of the process's NSWindows as an attempt sees it: its style mask,
+/// and the persistent identifier of the scene it shows when the window tells
+/// ([`scene_identifier`]).
+#[derive(Debug)]
+pub(crate) struct Candidate<'a> {
+    pub(crate) mask: usize,
+    pub(crate) scene: Option<&'a str>,
+}
+
+/// The windows to extend for the scene whose session's persistent
+/// identifier is `scene`: each one's index in `windows` and its new mask.
+/// Once any window tells its scene, only the titled windows showing this
+/// scene, so another scene's window and a window of no scene are left alone
+/// (herdr-uikit#29). Where none tells (a Mac without the UIKitMacHelper
+/// getters), every titled window, as before.
+pub(crate) fn targets(scene: &str, windows: &[Candidate<'_>]) -> Vec<(usize, usize)> {
+    let told = windows.iter().any(|window| window.scene.is_some());
+    windows
+        .iter()
+        .enumerate()
+        .filter(|(_, window)| !told || window.scene == Some(scene))
+        .filter_map(|(index, window)| extended_mask(window.mask).map(|mask| (index, mask)))
+        .collect()
 }
 
 /// What one attempt found.
@@ -131,6 +160,33 @@ fn ns_windows() -> Option<Vec<Retained<AnyObject>>> {
     )
 }
 
+/// The persistent identifier of the scene `window` shows, which matches its
+/// `UISceneSession.persistentIdentifier`: UIKitMacHelper's private
+/// `UINSWindow.sceneWindowController` and that controller's
+/// `persistentIdentifier` (both listed on macOS 26.7.3, task
+/// 9a44558d37d143fd `i29/uikitmachelper-introspection.txt`). `None` for a
+/// window that does not answer them or gives no string.
+fn scene_identifier(window: &AnyObject) -> Option<String> {
+    if !responds(window, sel!(sceneWindowController)) {
+        return None;
+    }
+    // SAFETY: the window responds to `sceneWindowController`, an object
+    // getter with no arguments; `Option` admits nil.
+    let controller: Option<Retained<AnyObject>> =
+        unsafe { msg_send![window, sceneWindowController] };
+    let controller = controller?;
+    if !responds(&controller, sel!(persistentIdentifier)) {
+        return None;
+    }
+    // SAFETY: the controller responds to `persistentIdentifier`, an object
+    // getter with no arguments; `Option` admits nil, and the class is
+    // checked before it is read as a string.
+    let identifier: Option<Retained<AnyObject>> =
+        unsafe { msg_send![&*controller, persistentIdentifier] };
+    let identifier = identifier?.downcast::<NSString>().ok()?;
+    Some(identifier.to_string())
+}
+
 /// The width of `scene`'s first UIWindow, in UIKit points.
 fn uikit_width(scene: &UIWindowScene) -> Option<f64> {
     let window = scene.windows().firstObject()?;
@@ -144,27 +200,42 @@ fn extend_now(scene: &UIWindowScene) -> Attempt {
     let Some(uikit_width) = uikit_width(scene) else {
         return Attempt::NotYet;
     };
+    let selectors = [sel!(styleMask), sel!(setStyleMask:), sel!(frame)];
+    let windows: Vec<_> = windows
+        .into_iter()
+        .filter(|window| {
+            selectors
+                .into_iter()
+                .all(|selector| responds(window, selector))
+        })
+        .map(|window| {
+            // SAFETY: NSWindow's NSUInteger `styleMask` getter, checked
+            // above.
+            let mask: usize = unsafe { msg_send![&*window, styleMask] };
+            let scene = scene_identifier(&window);
+            (window, mask, scene)
+        })
+        .collect();
+    let candidates: Vec<_> = windows
+        .iter()
+        .map(|(_, mask, scene)| Candidate {
+            mask: *mask,
+            scene: scene.as_deref(),
+        })
+        .collect();
+    let scene_id = scene.session().persistentIdentifier().to_string();
     let mut extended = None;
-    for window in windows {
-        let selectors = [sel!(styleMask), sel!(setStyleMask:), sel!(frame)];
-        if !selectors
-            .into_iter()
-            .all(|selector| responds(&window, selector))
-        {
-            continue;
-        }
-        // SAFETY: NSWindow's NSUInteger `styleMask` and NSRect `frame`
-        // getters, checked above.
-        let mask: usize = unsafe { msg_send![&*window, styleMask] };
-        let Some(mask) = extended_mask(mask) else {
+    for (index, mask) in targets(&scene_id, &candidates) {
+        let Some((window, _, _)) = windows.get(index) else {
             continue;
         };
-        let frame: CGRect = unsafe { msg_send![&*window, frame] };
+        // SAFETY: NSWindow's NSRect `frame` getter, checked above.
+        let frame: CGRect = unsafe { msg_send![&**window, frame] };
         let scale = super::window_scale(frame.size.width, uikit_width);
         // Before the change: the safe-area callback it triggers reads both.
         super::content_extended(scale);
         // SAFETY: NSWindow's NSUInteger `setStyleMask:`, checked above.
-        let () = unsafe { msg_send![&*window, setStyleMask: mask] };
+        let () = unsafe { msg_send![&**window, setStyleMask: mask] };
         extended = Some(scale);
     }
     extended.map_or(Attempt::NotYet, Attempt::Extended)

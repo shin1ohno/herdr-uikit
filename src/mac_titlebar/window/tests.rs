@@ -42,3 +42,65 @@ fn a_missing_window_is_tried_again_for_five_seconds() {
 fn a_mac_without_application_windows_gives_up_at_once() {
     assert_eq!(next(&Attempt::Unavailable, 0), Next::GiveUp);
 }
+
+/// Two scene windows restored together, neither extended yet, and a titled
+/// window that shows no scene (a system panel, say).
+fn two_scenes_and_a_panel() -> [Candidate<'static>; 3] {
+    [
+        Candidate {
+            mask: SCENE_WINDOW,
+            scene: Some("scene-a"),
+        },
+        Candidate {
+            mask: SCENE_WINDOW,
+            scene: Some("scene-b"),
+        },
+        Candidate {
+            mask: SCENE_WINDOW,
+            scene: None,
+        },
+    ]
+}
+
+#[test]
+fn only_the_scenes_own_window_is_extended() {
+    let windows = two_scenes_and_a_panel();
+    assert_eq!(targets("scene-a", &windows), [(0, 0x800f)]);
+    assert_eq!(targets("scene-b", &windows), [(1, 0x800f)]);
+}
+
+#[test]
+fn a_scene_whose_window_is_not_listed_yet_extends_nothing() {
+    // Scene B's window is already extended; scene C's has not appeared.
+    let windows = [
+        Candidate {
+            mask: 0x800f,
+            scene: Some("scene-b"),
+        },
+        Candidate {
+            mask: SCENE_WINDOW,
+            scene: None,
+        },
+    ];
+    assert_eq!(targets("scene-c", &windows), []);
+    assert_eq!(targets("scene-b", &windows), []);
+}
+
+#[test]
+fn a_mac_whose_windows_do_not_tell_their_scene_extends_every_titled_window() {
+    let windows = [
+        Candidate {
+            mask: SCENE_WINDOW,
+            scene: None,
+        },
+        Candidate {
+            mask: 0x8000,
+            scene: None,
+        },
+        Candidate {
+            mask: SCENE_WINDOW,
+            scene: None,
+        },
+    ];
+    assert_eq!(targets("scene-a", &windows), [(0, 0x800f), (2, 0x800f)]);
+}
