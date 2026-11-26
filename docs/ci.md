@@ -13,7 +13,7 @@ known five-call baseline commit before checking the current source.
 The job installs the toolchain, components and targets declared in
 `rust-toolchain.toml` via `rustup show active-toolchain`, then records the
 compiler, host triple, installed targets, Xcode and both iOS SDK versions.
-It uses the runner's selected Xcode and sets `IPHONEOS_DEPLOYMENT_TARGET=17.0`.
+It uses the runner's selected Xcode and sets `IPHONEOS_DEPLOYMENT_TARGET=26.0`.
 
 Checks run sequentially, stopping at the first failure:
 

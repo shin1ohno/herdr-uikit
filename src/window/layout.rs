@@ -185,7 +185,7 @@ impl Window {
     /// movement. Offscreen and floating keyboards leave a zero-height guide.
     pub(super) fn sample_keyboard_layout(&self) {
         // SAFETY: UIView returns its UIKeyboardLayoutGuide, a UILayoutGuide
-        // subclass. These selectors exist on the minimum supported iOS 17;
+        // subclass. These selectors exist on the minimum supported iOS 26;
         // objc2's typed subclass needs the unused UITrackingLayoutGuide feature.
         let guide: Retained<UILayoutGuide> = unsafe { msg_send![&*self.view, keyboardLayoutGuide] };
         // SAFETY: this is the UIKeyboardLayoutGuide returned immediately above.
