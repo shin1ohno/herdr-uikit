@@ -124,7 +124,10 @@ pub(crate) fn present(handle: AnyWindowHandle, at: Point<Pixels>) -> Option<Nati
     // UIKit can query text handlers synchronously. Present after GPUI's update,
     // and revalidate because an intervening dismissal must cancel the request.
     window.defer(move |window| {
-        if window.edit_menu.state.borrow().status(token) != NativeEditMenuStatus::Current {
+        let status = window.edit_menu.state.borrow().status(token);
+        if status != NativeEditMenuStatus::Current {
+            #[cfg(all(target_os = "ios", target_abi = "sim"))]
+            crate::platform::qa_input::edit_menu_skipped(token.value(), status);
             return;
         }
         let id = NSString::from_str(&format!("{EDIT_MENU_IDENTIFIER_PREFIX}{}", token.value()));
@@ -143,8 +146,27 @@ pub(crate) fn present(handle: AnyWindowHandle, at: Point<Pixels>) -> Option<Nati
             .edit_menu
             .interaction
             .presentEditMenuWithConfiguration(&configuration);
+        #[cfg(all(target_os = "ios", target_abi = "sim"))]
+        crate::platform::qa_input::edit_menu_presented(
+            token.value(),
+            window.state.borrow().is_active,
+            qa_responder(window),
+        );
     });
     Some(token)
+}
+
+/// Simulator QA: which of the window's views is first responder.
+#[cfg(all(target_os = "ios", target_abi = "sim"))]
+fn qa_responder(window: &Window) -> crate::platform::qa_input::MenuResponder {
+    use crate::platform::qa_input::MenuResponder;
+    if window.view.isFirstResponder() {
+        MenuResponder::Drawing
+    } else if window.text_input.view().isFirstResponder() {
+        MenuResponder::Text
+    } else {
+        MenuResponder::None
+    }
 }
 
 pub(crate) fn dismiss(handle: AnyWindowHandle, token: NativeEditMenuToken) -> bool {

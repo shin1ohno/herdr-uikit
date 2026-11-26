@@ -31,6 +31,8 @@ Every event has a `receipt` field.
 | `menu-perform` | `Performed::new` (`src/platform/menus.rs`), which both `herdrMenuAction:` implementations (drawing view and application delegate) call first | `outcome`: `no_sender`, `no_tag` (the sender is not one of the SDK's commands) or `performed`; for `performed`: `generation` and `index` of the command's tag and `keyed` (a key command with a key input performed it). Always `current`, the generation of the menus as last set, `-1` when the platform is not running |
 | `menu-deliver` | `deliver` (`src/platform/menus.rs`), on the main queue after UIKit's call returned | `outcome`: `stale_generation` (the tag names no command of the current menus), `no_callback` (GPUI registered no menu callback), `callback_running` (GPUI's callback was already running further up the stack) or `delivered`; `generation`, `index`, `current` |
 | `frame` | `Renderer::draw` (`src/renderer/mod.rs`), when a window's draw comes to a different outcome than its draw before (each draw would flood the record; a steady run of one outcome stays quiet) | `outcome`: `presented`, `zero_size` (the layout gave the layer no size yet), `paths_not_ready` (the scene has paths and the path textures are not allocated), `no_drawable` (the layer gave no drawable before its timeout) or `render_failed` (encoding the frame failed); `previous`, the outcome of the run it ends (`none` for a window's first draw); `previous_count`, how many draws that run had |
+| `edit-menu-present` | the deferred present in `edit_menu::present` (`src/window/edit_menu.rs`), on the main queue after GPUI's update | `outcome`: `presented` (UIKit's `presentEditMenuWithConfiguration` was called) or `skipped` (the token was no longer current); `token`; when presented, `active` (the scene was active) and `responder` (`drawing`, `text` or `none`, the window's first responder); when skipped, `reason` (`replaced`, `dismissed`, `unavailable`, `closed`, `inactive`, `resigned_outside`, `switch_left_no_responder`, `unknown`) |
+| `edit-menu-menu` | `EditMenuDelegate::menu_for` (`src/window/edit_menu/delegate.rs`), when UIKit asks for the menu of a configuration | `decision` (`items`, `empty` or `passthrough`) and `owned` (the configuration carried the SDK's identifier) |
 
 ## Reading a lost menu command
 
@@ -47,6 +49,16 @@ chosen in, or the key that chose it is fenced ([native-search.md](native-search.
 the command stops after `menu-perform` (keyed or not) or on the main queue
 before `deliver`, and leaves no `menu-deliver`.
 
+## Reading an edit menu that did not appear
+
+| Receipts after the consumer presented | Where the menu stopped |
+|---|---|
+| no `edit-menu-present` | the deferred present never ran (the window closed, or the main queue did not run it) |
+| `edit-menu-present` `skipped` | the SDK revoked the token before UIKit was asked; `reason` names why |
+| `edit-menu-present` `presented`, no `edit-menu-menu` | UIKit was asked to present and never asked the delegate for a menu |
+| `edit-menu-menu` `empty` | the delegate answered with no items (the token was no longer current when UIKit asked) |
+| `edit-menu-menu` `items` and no menu on screen | UIKit had the items and showed nothing, or closed it at once |
+
 ## Reading a window that shows nothing
 
 A window with no `frame` receipt at all has not drawn since it opened: GPUI
@@ -60,7 +72,9 @@ compositor).
 - `src/platform/qa_input/tests.rs`: each receipt's fields, that other targets
   are ignored, that `handle_touches` records each touch before dispatching it,
   that `FrameRuns` reports only a change of outcome with the run it ended,
-  that `Renderer::draw` notes the outcome of every draw, and that every call
+  that `Renderer::draw` notes the outcome of every draw, that the edit menu
+  receipts sit before a skip returns, after UIKit is asked to present, and
+  before the delegate builds its menu, and that every call
   into the module is Simulator-only.
 - `src/platform/menus/tests/commands.rs`: real `UICommand`s and
   `UIKeyCommand`s through `Performed::new`, and `deliver` with a current, a
