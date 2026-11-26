@@ -266,6 +266,7 @@ impl Window {
                 return;
             }
             state.keyboard_notified = notified;
+            state.keyboard_sample.end = tuple(keyboard);
         }
         tracing::debug!(?notified, ?keyboard, "keyboard frame placement");
         self.refresh_keyboard_placement();
@@ -301,11 +302,10 @@ impl Window {
             bounds.size.width,
             bounds.size.height,
         );
-        let guide = super::keyboard_placement::placement(
-            screen_rect,
-            super::keyboard_probe::keyboard_in_screen(&self.keyboard_probe, &screen),
-        );
+        let guide_frame = super::keyboard_probe::keyboard_in_screen(&self.keyboard_probe, &screen);
+        let guide = super::keyboard_placement::placement(screen_rect, guide_frame);
         let placement = super::keyboard_placement::combine(notified, guide);
+        self.state.borrow_mut().keyboard_sample.guide = guide_frame;
         let changed = {
             let mut state = self.state.borrow_mut();
             !state.closed
@@ -353,6 +353,11 @@ impl Window {
         let relevant = self
             .keyboard_notification_context(notification)
             .is_relevant();
+        {
+            let mut state = self.state.borrow_mut();
+            state.keyboard_sample.notifications += 1;
+            state.keyboard_sample.relevant += u32::from(relevant);
+        }
         if relevant {
             self.keyboard_placed(screen.bounds(), end_frame);
         }

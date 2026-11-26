@@ -79,6 +79,8 @@ pub(crate) use self::native_retirement_request::{
 };
 pub(crate) use self::pointer::set_cursor_style;
 pub(crate) use self::retirement::{retire_text_input_session, text_input_session_state};
+#[cfg(target_abi = "sim")]
+pub(crate) use self::scene::keyboard_placement_sample;
 pub(crate) use self::scene::{
     active_window, keyboard_bar_queue, keyboard_placement, scene_activation_changed,
     scene_connected, scene_disconnected, scene_geometry_changed, set_keyboard_bar,

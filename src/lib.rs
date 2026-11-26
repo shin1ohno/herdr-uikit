@@ -56,6 +56,8 @@ mod window_controls;
 
 pub use background_task::BackgroundTask;
 pub use error::{Error, Result};
+#[cfg(target_abi = "sim")]
+pub use keyboard_bar::keyboard_placement_sample;
 pub use keyboard_bar::{
     KeyboardBar, KeyboardBarItem, KeyboardBarMenuEntry, KeyboardBarPresses, KeyboardPlacement,
     keyboard_bar_presses, keyboard_placement, set_keyboard_bar,

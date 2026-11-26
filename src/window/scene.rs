@@ -279,6 +279,17 @@ pub(crate) fn keyboard_bar_queue(
     Some(window.text_input.keyboard_bar_presses())
 }
 
+/// Simulator QA: what `handle`'s keyboard placement was made from.
+#[cfg(target_abi = "sim")]
+pub(crate) fn keyboard_placement_sample(handle: AnyWindowHandle) -> Option<String> {
+    let window = menu_window(handle)?;
+    let state = window.state.borrow();
+    Some(format!(
+        "{:?} notified={:?} {:?}",
+        state.keyboard_placement, state.keyboard_notified, state.keyboard_sample
+    ))
+}
+
 /// Where `handle`'s software keyboard is (`keyboard_placement`).
 pub(crate) fn keyboard_placement(
     handle: AnyWindowHandle,

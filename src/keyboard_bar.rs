@@ -102,6 +102,15 @@ pub fn keyboard_placement(window: AnyWindowHandle) -> KeyboardPlacement {
     crate::window::keyboard_placement(window, mtm)
 }
 
+/// Simulator QA: the placement and what it was made from (the frame
+/// notifications seen and taken, the last end frame, the probe guide's
+/// frame), as one line. `None` off the main thread or for a closed window.
+#[cfg(target_abi = "sim")]
+pub fn keyboard_placement_sample(window: AnyWindowHandle) -> Option<String> {
+    MainThreadMarker::new()?;
+    crate::window::keyboard_placement_sample(window)
+}
+
 /// See [`keyboard_bar_presses`].
 pub struct KeyboardBarPresses {
     queue: Rc<RefCell<PressQueue>>,
