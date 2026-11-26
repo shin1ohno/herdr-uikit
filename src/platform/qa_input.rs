@@ -30,11 +30,26 @@
 //!   (`presented`, `zero_size`, `paths_not_ready`, `no_drawable`,
 //!   `render_failed`), `previous`, the outcome of the run it ends (`none` for
 //!   a window's first draw), and `previous_count`, how many draws that run had.
+//! - `edit-menu-present`: the deferred `presentEditMenuWithConfiguration`
+//!   of a native edit menu ran, or was skipped. Fields: `outcome`
+//!   (`presented`, `skipped`) and the menu's `token`; when presented,
+//!   `active` (the scene was active) and `responder` (`drawing`, `text`,
+//!   `none`: which view was first responder); when skipped, `reason`, why the
+//!   token was no longer current (`replaced`, `dismissed`, `unavailable`,
+//!   `closed`, `inactive`, `resigned_outside`, `switch_left_no_responder`,
+//!   `unknown`).
+//! - `edit-menu-menu`: UIKit asked the edit menu delegate for a menu.
+//!   Fields: `decision` (`items`, `empty`, `passthrough`) and `owned`, whether
+//!   the configuration carried the SDK's identifier.
 //!
 //! A `menu-perform` that is `performed` and keyed with no `menu-deliver`
 //! after it was handled as a key shortcut by the text input view.
 
-use crate::{menu::MenuTag, renderer::FrameOutcome};
+use crate::{
+    menu::MenuTag,
+    renderer::FrameOutcome,
+    window::edit_menu::state::{MenuDecision, NativeEditMenuStatus, RevokeReason},
+};
 
 /// The `tracing` target of every receipt.
 #[cfg(test)]
@@ -182,6 +197,79 @@ pub(crate) fn frame(outcome: FrameOutcome, previous: Option<FrameOutcome>, previ
         outcome = outcome.name(),
         previous = previous.map_or("none", FrameOutcome::name),
         previous_count,
+    );
+}
+
+/// Which view was first responder when a deferred edit menu present ran.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum MenuResponder {
+    Drawing,
+    Text,
+    None,
+}
+
+impl MenuResponder {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Drawing => "drawing",
+            Self::Text => "text",
+            Self::None => "none",
+        }
+    }
+}
+
+fn skip_reason(status: NativeEditMenuStatus) -> &'static str {
+    match status {
+        NativeEditMenuStatus::Current => "current",
+        NativeEditMenuStatus::Unknown => "unknown",
+        NativeEditMenuStatus::Revoked(reason) => match reason {
+            RevokeReason::Replaced => "replaced",
+            RevokeReason::Dismissed => "dismissed",
+            RevokeReason::Unavailable => "unavailable",
+            RevokeReason::Closed => "closed",
+            RevokeReason::Inactive => "inactive",
+            RevokeReason::ResignedOutside => "resigned_outside",
+            RevokeReason::SwitchLeftNoResponder => "switch_left_no_responder",
+        },
+    }
+}
+
+/// The deferred present of the edit menu `token` called UIKit.
+pub(crate) fn edit_menu_presented(token: u64, active: bool, responder: MenuResponder) {
+    tracing::info!(
+        target: "herdr_uikit::qa_input",
+        receipt = "edit-menu-present",
+        outcome = "presented",
+        token,
+        active,
+        responder = responder.name(),
+    );
+}
+
+/// The deferred present of the edit menu `token` found it no longer current
+/// (`status`) and did not call UIKit.
+pub(crate) fn edit_menu_skipped(token: u64, status: NativeEditMenuStatus) {
+    tracing::info!(
+        target: "herdr_uikit::qa_input",
+        receipt = "edit-menu-present",
+        outcome = "skipped",
+        token,
+        reason = skip_reason(status),
+    );
+}
+
+/// UIKit asked the delegate for a menu, and the SDK decided `decision`.
+pub(crate) fn edit_menu_menu(decision: MenuDecision, owned: bool) {
+    let decision = match decision {
+        MenuDecision::Items(_) => "items",
+        MenuDecision::Empty => "empty",
+        MenuDecision::Passthrough => "passthrough",
+    };
+    tracing::info!(
+        target: "herdr_uikit::qa_input",
+        receipt = "edit-menu-menu",
+        decision,
+        owned,
     );
 }
 
