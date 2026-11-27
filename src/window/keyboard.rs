@@ -58,6 +58,7 @@ pub(super) enum ResignReason {
     FocusChange,
     Inactive,
     LeavingWindow,
+    NativeModal,
     Restart,
     // keep-sorted end
 }
@@ -159,6 +160,10 @@ pub(super) struct Context {
     pub(super) local: bool,
     pub(super) screen_matches: Option<bool>,
     pub(super) text_requested: bool,
+    /// The user can dismiss a software keyboard: false for an iPad app on a
+    /// Mac, which has none, though UIKit still posts zero-height keyboard
+    /// notifications there.
+    pub(super) user_dismissable: bool,
 }
 
 impl Context {
@@ -192,7 +197,13 @@ pub(super) fn on_keyboard_event(
                 if context.first_responder {
                     keyboard.minimized = true;
                 }
-                if context.text_requested && keyboard.dismissal == Dismissal::None {
+                // On a Mac nothing the user did hid a keyboard; a User
+                // dismissal there would keep the drawing view first
+                // responder until a click, dropping every typed character.
+                if context.text_requested
+                    && context.user_dismissable
+                    && keyboard.dismissal == Dismissal::None
+                {
                     keyboard.dismissal = Dismissal::User;
                 }
             }
@@ -218,5 +229,9 @@ pub(super) fn on_keyboard_event(
     keyboard
 }
 
+// Explicit paths resolve the same from the library and from
+// `tests/input_recovery.rs`, which loads this file with `#[path]`, so these
+// tests also run on the host.
 #[cfg(test)]
+#[path = "keyboard/tests.rs"]
 mod tests;

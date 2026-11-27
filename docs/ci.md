@@ -13,7 +13,7 @@ known five-call baseline commit before checking the current source.
 The job installs the toolchain, components and targets declared in
 `rust-toolchain.toml` via `rustup show active-toolchain`, then records the
 compiler, host triple, installed targets, Xcode and both iOS SDK versions.
-It uses the runner's selected Xcode and sets `IPHONEOS_DEPLOYMENT_TARGET=17.0`.
+It uses the runner's selected Xcode and sets `IPHONEOS_DEPLOYMENT_TARGET=26.0`.
 
 Checks run sequentially, stopping at the first failure:
 
@@ -39,8 +39,9 @@ They need no optional feature.
 The Simulator step creates an available iPad Pro 13-inch device, runs
 `cargo test --locked --all-features --target aarch64-apple-ios-sim` through
 `scripts/sim-runner.sh`, and deletes only that device in a `finally` block.
-`edit_menu_uikit` runs without the Rust test harness so actual UIKit delegate
-and command objects are exercised on the main thread. Like the other SDK
+`edit_menu_uikit` and `native_inline_field_uikit` run without the Rust test
+harness so actual UIKit delegate, command and inline field objects are
+exercised on the main thread. Like the other SDK
 tests, it runs outside `UIApplicationMain`: actual menu presentation and
 responder transitions remain consumer Simulator E2E gates. Device-only input
 checks remain separate owner QA.

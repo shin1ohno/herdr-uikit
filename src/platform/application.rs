@@ -18,7 +18,7 @@ use std::cell::Cell;
 
 use objc2::{ClassType, MainThreadOnly, define_class, msg_send, rc::Retained, runtime::NSObject};
 use objc2_foundation::NSString;
-use objc2_ui_kit::{UIApplication, UIEvent, UIEventType, UIResponder};
+use objc2_ui_kit::{UIApplication, UIEvent, UIEventType, UIPressesEvent, UIResponder};
 
 use crate::menu::EventSource;
 
@@ -27,6 +27,9 @@ thread_local! {
     static DELIVERING: Cell<EventSource> = const { Cell::new(EventSource::Unknown) };
     /// Key events delivered so far, numbering them.
     static KEY_EVENTS: Cell<u64> = const { Cell::new(0) };
+    /// The key event being delivered carries a key the native modal gate
+    /// fences (`crate::window::native_modal`).
+    static FENCED: Cell<bool> = const { Cell::new(false) };
 }
 
 define_class!(
@@ -49,9 +52,18 @@ define_class!(
             // Restored afterwards, so an event UIKit delivers from inside
             // another one leaves the outer one's source in place.
             let outer = DELIVERING.replace(source);
+            let presses = event.downcast_ref::<UIPressesEvent>();
+            let fenced = presses.is_some_and(|presses| {
+                crate::window::native_modal::presses_will_deliver(presses, self.mtm())
+            });
+            let outer_fenced = FENCED.replace(fenced);
             // SAFETY: the argument is the event UIKit passed for this
             // selector; UIApplication's implementation returns nothing.
             let () = unsafe { msg_send![super(self), sendEvent: event] };
+            FENCED.set(outer_fenced);
+            if let Some(presses) = presses {
+                crate::window::native_modal::presses_delivered(presses, self.mtm());
+            }
             DELIVERING.set(outer);
             });
         }
@@ -69,6 +81,11 @@ fn source(event: &UIEvent) -> EventSource {
         flags: event.modifierFlags(),
         serial,
     }
+}
+
+/// Whether the key event being delivered carries a fenced key.
+pub(crate) fn delivering_fenced() -> bool {
+    FENCED.get()
 }
 
 /// The event UIKit is delivering now. Only the main thread's is recorded;

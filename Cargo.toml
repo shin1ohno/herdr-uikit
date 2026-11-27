@@ -45,7 +45,7 @@ objc2                 = "0.6.4"
 objc2-core-foundation = { default-features = false, features = ["CFCGTypes", "CFString", "std"], version = "0.3.2" }
 objc2-foundation      = { default-features = false, features = ["NSArray", "NSBundle", "NSData", "NSDictionary", "NSEnumerator", "NSError", "NSGeometry", "NSNotification", "NSObjCRuntime", "NSObject", "NSProcessInfo", "NSRange", "NSRunLoop", "NSSet", "NSString", "NSThread", "NSURL", "NSValue", "std"], version = "0.3.2" }
 objc2-quartz-core     = { default-features = false, features = ["CADisplayLink", "CAFrameRateRange", "CALayer", "CAMetalLayer", "CATransaction", "objc2-core-foundation", "objc2-metal", "std"], version = "0.3.2" }
-objc2-ui-kit          = { default-features = false, features = ["NSText", "UIAccessibility", "UIAccessibilityConstants", "UIApplication", "UIBezierPath", "UIColor", "UICommand", "UIDevice", "UIEditMenuInteraction", "UIEvent", "UIGeometry", "UIGestureRecognizer", "UIHoverGestureRecognizer", "UIHoverStyle", "UIImage", "UIInteraction", "UIInterface", "UIKey", "UIKeyCommand", "UIKeyConstants", "UIKeyboardLayoutGuide", "UILayoutGuide", "UIMenu", "UIMenuBuilder", "UIMenuElement", "UIMenuSystem", "UIOpenURLContext", "UIPanGestureRecognizer", "UIPasteboard", "UIPointerInteraction", "UIPointerRegion", "UIPointerStyle", "UIPress", "UIPressesEvent", "UIResponder", "UIScene", "UISceneConfiguration", "UISceneDefinitions", "UISceneOptions", "UISceneSession", "UISceneSessionActivationRequest", "UIScreen", "UIScreenMode", "UITextInput", "UITextInputContext", "UITextInputTraits", "UITouch", "UITraitCollection", "UIView", "UIViewController", "UIViewLayoutRegion", "UIWindow", "UIWindowScene", "UIWindowSceneGeometry", "UIWindowSceneGeometryPreferences", "UIWindowSceneGeometryPreferencesIOS", "block2", "objc2-core-foundation", "objc2-quartz-core", "std"], version = "0.3.2" }
+objc2-ui-kit          = { default-features = false, features = ["NSIndexPath_UIKitAdditions", "NSText", "UIAccessibility", "UIAccessibilityConstants", "UIAction", "UIApplication", "UIBarButtonItem", "UIBarButtonItemGroup", "UIBarItem", "UIBezierPath", "UIButton", "UIColor", "UICommand", "UIControl", "UIDevice", "UIEditMenuInteraction", "UIEvent", "UIFont", "UIGeometry", "UIGestureRecognizer", "UIHoverGestureRecognizer", "UIHoverStyle", "UIImage", "UIInteraction", "UIInterface", "UIKey", "UIKeyCommand", "UIKeyConstants", "UIKeyboardLayoutGuide", "UILabel", "UILayoutGuide", "UIMenu", "UIMenuBuilder", "UIMenuElement", "UIMenuSystem", "UIOpenURLContext", "UIPanGestureRecognizer", "UIPasteboard", "UIPointerInteraction", "UIPointerRegion", "UIPointerStyle", "UIPopoverPresentationController", "UIPopoverSupport", "UIPresentationController", "UIPress", "UIPressesEvent", "UIResponder", "UIScene", "UISceneConfiguration", "UISceneDefinitions", "UISceneOptions", "UISceneSession", "UISceneSessionActivationRequest", "UISceneWindowingControlStyle", "UIScreen", "UIScreenMode", "UIScrollView", "UISearchTextField", "UISheetPresentationController", "UITableView", "UITableViewCell", "UITextCursorView", "UITextField", "UITextInput", "UITextInputContext", "UITextInputTraits", "UITextSelectionDisplayInteraction", "UITouch", "UITraitCollection", "UIView", "UIViewController", "UIViewControllerTransitionCoordinator", "UIViewLayoutRegion", "UIWindow", "UIWindowScene", "UIWindowSceneGeometry", "UIWindowSceneGeometryPreferences", "UIWindowSceneGeometryPreferencesIOS", "block2", "objc2-core-foundation", "objc2-quartz-core", "std"], version = "0.3.2" }
 parking_lot           = "0.12"
 objc2-user-notifications = { default-features = false, features = ["UNNotification", "UNNotificationContent", "UNNotificationRequest", "UNNotificationResponse", "UNNotificationSettings", "UNNotificationSound", "UNNotificationTrigger", "UNUserNotificationCenter", "block2", "std"], version = "0.3.2" }
 pathfinder_geometry   = "0.5"
@@ -63,16 +63,30 @@ cbindgen = { default-features = false, version = "0.28.0" }
 # examples/uikit_smoke.rs draws a UILabel with UIKit alone; only the examples
 # and tests build with these extra features.
 [target.'cfg(target_os = "ios")'.dev-dependencies]
-objc2-ui-kit = { default-features = false, features = ["NSText", "UIFont", "UILabel", "block2", "objc2-core-foundation", "objc2-quartz-core", "std"], version = "0.3.2" }
+objc2-ui-kit = { default-features = false, features = ["NSText", "UIControl", "UIFont", "UILabel", "UIPopoverPresentationController", "UIPopoverSupport", "UIPresentationController", "UISceneSizeRestrictions", "UISearchTextField", "UISheetPresentationController", "UITextField", "block2", "objc2-core-foundation", "objc2-quartz-core", "std"], version = "0.3.2" }
 
 # GPUI's Windows build pulls in embed-resource, which Cargo resolves even
 # though iOS never builds it; the no-op herdr-gpui also patches in keeps the
 # lockfile offline-resolvable. Consumers ignore this table.
 [patch.crates-io]
 embed-resource = { path = "support/embed-resource" }
+# Zed's GPUI as published (gpui-pre 0.3.12, zed@d2a4fb6) plus the changes listed
+# in the fork's README (yebisu#161: touch momentum ends at the edge of its
+# content). yebisu patches the same revision.
+gpui-pre = { git = "https://github.com/shin1ohno/gpui-pre", rev = "60bd9f537760dda05c31861ad6bac03c4d3c81e4" }
 
 # UIKit object tests run on the process main thread without UIApplicationMain.
 [[test]]
 name = "edit_menu_uikit"
+harness = false
+required-features = ["test-support"]
+
+[[test]]
+name = "keyboard_bar_uikit"
+harness = false
+required-features = ["test-support"]
+
+[[test]]
+name = "native_inline_field_uikit"
 harness = false
 required-features = ["test-support"]

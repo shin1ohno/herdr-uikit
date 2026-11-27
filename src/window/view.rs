@@ -32,7 +32,11 @@ use objc2_ui_kit::{
     UISceneWillEnterForegroundNotification, UITouch, UITraitCollection, UIView, UIWindowScene,
 };
 
-use super::{keyboard::Event as KeyboardEvent, state::Window, touch::TouchStage};
+use super::{
+    keyboard::Event as KeyboardEvent,
+    state::{Window, press_ledger::PressPhase},
+    touch::TouchStage,
+};
 use crate::platform::menus::{self, Performed};
 
 pub(super) struct ViewIvars {
@@ -159,6 +163,7 @@ define_class!(
         #[unsafe(method(pressesBegan:withEvent:))]
         fn presses_began(&self, presses: &NSSet<UIPress>, event: Option<&UIPressesEvent>) {
             let _native_entry = crate::native_operation::refused();
+            if let Some(window) = self.owner() { window.record_presses(PressPhase::Began, presses); }
             if let Some(window) = self.owner() { window.state.borrow_mut().native_hardware_observed = true; }
             match self.press_target() {
                 Some(target) => {
@@ -177,6 +182,7 @@ define_class!(
         #[unsafe(method(pressesChanged:withEvent:))]
         fn presses_changed(&self, presses: &NSSet<UIPress>, event: Option<&UIPressesEvent>) {
             let _native_entry = crate::native_operation::refused();
+            if let Some(window) = self.owner() { window.record_presses(PressPhase::Changed, presses); }
             if let Some(window) = self.owner() { window.state.borrow_mut().native_hardware_observed = true; }
             match self.press_target() {
                 Some(target) => {
@@ -194,6 +200,7 @@ define_class!(
         #[unsafe(method(pressesEnded:withEvent:))]
         fn presses_ended(&self, presses: &NSSet<UIPress>, event: Option<&UIPressesEvent>) {
             let _native_entry = crate::native_operation::refused();
+            if let Some(window) = self.owner() { window.record_presses(PressPhase::Ended, presses); }
             if let Some(window) = self.owner() { window.state.borrow_mut().native_hardware_observed = true; }
             match self.press_target() {
                 Some(target) => {
@@ -211,6 +218,7 @@ define_class!(
         #[unsafe(method(pressesCancelled:withEvent:))]
         fn presses_cancelled(&self, presses: &NSSet<UIPress>, event: Option<&UIPressesEvent>) {
             let _native_entry = crate::native_operation::refused();
+            if let Some(window) = self.owner() { window.record_presses(PressPhase::Cancelled, presses); }
             if let Some(window) = self.owner() { window.state.borrow_mut().native_hardware_observed = true; }
             match self.press_target() {
                 Some(target) => {
@@ -233,6 +241,10 @@ define_class!(
             let Some(performed) = Performed::new(sender) else {
                 return;
             };
+            let modal = self.owner().is_some_and(|w| w.state.borrow().modal_blocks_input());
+            if modal || performed.blocked() {
+                return;
+            }
             let handled = performed.shortcut().is_some_and(|shortcut| {
                 self.owner()
                     .is_some_and(|window| window.text_input.menu_shortcut(shortcut))
@@ -265,6 +277,14 @@ define_class!(
             let _native_entry = crate::native_operation::refused();
             if let Some(window) = self.owner() {
                 window.handle_scroll(recognizer);
+            }
+        }
+
+        #[unsafe(method(handleWheel:))]
+        fn handle_wheel(&self, recognizer: &UIPanGestureRecognizer) {
+            let _native_entry = crate::native_operation::refused();
+            if let Some(window) = self.owner() {
+                window.handle_wheel(recognizer);
             }
         }
 
@@ -415,7 +435,7 @@ impl GpuiView {
     }
 
     /// The window this view draws, while it is open.
-    fn owner(&self) -> Option<Rc<Window>> {
+    pub(super) fn owner(&self) -> Option<Rc<Window>> {
         self.ivars().window.upgrade()
     }
 

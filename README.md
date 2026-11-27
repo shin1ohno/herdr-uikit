@@ -32,12 +32,26 @@ What it provides:
 - **Text.** The Core Text text system, also ported from GPUI's macOS platform.
 - **Input.** Raw touches (GPUI's core turns them into clicks, scrolling, and
   drags), pointer and hover, hardware keys, and `UITextInput` for the software
-  keyboard and IME composition.
+  keyboard and IME composition. Two-finger trackpad scrolls coast after the
+  fingers lift, and wheel notches arrive as whole lines.
 - **Menus.** GPUI's application menus in UIKit's main menu (the iPadOS menu
   bar and the keyboard shortcut overlay), with their shortcuts as key
   commands; see [Menus](#menus).
 - **Layout direction.** `herdr_uikit::set_layout_direction` tells UIKit which
   way the app's text runs; see [Layout direction](#layout-direction).
+- **Native search panel.** `present_native_search` shows a UIKit search
+  field and results list as a popover or sheet whose field owns the keyboard,
+  behind a per-window gate that keeps GPUI's responders, keys, menus and
+  edits out until GPUI's responder is back; see `docs/native-search.md`.
+- **Native inline field.** `present_native_inline_field` lays one
+  `UITextField` over a label's rectangle (a row or tab name edited in place)
+  behind the same gate, never up together with the search panel; and
+  `set_menu_subtitles` shows a reason under disabled menu items; see
+  `docs/native-inline-field.md`.
+- **Input mode indicator.** The system's input mode indicator ("A", "あ",
+  the input source switcher) shows at the text input caret, as in a standard
+  text field, through a `UITextSelectionDisplayInteraction` with a
+  transparent cursor view; see `docs/input-mode-indicator.md`.
 - **Window controls.** Per-window insets for iPadOS 26's window controls;
   see [Window controls](#window-controls).
 - **Everything else.** A GCD dispatcher, the pasteboard, thermal state, and
@@ -197,11 +211,33 @@ the drawing view's safe area with horizontal corner adaptation, less
 With the controls showing, the value covers them: on the iPadOS 26.5
 simulator a narrow windowed window reports 66 pt on the left and 9.5 pt on
 the right. Without them UIKit still reports the window's corner allowance,
-5.5-9.5 pt, so the value is not zero on iOS 26 even when no controls show. It
-is zero on iOS 17-25, for a window in no live scene, and off the main thread.
+5.5-9.5 pt, so the value is not zero even when no controls show. It is zero
+for a window in no live scene, and off the main thread.
 UIKit layout callbacks sample and cache it; GPUI redraws the window when it
 changes. Herdr UI should use it to pad only top-bar content so its leading
 button stays clear of the controls.
+
+On a Mac running the iPad app ("Designed for iPad",
+`NSProcessInfo.isiOSAppOnMac`), each window scene asks UIKit for the unified
+windowing-control style (`preferredWindowingControlStyleForScene:`, iOS 26).
+The scene also hides its window's title (`UITitlebar.titleVisibility`, with
+no toolbar), and once its NSWindow exists it adds
+`NSWindowStyleMaskFullSizeContentView` to it, so the content fills the window
+and the traffic lights sit over the app's own top row. The title bar's band,
+which UIKit then reports as top safe area, is left to that top row: the safe
+area's top is 0. The SDK declares `titlebar` for Mac Catalyst only and an iOS
+app has no NSWindow API, so herdr-uikit sends both through the runtime after
+`respondsToSelector:` (the window through
+`NSApplication.sharedApplication.windows`). A Mac without the titlebar keeps
+its title bar, and one whose window cannot be extended within five seconds
+shows the title again. While the content sits under the title bar, the insets
+above are at least the Mac's 80 pt (about 104 UIKit points at the Mac's
+default 0.77 scale) on the traffic lights' side (the left, or the right in a
+right-to-left app) even if the Mac reports less, and
+`herdr_uikit::traffic_lights_over_content()` is true: any top-row content,
+not only a sidebar header, then starts past the insets. On an iPad the scene
+asks for the automatic style, which UIKit uses when the method is absent,
+`traffic_lights_over_content()` is false, and nothing else changes.
 
 ## Building
 
@@ -213,7 +249,7 @@ Build and lint with the deployment target set, since rustc links the minimum
 OS version into every artifact:
 
 ```sh
-export IPHONEOS_DEPLOYMENT_TARGET=17.0
+export IPHONEOS_DEPLOYMENT_TARGET=26.0
 cargo clippy --locked --target aarch64-apple-ios --all-targets -- -D warnings
 cargo clippy --locked --target aarch64-apple-ios-sim --all-targets -- -D warnings
 cargo check --locked   # the host build, where the crate is empty
@@ -234,7 +270,7 @@ runner that boots the simulator when it is not running, never shuts it down,
 and runs each test binary there with `xcrun simctl spawn`:
 
 ```sh
-export IPHONEOS_DEPLOYMENT_TARGET=17.0
+export IPHONEOS_DEPLOYMENT_TARGET=26.0
 CARGO_TARGET_AARCH64_APPLE_IOS_SIM_RUNNER=scripts/sim-runner.sh \
   cargo test --locked --all-features --target aarch64-apple-ios-sim
 ```
@@ -244,6 +280,12 @@ is `iPad Pro 13-inch (M5)`. A name resolves to an available device, preferring
 a booted one, then the newest iOS runtime. Test binaries run as plain
 processes outside an app bundle, so nothing that needs `UIApplicationMain`
 is tested this way.
+
+The inline field's std-only decisions also run on the host
+(`cargo test --locked --tests`, `tests/native_inline_field_policy.rs`), and
+`python3 scripts/native_inline_field_mutations.py host` requires each guarded
+decision's test to fail when the decision is removed. Its UIApplicationMain
+probe and UIKit mutations are in `docs/native-inline-field.md`, "Tests".
 
 ## Examples
 
@@ -334,8 +376,12 @@ already-revoked cleanup calls UIKit directly.
 
 Owned configuration identifiers have prefix `EDIT_MENU_IDENTIFIER_PREFIX`.
 The delegate returns token-tagged Copy/Paste only for the current token, and
-an explicit empty `UIMenu` for every invalid owned configuration. It forwards
-`suggestedActions` only for non-owned identifiers. Standard Edit commands
+an explicit empty `UIMenu` for every invalid owned configuration. UIKit also
+presents the interaction's menu by itself, with a non-owned configuration, on a
+pointer's secondary click anywhere over the view. While explicit availability
+is set, the consumer decides where its menu appears, so the delegate returns an
+empty `UIMenu` for every non-owned identifier too. Without explicit availability
+it forwards `suggestedActions` for non-owned identifiers. Standard Edit commands
 without `EDIT_MENU_PROPERTY_KEY`, nil senders and other senders retain their
 previous untagged behavior. A present but malformed/stale/foreign token is
 rejected before dispatch and before clipboard fallback.

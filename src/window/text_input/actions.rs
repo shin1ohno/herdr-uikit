@@ -121,6 +121,10 @@ impl GPUITextInputView {
             self.ivars().target.mark_hardware_observed();
         }
         let decision = self.edit_decision(selector);
+        // Cut-probe milestone: the selector entered the SDK. The delivery and
+        // eligibility gates follow; the probe's preflight checks eligibility first.
+        #[cfg(feature = "test-support")]
+        crate::window::retirement_probe::NativeCutPhase::AcceptedCut.record_edit(selector);
         let checked = dispatch_checked_selector_inner(
             selector,
             self.ivars().target.menu_delivery(sender),
@@ -331,15 +335,23 @@ fn dispatch_menu_action(
         is_held: false,
         prefer_character_input: false,
     }));
+    #[cfg(feature = "test-support")]
+    crate::window::retirement_probe::NativeCutPhase::DownReturned.record();
     dispatch(PlatformInput::KeyUp(KeyUpEvent { keystroke }));
+    #[cfg(feature = "test-support")]
+    crate::window::retirement_probe::NativeCutPhase::UpReturned.record();
     drop(menu_origin);
     drop(origin);
     #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
     drop(key_scope);
+    #[cfg(feature = "test-support")]
+    crate::window::retirement_probe::NativeCutPhase::OriginRestored.record();
     dispatch(PlatformInput::ModifiersChanged(ModifiersChangedEvent {
         modifiers: original.0,
         capslock: original.1,
     }));
+    #[cfg(feature = "test-support")]
+    crate::window::retirement_probe::NativeCutPhase::ModifiersRestored.record();
     let fallback_invoked = action == EditAction::Paste && !handled;
     if fallback_invoked {
         paste();

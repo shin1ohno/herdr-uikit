@@ -1,0 +1,21 @@
+name: NativeSearchQA
+options:
+  deploymentTarget:
+    iOS: "26.0"
+targets:
+  NativeSearchQA:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [Tests]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: be.ohno.herdruikit.nativesearchqa
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGNING_ALLOWED: NO
+schemes:
+  NativeSearchQA:
+    build:
+      targets:
+        NativeSearchQA: [test]
+    test:
+      targets: [NativeSearchQA]

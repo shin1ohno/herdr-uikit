@@ -57,7 +57,25 @@ pub(crate) struct Renderer {
     path_texture_retry: retry::Retry,
     path_texture_failures: failures::FailureLog,
     frame_failures: failures::FailureLog,
+    /// Simulator QA: draws folded into runs of one outcome (`qa_input::FrameRuns`).
+    #[cfg(all(target_os = "ios", target_abi = "sim"))]
+    frame_runs: crate::platform::qa_input::FrameRuns,
 }
+
+/// What one `draw` came to: the frame was presented, or why it was not.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FrameOutcome {
+    Presented,
+    /// The layout has not given the layer a size yet.
+    ZeroSize,
+    /// The scene has paths and the path textures are not allocated.
+    PathsNotReady,
+    /// The layer gave no drawable before its timeout.
+    NoDrawable,
+    /// Encoding the frame failed.
+    RenderFailed,
+}
+
 impl Renderer {
     /// Creates the layer and runtime-compiled pipelines; UIKit hosts the retained layer.
     pub(crate) fn new(instance_buffer_pool: Context, transparent: bool) -> crate::Result<Self> {
@@ -86,6 +104,8 @@ impl Renderer {
             path_texture_retry: retry::Retry::default(),
             path_texture_failures: failures::FailureLog::default(),
             frame_failures: failures::FailureLog::default(),
+            #[cfg(all(target_os = "ios", target_abi = "sim"))]
+            frame_runs: Default::default(),
         })
     }
 
@@ -188,17 +208,28 @@ impl Renderer {
         // nothing to do
     }
 
-    /// Draw once per frame from the display link.
+    /// Draw once per frame from the display link. On the Simulator, a change of
+    /// outcome is a QA receipt (`qa_input::frame`).
     pub(crate) fn draw(&mut self, scene: &Scene) {
+        let outcome = self.draw_frame(scene);
+        #[cfg(all(target_os = "ios", target_abi = "sim"))]
+        if let Some((previous, count)) = self.frame_runs.note(outcome) {
+            crate::platform::qa_input::frame(outcome, previous, count);
+        }
+        #[cfg(not(all(target_os = "ios", target_abi = "sim")))]
+        let _ = outcome;
+    }
+
+    fn draw_frame(&mut self, scene: &Scene) -> FrameOutcome {
         if self.drawable_size.width.0 <= 0 || self.drawable_size.height.0 <= 0 {
-            return;
+            return FrameOutcome::ZeroSize;
         }
         if !scene.paths.is_empty() && !self.path_intermediate_textures_ready() {
             // Drawing may continue without another layout callback. Retry only
             // when the cooldown permits it, and keep incomplete frames offscreen.
             self.ensure_path_intermediate_textures(Instant::now());
             if !self.path_intermediate_textures_ready() {
-                return;
+                return FrameOutcome::PathsNotReady;
             }
         }
         let layer = self.layer.clone();
@@ -210,7 +241,7 @@ impl Renderer {
                 "failed to retrieve next drawable, drawable size: {:?}",
                 viewport_size
             );
-            return;
+            return FrameOutcome::NoDrawable;
         };
 
         let command_buffer = match self.render_frame(scene, drawable.texture(), viewport_size) {
@@ -219,7 +250,7 @@ impl Renderer {
                 if let Some(error) = self.frame_failures.record(error) {
                     tracing::warn!(%error, "failed to render");
                 }
-                return;
+                return FrameOutcome::RenderFailed;
             }
         };
         self.frame_failures.clear();
@@ -232,6 +263,7 @@ impl Renderer {
             command_buffer.present_drawable(drawable);
             command_buffer.commit();
         }
+        FrameOutcome::Presented
     }
 }
 

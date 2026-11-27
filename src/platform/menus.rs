@@ -73,6 +73,10 @@ impl Menus {
         self.owned.clone()
     }
 
+    fn apply_subtitles(&mut self, table: &std::collections::HashMap<String, String>) {
+        self.model.apply_subtitles(table);
+    }
+
     /// The command a tag names, unless the tag is from older menus.
     fn command(&self, tag: MenuTag) -> Option<&Command> {
         (tag.generation == self.generation)
@@ -92,24 +96,44 @@ pub(crate) fn request_rebuild(mtm: MainThreadMarker) {
     UIMenuSystem::mainSystem(mtm).setNeedsRebuild();
 }
 
+/// `crate::menu::set_menu_subtitles` replaced the table: the current
+/// commands take it, and UIKit builds the menus again.
+pub(crate) fn subtitles_changed(
+    table: &std::collections::HashMap<String, String>,
+    mtm: MainThreadMarker,
+) {
+    if let Some(shared) = shared::current() {
+        shared.menus.borrow_mut().apply_subtitles(table);
+    }
+    request_rebuild(mtm);
+}
+
 /// A command UIKit performed.
 pub(crate) struct Performed {
     /// The item's shortcut, when the command is a key command.
     shortcut: Option<Shortcut>,
     tag: MenuTag,
+    /// The key window when UIKit performed it: the window it was chosen in.
+    origin: Option<gpui::AnyWindowHandle>,
+    /// The key event delivering it carried a key the native modal fences.
+    fenced: bool,
 }
 
 impl Performed {
     /// What `sender`, the command UIKit passed to `herdrMenuAction:`, names.
     pub(crate) fn new(sender: Option<&AnyObject>) -> Option<Self> {
-        let command = sender?.downcast_ref::<UICommand>()?;
-        let tag = tag(command)?;
+        let named = sender
+            .and_then(|sender| sender.downcast_ref::<UICommand>())
+            .and_then(tag);
         // A command built without a key input (its shortcut was taken) can
         // only have been chosen from the menu.
         let keyed = sender
             .and_then(|sender| sender.downcast_ref::<UIKeyCommand>())
             .and_then(UIKeyCommand::input)
             .is_some_and(|input| input.length() > 0);
+        #[cfg(all(target_os = "ios", target_abi = "sim"))]
+        super::qa_input::menu_perform(sender.is_some(), named, current_generation(), keyed);
+        let tag = named?;
         let shortcut = keyed
             .then(|| {
                 let shared = shared::current()?;
@@ -117,7 +141,22 @@ impl Performed {
                 menus.command(tag)?.shortcut.clone()
             })
             .flatten();
-        Some(Self { shortcut, tag })
+        let origin =
+            MainThreadMarker::new().and_then(crate::window::native_modal::key_window_handle);
+        let fenced = super::application::delivering_fenced();
+        Some(Self {
+            shortcut,
+            tag,
+            origin,
+            fenced,
+        })
+    }
+
+    /// While the origin window's native modal gate is shut, or the key
+    /// that chose the command is fenced, the command does nothing.
+    pub(crate) fn blocked(&self) -> bool {
+        let shut = self.origin.is_some_and(crate::window::native_modal::blocks);
+        !crate::window::native_modal::command_runs(self.fenced, shut, false)
     }
 
     pub(crate) fn shortcut(&self) -> Option<&Shortcut> {
@@ -128,8 +167,18 @@ impl Performed {
     /// main queue after the UIKit call on the stack returns, so GPUI's app
     /// borrow is never nested.
     pub(crate) fn dispatch_action(&self) {
+        if self.blocked() {
+            return;
+        }
         let tag = self.tag;
+        let origin = self.origin;
         shared::later(move |shared| {
+            // Checked again on delivery: a search opened in the origin window
+            // after the command was performed stops it too.
+            let shut = origin.is_some_and(crate::window::native_modal::blocks);
+            if !crate::window::native_modal::command_runs(false, false, shut) {
+                return;
+            }
             deliver(shared, tag);
         });
     }
@@ -145,17 +194,47 @@ fn deliver(shared: &Shared, tag: MenuTag) -> bool {
             .map(|command| command.action.boxed_clone())
     };
     let Some(action) = action else {
+        #[cfg(all(target_os = "ios", target_abi = "sim"))]
+        receipt(shared, tag, super::qa_input::Delivery::StaleGeneration);
         tracing::debug!("a menu command from replaced menus was performed");
         return false;
     };
-    let delivered = shared
+    let called = shared
         .app_menu_action
-        .call(|callback| callback(action.as_ref()))
-        .is_some();
+        .try_call(|callback| callback(action.as_ref()));
+    #[cfg(all(target_os = "ios", target_abi = "sim"))]
+    receipt(
+        shared,
+        tag,
+        match called {
+            Called::Done(()) => super::qa_input::Delivery::Delivered,
+            Called::Unregistered => super::qa_input::Delivery::NoCallback,
+            Called::Running => super::qa_input::Delivery::CallbackRunning,
+        },
+    );
+    let delivered = matches!(called, Called::Done(()));
     if !delivered {
         tracing::warn!("a menu command was performed before GPUI registered for it");
     }
     delivered
+}
+
+/// The generation of the menus as last set, when the platform is running
+/// here and its menus are not borrowed.
+#[cfg(all(target_os = "ios", target_abi = "sim"))]
+fn current_generation() -> Option<u32> {
+    let shared = shared::current()?;
+    let menus = shared.menus.try_borrow().ok()?;
+    Some(menus.generation)
+}
+
+/// Records, for Simulator QA, what delivering the command `tag` came to.
+#[cfg(all(target_os = "ios", target_abi = "sim"))]
+fn receipt(shared: &Shared, tag: MenuTag, delivery: super::qa_input::Delivery) {
+    let Ok(menus) = shared.menus.try_borrow() else {
+        return;
+    };
+    super::qa_input::menu_deliver(tag, menus.generation, delivery);
 }
 
 /// What `validateCommand:` shows for one of GPUI's commands.
@@ -229,6 +308,17 @@ pub(crate) fn validate(command: &UICommand) {
     let Some(tag) = tag(command) else {
         return;
     };
+    // The app's commands are disabled while the key window's native modal
+    // gate is shut; the panel's field keeps its own Edit commands.
+    let modal = MainThreadMarker::new()
+        .and_then(crate::window::native_modal::key_window_handle)
+        .is_some_and(crate::window::native_modal::blocks);
+    if !crate::window::native_modal::command_enabled(modal) {
+        let mut attributes = command.attributes();
+        attributes.set(UIMenuElementAttributes::Disabled, true);
+        command.setAttributes(attributes);
+        return;
+    }
     let shared = shared::current();
     let entry = shared.as_ref().and_then(|shared| {
         let menus = shared.menus.borrow();
@@ -496,6 +586,9 @@ impl Context<'_> {
         };
         if command.disabled {
             element.setAttributes(UIMenuElementAttributes::Disabled);
+        }
+        if let Some(subtitle) = &command.subtitle {
+            element.setSubtitle(Some(&NSString::from_str(subtitle)));
         }
         element.setState(state(command.checked));
         Some(Retained::into_super(element))

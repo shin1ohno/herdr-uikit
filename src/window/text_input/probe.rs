@@ -11,7 +11,9 @@ use objc2_ui_kit::{UICommand, UIKeyInput, UIMenuElementAttributes, UITextInput, 
 
 use super::{TextInputView, view_class::GPUITextInputView};
 
+mod cut_query;
 mod query;
+pub use cut_query::*;
 pub use query::{NativeQuery, NativeQueryError};
 
 /// A captured native origin, not a lookup of the window's current client.
@@ -60,6 +62,18 @@ impl NativeClient {
 
     pub fn attached(&self) -> bool {
         self.0.superview().is_some()
+    }
+
+    /// The captured text view, for held-press injection.
+    #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+    pub(crate) fn view(&self) -> Retained<UIView> {
+        Retained::into_super(self.0.clone())
+    }
+
+    /// Whether this client still accepts input (it has not retired).
+    #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+    pub(crate) fn live(&self) -> bool {
+        self.0.ivars().target.client.live()
     }
 
     /// Actual Objective-C canPerformAction and validateCommand on the captured

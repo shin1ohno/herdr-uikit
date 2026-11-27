@@ -22,12 +22,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed={manifest_path}");
     let manifest = fs::read_to_string(manifest_path)?;
     let version = pinned_gpui_version(&manifest)?;
-    let mut gpui = None;
-    for registry in fs::read_dir(cargo_home.join("registry/src"))? {
-        let candidate = registry?.path().join(format!("gpui-pre-{version}"));
-        if candidate.join("src/scene.rs").is_file() {
-            gpui = Some(candidate);
-            break;
+    // A gpui-pre that says where its sources are (the shin1ohno/gpui-pre fork,
+    // through `links = "gpui"`) is read there: that is the copy being compiled,
+    // also when a consumer patches it in from git, where the registry has none.
+    println!("cargo:rerun-if-env-changed=DEP_GPUI_SRC");
+    let mut gpui = env::var_os("DEP_GPUI_SRC")
+        .map(PathBuf::from)
+        .and_then(|src| src.parent().map(PathBuf::from))
+        .filter(|root| root.join("src/scene.rs").is_file());
+    if gpui.is_none() {
+        for registry in fs::read_dir(cargo_home.join("registry/src"))? {
+            let candidate = registry?.path().join(format!("gpui-pre-{version}"));
+            if candidate.join("src/scene.rs").is_file() {
+                gpui = Some(candidate);
+                break;
+            }
         }
     }
     let gpui = gpui.ok_or("locked gpui-pre sources were not found in Cargo registry")?;

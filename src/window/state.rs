@@ -10,6 +10,8 @@
 //! view synchronously. So no `RefCell` here is borrowed across a callback or
 //! such a UIKit call: callers copy what they need out of a short borrow.
 
+pub(super) mod press_ledger;
+
 use std::cell::{Cell, RefCell};
 
 use gpui::{
@@ -19,8 +21,9 @@ use gpui::{
     WindowInsets, WindowVisibility,
 };
 use objc2::{MainThreadMarker, rc::Retained};
+use objc2_foundation::NSSet;
 use objc2_quartz_core::CALayer;
-use objc2_ui_kit::{UIViewController, UIWindow, UIWindowScene};
+use objc2_ui_kit::{UIPress, UIWindow, UIWindowScene};
 
 use super::{
     frame::InsetAnimation,
@@ -35,7 +38,9 @@ use crate::{display_link::DisplayLink, renderer::Renderer};
 
 pub(crate) struct Window {
     pub(super) callbacks: Callbacks,
-    pub(super) controller: Retained<UIViewController>,
+    /// The root view controller; it hides the status bar while the window
+    /// fills its screen (`root_controller`).
+    pub(super) controller: Retained<super::root_controller::RootController>,
     /// `None` only until `open` installs it, and again after close.
     pub(super) display_link: RefCell<Option<DisplayLink>>,
     pub(super) executor: ForegroundExecutor,
@@ -50,12 +55,26 @@ pub(crate) struct Window {
     pub(super) state: RefCell<State>,
     pub(super) text_input: TextInputView,
     pub(super) view: Retained<GpuiView>,
+    /// The native modal session (search panel or inline field) this window
+    /// presents, if any.
+    pub(super) native_search: RefCell<Option<super::native_modal::Session>>,
 }
 
 pub(super) struct State {
     pub(super) native_request_serial: u64,
     pub(super) native_request_pending: Option<u64>,
+    /// Diagnostic only: a hardware press, repeat or keyboard shortcut reached
+    /// this Window at some point. Retirement requests read `press_ledger`.
     pub(super) native_hardware_observed: bool,
+    /// The presses seen begin and not yet end (`press_ledger`).
+    pub(super) press_ledger: press_ledger::PressLedger<Retained<UIPress>>,
+    /// The native modal gate (`native_modal`), shut while a native search
+    /// session is presenting, up, closing or restoring.
+    pub(super) native_modal: super::native_modal::Gate,
+    /// GPUI's keyboard requests while the gate holds the responder.
+    pub(super) modal_intent: super::native_modal::Intent,
+    /// Keys kept from GPUI until released (`native_modal::fence`).
+    pub(super) press_fence: super::native_modal::Fence,
     pub(super) appearance: WindowAppearance,
     pub(super) background_appearance: WindowBackgroundAppearance,
     /// The window's frame in its scene, in points; the size is the content
@@ -75,10 +94,23 @@ pub(super) struct State {
     pub(super) hover_ending: bool,
     pub(super) hovered: bool,
     pub(super) input_handler: Option<PlatformInputHandler>,
+    /// What the diagnostic codes last said (`input_diagnostics`).
+    pub(super) input_diagnostics: super::input_diagnostics::Dedup,
     pub(super) insets: WindowInsets,
     pub(super) is_active: bool,
     pub(super) keyboard: Keyboard,
     pub(super) keyboard_animation: Option<InsetAnimation>,
+    /// Where the software keyboard's last relevant frame notification put it
+    /// (`keyboard_placement`); a floating keyboard has no bottom inset.
+    pub(super) keyboard_placement: super::KeyboardPlacement,
+    /// What the last relevant frame notification alone said, and where the
+    /// drawing view's keyboard guide (which follows undocked keyboards) put
+    /// the keyboard at the last layout; combined into `keyboard_placement`.
+    pub(super) keyboard_notified: super::KeyboardPlacement,
+    pub(super) keyboard_guide: super::KeyboardPlacement,
+    /// What the placement was made from, for Simulator QA
+    /// (`keyboard_placement_sample`).
+    pub(super) keyboard_sample: KeyboardSample,
     /// The focused element's text state after the last frame, or `None`
     /// while no element takes text (`frame`, `text_state`).
     pub(super) last_text_state: Option<TextState>,
@@ -91,6 +123,8 @@ pub(super) struct State {
     pub(super) pressed_button: Option<MouseButton>,
     pub(super) scale_factor: f32,
     pub(super) scene: Option<Retained<UIWindowScene>>,
+    /// The trackpad gesture and its coast after the fingers lift (`pointer`).
+    pub(super) scroll_momentum: super::pointer::momentum::Gesture,
     /// GPUI's focused element takes text input.
     pub(super) text_input_focused: bool,
     pub(super) native_edit_availability: Option<crate::NativeEditAvailability>,
@@ -101,12 +135,27 @@ pub(super) struct State {
     pub(super) window_controls: Edges<Pixels>,
 }
 
+/// The inputs of `keyboard_placement`: frame notifications seen and taken
+/// as this window's, the last end frame, and the keyboard guide's frame (all
+/// in screen points).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct KeyboardSample {
+    pub(crate) notifications: u32,
+    pub(crate) relevant: u32,
+    pub(crate) end: (f64, f64, f64, f64),
+    pub(crate) guide: (f64, f64, f64, f64),
+}
+
 impl State {
     pub(super) fn new(bounds: Bounds<Pixels>, scale_factor: f32, title: String) -> Self {
         Self {
             native_request_serial: 0,
             native_request_pending: None,
             native_hardware_observed: false,
+            press_ledger: press_ledger::PressLedger::default(),
+            native_modal: super::native_modal::Gate::default(),
+            modal_intent: super::native_modal::Intent::default(),
+            press_fence: super::native_modal::Fence::default(),
             appearance: WindowAppearance::default(),
             background_appearance: WindowBackgroundAppearance::Opaque,
             bounds,
@@ -118,10 +167,15 @@ impl State {
             hover_ending: false,
             hovered: false,
             input_handler: None,
+            input_diagnostics: Default::default(),
             insets: WindowInsets::default(),
             is_active: false,
             keyboard: Keyboard::default(),
             keyboard_animation: None,
+            keyboard_placement: super::KeyboardPlacement::Hidden,
+            keyboard_notified: super::KeyboardPlacement::Hidden,
+            keyboard_guide: super::KeyboardPlacement::Hidden,
+            keyboard_sample: KeyboardSample::default(),
             last_text_state: None,
             modifiers: Modifiers::default(),
             mouse_position: Point::default(),
@@ -129,6 +183,7 @@ impl State {
             pressed_button: None,
             scale_factor,
             scene: None,
+            scroll_momentum: Default::default(),
             text_input_focused: false,
             native_edit_availability: None,
             title,
@@ -143,6 +198,30 @@ impl State {
     /// the scene is in the background is refused, so drawing stops there.
     pub(super) fn can_draw(&self) -> bool {
         !self.closed && self.ui_window.is_some() && self.visibility.is_visible()
+    }
+}
+
+impl Window {
+    /// The one adapter from a press selector's `NSSet<UIPress>` to the ledger.
+    /// The keys are read before the state is borrowed. Its body is fixed by
+    /// `entry_guard_tests::press_adapter_bodies_are_fixed`.
+    pub(super) fn record_presses(&self, phase: press_ledger::PressPhase, presses: &NSSet<UIPress>) {
+        let facts: Vec<_> = presses
+            .iter()
+            .map(|press| {
+                press_ledger::PressFact::new(
+                    press.key(self.mtm).map(|key| key.keyCode().0),
+                    Retained::as_ptr(&press).addr(),
+                    press,
+                )
+            })
+            .collect();
+        press_ledger::apply(
+            &mut self.state.borrow_mut().press_ledger,
+            phase,
+            facts,
+            std::time::Instant::now(),
+        );
     }
 }
 

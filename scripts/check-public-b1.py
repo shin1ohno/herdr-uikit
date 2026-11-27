@@ -56,7 +56,7 @@ plist = {
     'CFBundleName': 'SDK B1 Source Probe', 'CFBundlePackageType': 'APPL',
     'CFBundleShortVersionString': '1.0', 'CFBundleVersion': '1',
     'CFBundleSupportedPlatforms': ['iPhoneSimulator'], 'LSRequiresIPhoneOS': True,
-    'MinimumOSVersion': '17.0', 'UIDeviceFamily': [2], 'UILaunchScreen': {},
+    'MinimumOSVersion': '26.0', 'UIDeviceFamily': [2], 'UILaunchScreen': {},
     'UIApplicationSceneManifest': {'UIApplicationSupportsMultipleScenes': True},
     'UISupportedInterfaceOrientations~ipad': ['UIInterfaceOrientationPortrait',
         'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight'],
@@ -126,6 +126,14 @@ mutations = [
      '        view.flush();\n        old.removeFromSuperview();',
      '        view.ivars().acquire.set(Acquire::Settled);\n        view.flush();\n        old.removeFromSuperview();',
      'replacement-responder-acquired-before-input'),
+    # S13: a keyed press injected into the fenced text view reaches the ledger
+    # only through this line (the body returns early and forwards nothing).
+    # The drawing view's lines are fixed by the S9 source guard instead: after
+    # the scene cases the text view need not be first responder, so the
+    # drawing view may forward to it and a single removal is not observable.
+    ('text-press-record-removed', 'src/window/text_input/view_class.rs',
+     '            self.ivars().target.record_presses(PressPhase::Began, presses);\n', '',
+     'keyed-press-held-refused'),
 ]
 manifest = {'head': head, 'scope': 'SDK native adapter subset, not OS/B2/S/Z acceptance', 'mutations': []}
 for label, relative, before, after, assertion in mutations:

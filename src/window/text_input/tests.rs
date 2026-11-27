@@ -4,6 +4,7 @@ mod classes;
 #[cfg(feature = "test-support")]
 mod composition_commit;
 mod configuration;
+mod control_keys;
 mod external_edits;
 mod first_responder;
 mod geometry_rects;
@@ -47,6 +48,9 @@ mod composition_selection;
 
 #[cfg(feature = "test-support")]
 mod retirement;
+
+#[cfg(all(feature = "test-support", target_abi = "sim"))]
+mod selection_display;
 
 #[cfg(feature = "test-support")]
 pub(super) mod native_queries;

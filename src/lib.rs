@@ -33,15 +33,19 @@ mod display_link;
 mod error;
 mod gpui_call;
 mod key_routing;
+mod keyboard_bar;
 mod layout_direction;
+mod mac_titlebar;
 mod menu;
 mod native_edit_action;
 mod native_edit_availability;
 mod native_edit_menu;
 #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
 pub mod native_edit_observer;
+mod native_inline_field;
 mod native_operation;
 mod native_retirement_request;
+mod native_search;
 mod platform;
 mod renderer;
 mod scene_fallback;
@@ -52,7 +56,14 @@ mod window_controls;
 
 pub use background_task::BackgroundTask;
 pub use error::{Error, Result};
+#[cfg(target_abi = "sim")]
+pub use keyboard_bar::keyboard_placement_sample;
+pub use keyboard_bar::{
+    KeyboardBar, KeyboardBarItem, KeyboardBarMenuEntry, KeyboardBarPresses, KeyboardPlacement,
+    keyboard_bar_presses, keyboard_placement, set_keyboard_bar,
+};
 pub use layout_direction::{LayoutDirection, layout_direction, set_layout_direction};
+pub use menu::set_menu_subtitles;
 pub use native_edit_action::{NativeEditAction, native_edit_action};
 pub use native_edit_availability::{NativeEditAvailability, set_native_edit_availability};
 pub use native_edit_menu::{
@@ -60,12 +71,30 @@ pub use native_edit_menu::{
     RevokeReason, dismiss_native_edit_menu, native_edit_menu_status, native_edit_menu_token,
     present_native_edit_menu,
 };
-pub use native_retirement_request::{
-    NativeInputOrigin, NativeRetirementCancellation, NativeRetirementInterruption,
-    NativeRetirementOutcome, NativeRetirementRequest, NativeRetirementRequestError,
-    NativeRetirementRequestStatus, PrepareDecision, PreparedNativeRetirement, RequestKey,
-    native_input_origin, request_native_edit_retirement,
+pub use native_inline_field::{
+    NativeInlineDismissReason, NativeInlineFieldError, NativeInlineFieldEvent,
+    NativeInlineFieldEvents, NativeInlineFieldHandle, NativeInlineFieldIdentifiers,
+    NativeInlineFieldRequest, NativeInlineFieldStyle, present_native_inline_field,
 };
+#[cfg(all(target_abi = "sim", feature = "test-support"))]
+pub use native_inline_field::{
+    NativeInlineFieldState, native_inline_field_press, native_inline_field_state,
+};
+pub use native_retirement_request::{
+    NativeHardwareHold, NativeInputOrigin, NativeRetirementCancellation,
+    NativeRetirementInterruption, NativeRetirementOutcome, NativeRetirementRequest,
+    NativeRetirementRequestError, NativeRetirementRequestStatus, PrepareDecision,
+    PreparedNativeRetirement, RequestKey, native_hardware_hold, native_input_origin,
+    request_native_edit_retirement,
+};
+pub use native_search::{
+    NativeSearchDismissReason, NativeSearchEmpty, NativeSearchError, NativeSearchEvent,
+    NativeSearchEvents, NativeSearchFailure, NativeSearchHandle, NativeSearchItem,
+    NativeSearchPresentation, NativeSearchRequest, NativeSearchResults, NativeSearchSection,
+    NativeSearchStyle, RestoredResponder, native_modal_active, present_native_search,
+};
+#[cfg(all(target_abi = "sim", feature = "test-support"))]
+pub use native_search::{NativeSearchState, native_search_state};
 pub use platform::IosPlatform;
 #[cfg(feature = "test-support")]
 pub use platform::notifications::NotificationResponseFixture;
@@ -79,10 +108,17 @@ pub use text_input_retirement::{
     TextInputRetirementStatus, TextInputSessionState, retire_text_input_session,
     text_input_session_state,
 };
+/// The tracing target and static codes of the input diagnostics: which view
+/// is first responder and why, keyboard dismissal transitions, GPUI text
+/// focus, and printable presses the drawing view recovered or dropped. Each
+/// event carries one `code` field, always one of `DIAGNOSTIC_CODES`.
+pub use window::input_diagnostics::{CODES as DIAGNOSTIC_CODES, TARGET as DIAGNOSTIC_TARGET};
 #[cfg(feature = "test-support")]
 #[doc(hidden)]
 pub use window::retirement_probe;
-pub use window_controls::window_control_insets;
+pub use window_controls::{
+    traffic_lights_over_content, window_control_insets, window_fills_screen,
+};
 
 /// The GPUI application on iPadOS, the counterpart of
 /// `gpui_platform::application()` on desktop targets.
@@ -97,7 +133,23 @@ pub fn test_native_edit_menu_contract() {
     window::edit_menu::tests::run();
 }
 
+/// Simulator contract runner for the shortcuts bar's UIKit objects.
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub fn test_keyboard_bar_contract() {
+    window::keyboard_bar::contract::run();
+}
+
+/// Simulator contract runner for the inline field's UIKit objects.
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub fn test_native_inline_field_contract() {
+    window::native_inline_field::tests::run();
+}
+
 #[cfg(target_abi = "sim")]
 pub use native_edit_menu::{
     NativeEditMenuSwitchObservation, take_native_edit_menu_switch_observations,
 };
+#[cfg(target_abi = "sim")]
+pub use window::{InputModeIndicatorState, input_mode_indicator_state};

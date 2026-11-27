@@ -7,13 +7,19 @@ use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 use gpui::{AnyWindowHandle, KeyDownEvent, Keystroke, PlatformInput};
 use objc2::MainThreadMarker;
 
-pub use super::text_input::probe::{NativeClient, NativeQuery, NativeQueryError};
+pub use super::text_input::probe::*;
 mod native_operation;
 use super::{scene, state::Window};
 pub use native_operation::{
-    callback_sentinel, edit, empty_hardware_entry, on_raw_ingress, raw_later, raw_scene_destroy,
-    raw_scene_refusal, set_fixture_pasteboard,
+    ProbePhase, ProbePressHandle, callback_sentinel, edit, empty_hardware_entry, inject_press,
+    on_raw_ingress, probe_press, raw_later, raw_scene_destroy, raw_scene_refusal,
+    set_fixture_pasteboard,
 };
+
+pub(crate) mod cut_observation;
+pub use cut_observation::delegate_notifications;
+#[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+pub mod held_press;
 
 fn window(handle: AnyWindowHandle) -> Option<Rc<Window>> {
     scene::live_windows(MainThreadMarker::new()?)
@@ -57,10 +63,12 @@ thread_local! {
 pub fn next_native_turn(f: impl FnOnce() + 'static) {
     assert!(MainThreadMarker::new().is_some());
     NEXT.with_borrow_mut(|queue| queue.push_back(Box::new(f)));
+    NativeCutRefusal::DeferredScheduled.record();
     dispatch2::DispatchQueue::main().exec_async(|| {
         let _probe_turn = crate::native_operation::refused();
         let next = NEXT.with_borrow_mut(|queue| queue.pop_front());
         if let Some(next) = next {
+            NativeCutRefusal::DeferredExecuted.record();
             next();
         }
     });

@@ -21,12 +21,11 @@ use gpui::{
 use objc2::{MainThreadMarker, MainThreadOnly, rc::Retained, sel};
 use objc2_foundation::{NSNotification, NSObjectProtocol, NSString};
 use objc2_quartz_core::CALayer;
-use objc2_ui_kit::{
-    UISceneActivationState, UIViewAutoresizing, UIViewController, UIWindow, UIWindowScene,
-};
+use objc2_ui_kit::{UISceneActivationState, UIViewAutoresizing, UIWindow, UIWindowScene};
 
 use super::{
     convert,
+    input_diagnostics::{self, DismissalCause, Press, Recovery, Responder},
     input_target::InputTarget,
     keyboard::{Dismissal, Event as KeyboardEvent, ResignReason, on_keyboard_event},
     pointer, scene,
@@ -37,7 +36,7 @@ use super::{
 use crate::{layout_direction, renderer::Renderer};
 
 /// The scale to assume before the window is on a screen: every iPad that runs
-/// iPadOS 17 has a 2x display.
+/// iPadOS 26 has a 2x display.
 const DEFAULT_SCALE_FACTOR: f32 = 2.0;
 
 impl Window {
@@ -72,7 +71,7 @@ impl Window {
             let edit_menu = super::edit_menu::EditMenu::new(&view, window.clone(), mtm);
             view.observe_keyboard();
 
-            let controller = UIViewController::new(mtm);
+            let controller = super::root_controller::RootController::new(mtm);
             controller.setView(Some(&view));
 
             let text_input = TextInputView::new(mtm, InputTarget::new(window.clone()));
@@ -85,6 +84,7 @@ impl Window {
                 UIViewAutoresizing::FlexibleWidth | UIViewAutoresizing::FlexibleHeight,
             );
             view.addSubview(&text_view);
+            text_input.attach_selection_display(&view);
 
             Self {
                 callbacks: Callbacks::default(),
@@ -100,6 +100,7 @@ impl Window {
                 state: RefCell::new(State::new(bounds, scale_factor, title)),
                 text_input,
                 view,
+                native_search: RefCell::new(None),
             }
         })
     }
@@ -189,6 +190,7 @@ impl Window {
             call(&self.callbacks.active_status, |callback| callback(active));
         }
         if active {
+            self.native_modal_scene_active();
             self.defer(Self::update_first_responder);
         }
     }
@@ -233,6 +235,8 @@ impl Window {
     /// callback removes it, and dropping it then finds nothing left to tear
     /// down in UIKit.
     pub(super) fn scene_disconnected(&self) {
+        // The panel is dismissed while the UIWindow still exists.
+        self.native_modal_window_closed();
         self.set_visibility(WindowVisibility::Hidden);
         let ui_window = {
             let mut state = self.state.borrow_mut();
@@ -269,6 +273,7 @@ impl Window {
     /// GPUI update that is dropping the window, and out of the display link
     /// callback that may be on the stack.
     pub(super) fn close(&self) {
+        self.native_modal_window_closed();
         self.edit_menu.revoke(crate::RevokeReason::Closed);
         let ui_window = {
             let mut state = self.state.borrow_mut();
@@ -278,12 +283,14 @@ impl Window {
             state.keyboard.expect_hide(ResignReason::LeavingWindow);
             state.input_handler = None;
             state.keyboard_animation = None;
+            state.scroll_momentum = Default::default();
             state.touches.clear();
             state.ui_window.take()
         };
         #[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
         self.text_input
             .with_observation_registration(|registration| registration.remove());
+        self.text_input.close_keyboard_bar();
         pointer::clear_window(self);
         self.pointer.detach();
         self.stop_display_link();
@@ -368,7 +375,7 @@ impl Window {
 
     /// GPUI's focused element started or stopped taking text.
     pub(super) fn set_text_input_focused(self: &Rc<Self>, focused: bool) {
-        {
+        let (changed, before) = {
             let mut state = self.state.borrow_mut();
             tracing::debug!(
                 previous = state.text_input_focused,
@@ -376,24 +383,69 @@ impl Window {
                 dismissal = ?state.keyboard.dismissal,
                 "set_text_input_focused"
             );
-            state.text_input_focused = focused;
+            let before = state.keyboard.dismissal;
+            let changed = mem::replace(&mut state.text_input_focused, focused) != focused;
             state.keyboard.focus_changed();
+            (changed, before)
+        };
+        if changed {
+            diagnose(input_diagnostics::text_focus_code(focused));
         }
+        self.note_dismissal(before, DismissalCause::FocusChange);
         self.defer(Self::update_first_responder);
     }
 
     /// `PlatformWindow::show_soft_keyboard`: focuses the text input view
     /// again if the focused element takes text.
     pub(super) fn show_keyboard(self: &Rc<Self>) {
-        self.state.borrow_mut().keyboard.show();
+        {
+            let mut state = self.state.borrow_mut();
+            if state.modal_holds_responder() {
+                // Replayed when the gate opens (`native_modal::intent`).
+                state.modal_intent.show();
+                return;
+            }
+        }
+        self.change_dismissal(DismissalCause::Show, |keyboard| keyboard.show());
         self.defer(Self::update_first_responder);
     }
 
     /// `PlatformWindow::hide_soft_keyboard`: dismisses the keyboard and
     /// keeps GPUI's focus where it is.
     pub(super) fn hide_keyboard(self: &Rc<Self>) {
-        self.state.borrow_mut().keyboard.hide();
+        {
+            let mut state = self.state.borrow_mut();
+            if state.modal_holds_responder() {
+                state.modal_intent.hide();
+                return;
+            }
+        }
+        self.change_dismissal(DismissalCause::Hide, |keyboard| keyboard.hide());
         self.defer(Self::update_first_responder);
+    }
+
+    /// Applies `change` to the keyboard and emits the dismissal transition
+    /// it made, if any.
+    pub(super) fn change_dismissal(
+        &self,
+        cause: DismissalCause,
+        change: impl FnOnce(&mut super::keyboard::Keyboard),
+    ) {
+        let before = {
+            let mut state = self.state.borrow_mut();
+            let before = state.keyboard.dismissal;
+            change(&mut state.keyboard);
+            before
+        };
+        self.note_dismissal(before, cause);
+    }
+
+    /// Emits the transition from `before` to the current dismissal.
+    pub(super) fn note_dismissal(&self, before: Dismissal, cause: DismissalCause) {
+        let after = self.state.borrow().keyboard.dismissal;
+        if let Some(code) = input_diagnostics::dismissal_code(before, after, cause) {
+            diagnose(code);
+        }
     }
 
     /// UIKit's dismiss key can resign the text responder or retain it while
@@ -404,33 +456,60 @@ impl Window {
         event: KeyboardEvent,
     ) {
         let context = self.keyboard_notification_context(notification);
-        let mut state = self.state.borrow_mut();
-        if state.closed {
-            return;
+        let before = {
+            let mut state = self.state.borrow_mut();
+            if state.closed {
+                return;
+            }
+            // The panel's field owns the keyboard; its hide key and
+            // notifications must not become GPUI's dismissal or minimized state.
+            if state.modal_holds_responder() {
+                state.modal_intent.notification();
+                return;
+            }
+            let before = state.keyboard.dismissal;
+            state.keyboard = on_keyboard_event(state.keyboard, event, context);
+            tracing::debug!(
+                ?event,
+                ?context,
+                keyboard = ?state.keyboard,
+                "keyboard visibility changed"
+            );
+            before
+        };
+        if event == KeyboardEvent::WillHide
+            && context.screen_matches == Some(true)
+            && context.is_relevant()
+        {
+            diagnose("keyboard_will_hide");
         }
-        state.keyboard = on_keyboard_event(state.keyboard, event, context);
-        tracing::debug!(
-            ?event,
-            ?context,
-            keyboard = ?state.keyboard,
-            "keyboard visibility changed"
-        );
+        let cause = match event {
+            KeyboardEvent::WillHide | KeyboardEvent::DidHide => DismissalCause::WillHide,
+            KeyboardEvent::WillShow | KeyboardEvent::DidShow => DismissalCause::DidShow,
+        };
+        self.note_dismissal(before, cause);
     }
 
     /// Makes the text input view first responder while the focused element
     /// takes text and the scene is active, which shows the software keyboard
     /// when no hardware keyboard is attached; otherwise makes the drawing view
     /// first responder, so hardware key presses keep arriving.
-    fn update_first_responder(&self) {
-        let (wants_text, attached, reason) = {
-            let state = self.state.borrow();
-            if state.closed {
+    pub(super) fn update_first_responder(&self) {
+        let (choice, attached, reason, code) = {
+            let mut state = self.state.borrow_mut();
+            // While the native modal gate holds the responder, the panel's
+            // field keeps it; nothing here may take it back.
+            if state.closed || state.modal_holds_responder() {
                 return;
             }
+            let choice = Responder::choose(
+                state.text_input_focused,
+                state.is_active,
+                state.keyboard.dismissal,
+            );
+            let code = state.input_diagnostics.responder(choice);
             (
-                state.text_input_focused
-                    && state.is_active
-                    && state.keyboard.dismissal.allows_text(),
+                choice,
                 state.ui_window.is_some(),
                 if !state.is_active {
                     ResignReason::Inactive
@@ -439,12 +518,16 @@ impl Window {
                 } else {
                     ResignReason::FocusChange
                 },
+                code,
             )
         };
         if !attached {
             return;
         }
-        if wants_text {
+        if let Some(code) = code {
+            diagnose(code);
+        }
+        if choice == Responder::Text {
             self.text_input.activate();
         } else {
             self.text_input.deactivate();
@@ -453,6 +536,37 @@ impl Window {
             switch.acquire(&**self.view);
             self.reconcile_keyboard_layout();
         }
+        self.native_modal_responder_settled();
+    }
+
+    /// Fix for typing into the drawing view: a printable hardware press
+    /// reached the text input view while the drawing view is first
+    /// responder. When GPUI's focused element takes text, the text input
+    /// view asks for first responder again, as a tap on the text does, so
+    /// typing recovers without a click. Returns what was decided.
+    pub(super) fn recover_text_responder(&self) -> Recovery {
+        let (recovery, code) = {
+            let mut state = self.state.borrow_mut();
+            if state.closed {
+                return Recovery::None;
+            }
+            let recovery = Recovery::decide(Press {
+                printable: true,
+                text_first_responder: self.text_input.view().isFirstResponder(),
+                text_input_focused: state.text_input_focused,
+                is_active: state.is_active,
+                modal: state.modal_holds_responder(),
+            });
+            (recovery, state.input_diagnostics.recovery(recovery))
+        };
+        if let Some(code) = code {
+            diagnose(code);
+        }
+        if recovery == Recovery::TakeText {
+            self.change_dismissal(DismissalCause::Press, |keyboard| keyboard.show());
+            self.update_first_responder();
+        }
+        recovery
     }
 
     /// Runs `f` on the next main-queue turn, if the window is still open.
@@ -473,6 +587,11 @@ impl Window {
             })
             .detach();
     }
+}
+
+/// Emits one static code on `herdr_uikit::diagnostics` (`input_diagnostics`).
+pub(super) fn diagnose(code: &'static str) {
+    tracing::info!(target: input_diagnostics::TARGET, code);
 }
 
 /// The renderer's `CAMetalLayer`, retained for as long as the window holds it.

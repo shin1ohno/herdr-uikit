@@ -106,6 +106,9 @@ pub(in crate::window) struct Ivars {
     /// A flush is queued on the run loop (see `TextInputView`).
     pub(super) flush_scheduled: Cell<bool>,
     pub(super) keys: RefCell<KeyState>,
+    /// The system selection display on the drawing view, for the input mode
+    /// indicator; `None` until the window attaches it.
+    pub(super) selection_display: RefCell<Option<super::selection_display::SelectionDisplay>>,
 }
 
 impl Ivars {
@@ -126,6 +129,7 @@ impl Ivars {
             marked_text_style: RefCell::new(None),
             flush_scheduled: Cell::new(false),
             keys: RefCell::new(KeyState::default()),
+            selection_display: RefCell::new(None),
         }
     }
 }

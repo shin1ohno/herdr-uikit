@@ -31,6 +31,8 @@ impl Window {
         stage: TouchStage,
     ) {
         for touch in touches.iter() {
+            #[cfg(all(target_os = "ios", target_abi = "sim"))]
+            self.receipt(&touch, stage, touches.count());
             if touch.r#type() == UITouchType::IndirectPointer {
                 self.pointer_touch(&touch, event, stage);
             } else {
@@ -68,6 +70,11 @@ impl Window {
             };
             (id, phase)
         };
+        // A finger on the screen stops a trackpad coast, as it stops a
+        // scroll view's.
+        if phase == TouchPhase::Started {
+            self.stop_scroll_momentum();
+        }
         let predicted_position = match (stage, event) {
             (TouchStage::Moved, Some(event)) => self.predicted_position(touch, event),
             _ => None,
@@ -141,6 +148,26 @@ impl Window {
         if released && !convert::contains(self.view.bounds(), location) {
             self.pointer_left();
         }
+    }
+
+    /// Records, for Simulator QA, that a touch reached the drawing view.
+    #[cfg(all(target_os = "ios", target_abi = "sim"))]
+    fn receipt(&self, touch: &UITouch, stage: TouchStage, touches: usize) {
+        use crate::platform::qa_input;
+        let stage = match stage {
+            TouchStage::Began => qa_input::TouchStage::Began,
+            TouchStage::Ended => qa_input::TouchStage::Ended,
+            TouchStage::Cancelled => qa_input::TouchStage::Cancelled,
+            TouchStage::Moved => return,
+        };
+        let position = self.location(touch);
+        qa_input::touch(
+            stage,
+            touch.r#type() == UITouchType::IndirectPointer,
+            f32::from(position.x),
+            f32::from(position.y),
+            touches,
+        );
     }
 
     /// A touch's position in the drawing view, which fills the window. The

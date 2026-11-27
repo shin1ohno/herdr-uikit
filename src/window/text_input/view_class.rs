@@ -15,15 +15,18 @@ use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, Message, define_clas
 use objc2_core_foundation::{CGPoint, CGRect};
 use objc2_foundation::{NSArray, NSComparisonResult, NSInteger, NSRange, NSSet, NSString};
 use objc2_ui_kit::{
-    NSWritingDirection, UICommand, UIDictationPhrase, UIEvent, UIKeyInput, UIPress, UIPressesEvent,
-    UIResponder, UIReturnKeyType, UITextAutocapitalizationType, UITextAutocorrectionType,
-    UITextInlinePredictionType, UITextInput, UITextInputDelegate, UITextInputStringTokenizer,
-    UITextInputTokenizer, UITextInputTraits, UITextLayoutDirection, UITextPosition, UITextRange,
-    UITextSelectionRect, UITextSmartDashesType, UITextSmartInsertDeleteType, UITextSmartQuotesType,
-    UITextSpellCheckingType, UITextStorageDirection, UIView, UIWindow,
+    NSWritingDirection, UICommand, UIDictationPhrase, UIEvent, UIKeyCommand, UIKeyInput, UIPress,
+    UIPressesEvent, UIResponder, UIReturnKeyType, UITextAutocapitalizationType,
+    UITextAutocorrectionType, UITextInlinePredictionType, UITextInput, UITextInputDelegate,
+    UITextInputStringTokenizer, UITextInputTokenizer, UITextInputTraits, UITextLayoutDirection,
+    UITextPosition, UITextRange, UITextSelectionRect, UITextSmartDashesType,
+    UITextSmartInsertDeleteType, UITextSmartQuotesType, UITextSpellCheckingType,
+    UITextStorageDirection, UIView, UIWindow,
 };
 
+use super::super::state::press_ledger::PressPhase;
 use super::super::{input_target::InputTarget, keyboard::ResignReason};
+use super::control_keys;
 use super::positions::{self, TextPosition, TextRange};
 use super::state::{Ivars, Mode};
 use super::utf16;
@@ -78,9 +81,8 @@ define_class!(
         // text field would hide this responder's current keyboard focus.
 
         // Since iOS 18.1, accessibility asks custom text elements for their
-        // backing UITextInput responder. This view is both. Implementing the
-        // public getter is harmless on iOS 17, which does not query it, and
-        // avoids calling an unavailable framework selector there.
+        // backing UITextInput responder. This view is both, so it implements
+        // the public getter.
         #[unsafe(method_id(accessibilityTextInputResponder))]
         fn __accessibility_text_input_responder(
             &self,
@@ -93,7 +95,19 @@ define_class!(
         #[unsafe(method(canPerformAction:withSender:))]
         fn __can_perform_action(&self, action: Sel, _: Option<&AnyObject>) -> bool {
             let _native_entry = crate::native_operation::refused();
-            self.editing_enabled(action)
+            (action == control_keys::action() && control_keys::on_mac())
+                || self.editing_enabled(action)
+        }
+
+        #[unsafe(method_id(keyCommands))]
+        fn __key_commands(&self) -> Option<Retained<NSArray<UIKeyCommand>>> {
+            control_keys::key_commands(control_keys::on_mac(), self.mtm())
+        }
+
+        #[unsafe(method(herdrControlKey:))]
+        fn __control_key(&self, sender: Option<&AnyObject>) {
+            let _native_entry = crate::native_operation::refused();
+            self.control_key(sender);
         }
 
         #[unsafe(method(validateCommand:))]
@@ -142,6 +156,8 @@ define_class!(
         // flushes must not take it straight back.
         #[unsafe(method(resignFirstResponder))]
         fn __resign_first_responder(&self) -> bool {
+            #[cfg(feature = "test-support")]
+            crate::window::retirement_probe::NativeCutRefusal::Resign.record();
             let _native_entry = crate::native_operation::refused();
             // UIKit may post WillHide only after it has already transferred
             // first responder, so capture ownership before the native call.
@@ -159,6 +175,8 @@ define_class!(
         fn __will_move_to_window(&self, window: Option<&UIWindow>) {
             let _native_entry = crate::native_operation::refused();
             if window.is_none() {
+                #[cfg(feature = "test-support")]
+                crate::window::retirement_probe::NativeCutRefusal::LeavingWindow.record();
                 self.ivars().target.expect_keyboard_hide(ResignReason::LeavingWindow);
             }
             // SAFETY: the argument is UIKit's nullable UIWindow for this selector;
@@ -181,6 +199,7 @@ define_class!(
         #[unsafe(method(pressesBegan:withEvent:))]
         fn __presses_began(&self, presses: &NSSet<UIPress>, event: Option<&UIPressesEvent>) {
             let _native_entry = crate::native_operation::refused();
+            self.ivars().target.record_presses(PressPhase::Began, presses);
             self.ivars().target.mark_hardware_observed();
             self.presses_began(presses, event);
         }
@@ -188,6 +207,7 @@ define_class!(
         #[unsafe(method(pressesChanged:withEvent:))]
         fn __presses_changed(&self, presses: &NSSet<UIPress>, event: Option<&UIPressesEvent>) {
             let _native_entry = crate::native_operation::refused();
+            self.ivars().target.record_presses(PressPhase::Changed, presses);
             self.ivars().target.mark_hardware_observed();
             // SAFETY: the arguments are the ones UIKit passed for this selector.
             let () = unsafe { msg_send![super(self), pressesChanged: presses, withEvent: event] };
@@ -196,6 +216,7 @@ define_class!(
         #[unsafe(method(pressesEnded:withEvent:))]
         fn __presses_ended(&self, presses: &NSSet<UIPress>, event: Option<&UIPressesEvent>) {
             let _native_entry = crate::native_operation::refused();
+            self.ivars().target.record_presses(PressPhase::Ended, presses);
             self.ivars().target.mark_hardware_observed();
             self.presses_ended(presses, event, false);
         }
@@ -203,6 +224,7 @@ define_class!(
         #[unsafe(method(pressesCancelled:withEvent:))]
         fn __presses_cancelled(&self, presses: &NSSet<UIPress>, event: Option<&UIPressesEvent>) {
             let _native_entry = crate::native_operation::refused();
+            self.ivars().target.record_presses(PressPhase::Cancelled, presses);
             self.ivars().target.mark_hardware_observed();
             self.presses_ended(presses, event, true);
         }
@@ -315,6 +337,8 @@ define_class!(
 
         #[unsafe(method_id(selectedTextRange))]
         fn __selected_text_range(&self) -> Option<Retained<UITextRange>> {
+            #[cfg(feature = "test-support")]
+            let _query = crate::window::retirement_probe::NativeCutCounter::QueryEntries.query();
             let _native_entry = crate::native_operation::refused();
             let selection = self.read_snapshot().selection.map(|(range, _)| range);
             selection.map(|range| TextRange::text_range(self.mtm(), range))
@@ -322,6 +346,8 @@ define_class!(
 
         #[unsafe(method(setSelectedTextRange:))]
         fn __set_selected_text_range(&self, range: Option<&UITextRange>) {
+            #[cfg(feature = "test-support")]
+            crate::window::retirement_probe::NativeCutRefusal::Setter.record();
             let _native_entry = crate::native_operation::refused();
             if let Some(range) = range.and_then(positions::range) {
                 self.select_range(range);
@@ -605,5 +631,34 @@ impl GPUITextInputView {
     /// This view as UIKit's text input protocol object, for the delegate.
     pub(super) fn as_text_input(&self) -> &ProtocolObject<dyn UITextInput> {
         ProtocolObject::from_ref(self)
+    }
+
+    /// Creates this view's selection display, if it has none, and puts it on
+    /// `host`. A switched-off display is attached; acquiring first responder
+    /// switches it on (`sync.rs`).
+    pub(super) fn attach_selection_display(&self, host: &UIView) {
+        let mut slot = self.ivars().selection_display.borrow_mut();
+        let display = slot.get_or_insert_with(|| {
+            super::selection_display::SelectionDisplay::new(self.mtm(), self)
+        });
+        display.attach(host);
+    }
+
+    /// Switches this view's selection display off and removes it. Idempotent.
+    pub(super) fn detach_selection_display(&self) {
+        let display = self.ivars().selection_display.borrow_mut().take();
+        if let Some(display) = display {
+            display.detach();
+        }
+    }
+
+    /// Simulator QA: this view's selection display on `drawing_view`.
+    #[cfg(target_abi = "sim")]
+    pub(super) fn input_mode_indicator_state(
+        &self,
+        drawing_view: &UIView,
+    ) -> super::InputModeIndicatorState {
+        let display = self.ivars().selection_display.borrow();
+        super::selection_display::qa::sample(self, display.as_ref(), drawing_view)
     }
 }

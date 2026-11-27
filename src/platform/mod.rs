@@ -20,6 +20,9 @@ mod lifecycle;
 pub(crate) mod menus;
 pub mod notifications;
 mod pasteboard;
+// Simulator QA only: receipts of input where it arrives.
+#[cfg(all(target_os = "ios", target_abi = "sim"))]
+pub(crate) mod qa_input;
 mod scene_delegate;
 mod shared;
 mod slot;

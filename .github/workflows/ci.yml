@@ -18,7 +18,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 40
     env:
-      IPHONEOS_DEPLOYMENT_TARGET: '17.0'
+      IPHONEOS_DEPLOYMENT_TARGET: '26.0'
       CARGO_PROFILE_DEV_DEBUG: '0'
       CARGO_PROFILE_TEST_DEBUG: '0'
       CARGO_INCREMENTAL: '0'
@@ -48,3 +48,29 @@ jobs:
         run: bash scripts/check-responder-calls.sh
       - name: Run Simulator contracts
         run: python3 scripts/test-simulator.py
+
+  b1-source:
+    name: B1 source fixture (Linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      # Same compiler the macOS job uses (rust-toolchain.toml); the fixture
+      # only needs a host rustc, so no iOS targets are installed.
+      RUSTUP_TOOLCHAIN: '1.99.1'
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Install pinned rustc
+        run: |
+          rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --no-self-update
+          rustc --version --verbose
+      - name: Run B1 extracted-source fixture and mutants
+        run: python3 scripts/check-b1-source.py --output "$RUNNER_TEMP/b1-source"
+      - name: Show the failing run's log
+        if: failure()
+        run: |
+          out="$RUNNER_TEMP/b1-source"
+          ls -t "$out"/*.log 2>/dev/null | head -1 | xargs -r tail -n 40

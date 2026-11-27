@@ -31,6 +31,18 @@ impl InputTarget {
             client: self.client.identity,
         }
     }
+    /// The text view's press selectors feed the Window's ledger here, also
+    /// after this client was fenced, so a release reaching an old view still
+    /// clears its press.
+    pub(crate) fn record_presses(
+        &self,
+        phase: super::state::press_ledger::PressPhase,
+        presses: &objc2_foundation::NSSet<objc2_ui_kit::UIPress>,
+    ) {
+        if let Some(window) = self.window.upgrade() {
+            window.record_presses(phase, presses);
+        }
+    }
     pub(crate) fn mark_hardware_observed(&self) {
         if let Some(window) = self.window.upgrade() {
             window.state.borrow_mut().native_hardware_observed = true;
@@ -53,6 +65,11 @@ impl InputTarget {
             test_handler: Some(Rc::new(std::cell::RefCell::new(Some(handler)))),
             ..Self::new(Weak::new())
         }
+    }
+
+    #[cfg(feature = "test-support")]
+    pub(super) fn window_handle(&self) -> Option<Rc<Window>> {
+        self.window.upgrade()
     }
 
     fn live_window(&self) -> Option<Rc<Window>> {
@@ -139,8 +156,9 @@ impl InputTarget {
         let Some(_callback) = self.client.enter() else {
             return false;
         };
-        self.live_window()
-            .is_some_and(|window| window.dispatch_inner(input))
+        self.live_window().is_some_and(|window| {
+            !window.native_modal_drops_input() && window.dispatch_inner(input)
+        })
     }
 
     /// Only the canonical native edit producer supplies an observation key.
@@ -158,8 +176,9 @@ impl InputTarget {
                 let Some(_callback) = self.client.enter() else {
                     return false;
                 };
-                self.live_window()
-                    .is_some_and(|window| window.dispatch_native_edit(input, key))
+                self.live_window().is_some_and(|window| {
+                    !window.native_modal_drops_input() && window.dispatch_native_edit(input, key)
+                })
             },
         )
     }
@@ -187,6 +206,8 @@ impl InputTarget {
     ) -> Option<R> {
         let _loan = crate::native_operation::loan();
         let _callback = self.client.enter()?;
+        #[cfg(feature = "test-support")]
+        let _depth = super::retirement_probe::NativeCutCounter::HandlerDepth.scope();
         #[cfg(all(test, feature = "test-support"))]
         if let Some(slot) = &self.test_handler {
             let mut handler = slot.borrow_mut().take()?;
@@ -195,7 +216,13 @@ impl InputTarget {
             slot.borrow_mut().get_or_insert(handler);
             return Some(result);
         }
-        self.live_window()?.with_input_handler_inner(f)
+        let window = self.live_window()?;
+        // A late IME result, Paste or dictation reaching the text view while
+        // the native modal gate is shut is observed and dropped here.
+        if window.native_modal_drops_input() {
+            return None;
+        }
+        window.with_input_handler_inner(f)
     }
 
     /// The window's scale factor, to convert between points and GPUI pixels.
@@ -222,7 +249,7 @@ impl InputTarget {
     pub(crate) fn edit_window_active(&self) -> bool {
         self.live_window().is_some_and(|window| {
             let state = window.state.borrow();
-            !state.closed && state.is_active
+            !state.closed && state.is_active && !state.modal_blocks_input()
         }) && self.has_key_responder()
     }
 
@@ -266,8 +293,22 @@ impl InputTarget {
 
     pub(super) fn text_input_did_resign(&self, context: ResignContext) {
         if let Some(window) = self.live_window() {
-            window.state.borrow_mut().keyboard.resigned(context);
+            window.change_dismissal(
+                super::input_diagnostics::DismissalCause::Resign,
+                |keyboard| {
+                    keyboard.resigned(context);
+                },
+            );
         }
+    }
+
+    /// A printable press reached the text input view; see
+    /// `Window::recover_text_responder`.
+    pub(super) fn recover_text_responder(&self) -> super::input_diagnostics::Recovery {
+        self.live_window()
+            .map_or(super::input_diagnostics::Recovery::None, |window| {
+                window.recover_text_responder()
+            })
     }
 
     pub(super) fn expect_keyboard_hide(&self, reason: ResignReason) {
@@ -279,13 +320,28 @@ impl InputTarget {
     pub(super) fn text_input_did_acquire(&self) {
         if let Some(window) = self.live_window() {
             window.state.borrow_mut().keyboard.acquired();
+            window.native_modal_responder_settled();
         }
+    }
+
+    /// Whether a non-modifier press of `usage` must be kept from GPUI: the
+    /// gate is shut, or the key is fenced. A `release` ends its fence.
+    pub(super) fn modal_fences(&self, usage: isize, release: bool) -> bool {
+        self.window.upgrade().is_some_and(|window| {
+            let mut state = window.state.borrow_mut();
+            let blocked = state.modal_blocks_input() || state.press_fence.blocks(usage);
+            if release {
+                state.press_fence.released(usage);
+            }
+            blocked
+        })
     }
 
     pub(super) fn text_input_can_acquire(&self) -> bool {
         self.live_window().is_some_and(|window| {
             let state = window.state.borrow();
             !state.closed
+                && !state.modal_holds_responder()
                 && state.is_active
                 && state.text_input_focused
                 && state.keyboard.dismissal.allows_text()
@@ -325,6 +381,8 @@ impl Window {
 
     // The two ingress methods establish provenance before reaching callbacks.
     fn dispatch_inner(&self, input: PlatformInput) -> bool {
+        #[cfg(feature = "test-support")]
+        let _depth = super::retirement_probe::NativeCutCounter::DispatchDepth.scope();
         {
             let mut state = self.state.borrow_mut();
             if state.closed {
@@ -359,6 +417,8 @@ impl Window {
     ) -> Option<R> {
         let _loan = crate::native_operation::loan();
         let mut handler = self.state.borrow_mut().input_handler.take()?;
+        #[cfg(feature = "test-support")]
+        let _restore = super::retirement_probe::NativeCutCounter::HandlerRestores.restore_scope();
         // A handler can request retirement of another window, whose native
         // client is not busy. Keep its callback outside this GPUI borrow too.
         let _in_gpui = crate::gpui_call::InGpui::enter();

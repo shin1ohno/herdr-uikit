@@ -32,10 +32,15 @@ mod direction;
 pub(crate) mod edit_menu;
 mod error;
 mod frame;
+pub(crate) mod input_diagnostics;
 mod input_target;
 mod keyboard;
+pub(crate) mod keyboard_bar;
+mod keyboard_placement;
 mod layout;
 mod lifecycle;
+pub(crate) mod native_inline_field;
+pub(crate) mod native_modal;
 mod native_retirement_request;
 #[cfg(all(test, target_os = "ios", target_abi = "sim", feature = "test-support"))]
 mod observation_test_host;
@@ -45,7 +50,10 @@ mod requests;
 mod retirement;
 #[cfg(feature = "test-support")]
 pub mod retirement_probe;
+mod root_controller;
 mod scene;
+mod scene_fit;
+mod screen_fill;
 mod state;
 mod text_input;
 mod text_state;
@@ -65,17 +73,23 @@ use objc2_ui_kit::UIApplication;
 
 pub(crate) use self::direction::layout_direction_changed;
 pub(crate) use self::error::Error;
+pub use self::keyboard_placement::KeyboardPlacement;
 pub(crate) use self::native_retirement_request::{
     complete_native_retirement, interrupt_native_retirement, legacy_interrupt_native_retirement,
     native_input_origin, request_native_edit_retirement,
 };
 pub(crate) use self::pointer::set_cursor_style;
 pub(crate) use self::retirement::{retire_text_input_session, text_input_session_state};
+#[cfg(target_abi = "sim")]
+pub(crate) use self::scene::keyboard_placement_sample;
 pub(crate) use self::scene::{
-    active_window, scene_activation_changed, scene_connected, scene_disconnected,
-    scene_geometry_changed, set_native_edit_availability, window_control_insets, window_stack,
+    active_window, keyboard_bar_queue, keyboard_placement, scene_activation_changed,
+    scene_connected, scene_disconnected, scene_geometry_changed, set_keyboard_bar,
+    set_native_edit_availability, window_control_insets, window_fills_screen, window_stack,
 };
 pub(crate) use self::state::Window;
+#[cfg(target_abi = "sim")]
+pub use self::text_input::{InputModeIndicatorState, input_mode_indicator_state};
 pub(crate) use self::text_input::{named_key_char, us_shifted};
 use crate::renderer;
 

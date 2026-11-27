@@ -5,7 +5,8 @@
 //! macOS's always-running link would keep it at 120 Hz.
 //!
 //! The link also animates the keyboard inset: GPUI's inset contract has iOS
-//! interpolate the keyboard's movement on frame ticks.
+//! interpolate the keyboard's movement on frame ticks. It also steps a
+//! trackpad scroll's coast after the fingers lift (`pointer::momentum`).
 
 use std::{
     mem,
@@ -96,6 +97,8 @@ impl Window {
 
     /// One display link tick, on the main thread.
     fn tick(&self) {
+        #[cfg(feature = "test-support")]
+        super::retirement_probe::NativeCutRefusal::FrameTick.record();
         if !self.state.borrow().can_draw() {
             self.stop_display_link();
             return;
@@ -103,6 +106,7 @@ impl Window {
         // Updating insets invalidates the entire layout. Sample before taking
         // force_render so this very frame bypasses cached view geometry.
         self.step_keyboard_animation(Instant::now());
+        self.step_scroll_momentum(Instant::now());
         self.sample_keyboard_layout();
         let options = {
             let mut state = self.state.borrow_mut();
@@ -127,7 +131,10 @@ impl Window {
 
         let idle = {
             let state = self.state.borrow();
-            !state.frame_requested && !state.force_render && state.keyboard_animation.is_none()
+            !state.frame_requested
+                && !state.force_render
+                && state.keyboard_animation.is_none()
+                && !state.scroll_momentum.coasting()
         };
         if idle {
             self.stop_display_link();
@@ -141,6 +148,8 @@ impl Window {
     /// can be read here, and UIKit's synchronous queries back into it can
     /// reach the app.
     fn flush_input_handler_change(&self) {
+        #[cfg(feature = "test-support")]
+        super::retirement_probe::NativeCutRefusal::InputHandlerFlush.record();
         let current = self.with_input_handler(TextState::sample);
         let changed = {
             let mut state = self.state.borrow_mut();
