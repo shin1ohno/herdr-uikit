@@ -54,3 +54,6 @@ mod selection_display;
 
 #[cfg(feature = "test-support")]
 pub(super) mod native_queries;
+
+#[cfg(all(target_os = "ios", target_abi = "sim", feature = "test-support"))]
+mod native_edit_selectors;
