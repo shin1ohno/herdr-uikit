@@ -61,9 +61,38 @@ So a consumer that needs its keys in every state draws them itself while
   view out again, so a lagging guide is read again.
 - The bottom inset keeps its policy: a floating or undocked guide makes no
   inset beyond the bottom safe area, as the guide gave before it followed
-  undocked keyboards.
+  undocked keyboards, with one exception below.
+- A full-width `Undocked` keyboard whose bottom edge is at most
+  `NEAR_BOTTOM_GAP` = 32 pt above the screen's (`window/keyboard_inset.rs`
+  `near_bottom`) takes a bottom inset from its top edge to the view's bottom
+  edge, from both the notification and the guide; its placement stays
+  `Undocked`. On the iPad mini (A20 Pro) Simulator, iPadOS 27.2, 756 x 1158
+  pt (yebisu#277), a split keyboard ends at (0, 811, 756, 336) and one just
+  unsplit at (0, 807, 756, 340): 11 pt above the bottom edge, so they take
+  347 and 351 pt, and the window's last lines and prompt stay above them.
+  One moved up ends 260 pt above it at (0, 558, 756, 340) and takes none,
+  as before, so dragging an undocked keyboard does not resize the window.
+  32 pt is about three times the measured gap, for a device whose gap is a
+  little larger; such a keyboard leaves at most 32 pt unused below it.
+  Docked (0, 818, 756, 340: 340 pt) and floating keyboards are unchanged.
+- While split, the Simulator's notification moved the keyboard below the
+  screen ((0, 1158, 756, 336)) about once a second, and the keyboard's own
+  frame came back 0.25-0.27 s later. After a near-bottom keyboard, such a
+  frame starts its inset animation `OFF_SCREEN_HOLD_SECS` = 0.5 s late
+  (`holds_inset`); the next notification replaces the waiting animation, so
+  the inset does not drop and come back. A real hide reaches the window
+  0.5 s later than a docked keyboard's. The guide's sample waits as well,
+  as it does for any animation.
+- The gap and the off-screen frames are Simulator measurements, with the
+  split forced through a private API (`setSplit:YES animated:YES`); a
+  device's split keyboard frame is unmeasured.
 
 ## Tests
+
+- `tests/keyboard_inset.rs`: host tests of `near_bottom`,
+  `near_bottom_inset` and `holds_inset` with the iPad mini frames above;
+  `layout/keyboard_geometry/tests.rs` checks the notification's inset for
+  the same frames in the Simulator test run.
 
 - `tests/keyboard_placement.rs`, `tests/keyboard_bar_queue.rs`: host tests of
   the classification, `guide_placement` and `combine` (the Simulator's

@@ -36,6 +36,7 @@ pub(crate) mod input_diagnostics;
 mod input_target;
 mod keyboard;
 pub(crate) mod keyboard_bar;
+mod keyboard_inset;
 mod keyboard_placement;
 mod layout;
 mod lifecycle;

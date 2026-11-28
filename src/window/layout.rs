@@ -210,7 +210,8 @@ impl Window {
     /// movement. The guide follows undocked keyboards too
     /// (`followsUndockedKeyboard`), for `keyboard_placement`; a floating or
     /// undocked keyboard still makes no bottom inset beyond the safe area,
-    /// as the guide gave before it followed them.
+    /// as the guide gave before it followed them, except an undocked one
+    /// near the screen's bottom edge (`keyboard_inset::near_bottom`).
     pub(super) fn sample_keyboard_layout(&self) {
         // SAFETY: UIView returns its UIKeyboardLayoutGuide, a UILayoutGuide
         // subclass. These selectors exist on the minimum supported iOS 26;
@@ -229,8 +230,13 @@ impl Window {
             let _: () = unsafe { msg_send![&*guide, setFollowsUndockedKeyboard: true] };
         }
         let keyboard = guide.layoutFrame();
-        let placement = self.guide_placement(keyboard);
+        let (placement, near_bottom) = self.guide_placement(keyboard);
         let target = match placement {
+            // Split, or just unsplit, at the bottom: covers the window's
+            // last lines as a docked keyboard does.
+            super::KeyboardPlacement::Undocked if near_bottom => {
+                keyboard_geometry::near_bottom_inset(self.view.bounds(), keyboard) as f32
+            }
             super::KeyboardPlacement::Floating | super::KeyboardPlacement::Undocked => {
                 self.view.safeAreaInsets().bottom as f32
             }
@@ -260,11 +266,13 @@ impl Window {
     }
 
     /// Where the guide's `keyboard` (in this view's coordinates) is on the
-    /// window's screen; `Hidden` before the window has one.
-    fn guide_placement(&self, keyboard: CGRect) -> super::KeyboardPlacement {
+    /// window's screen, and whether it is an undocked keyboard near the
+    /// screen's bottom edge (`keyboard_inset::near_bottom`); `Hidden`
+    /// before the window has a screen.
+    fn guide_placement(&self, keyboard: CGRect) -> (super::KeyboardPlacement, bool) {
         let ui_window = self.state.borrow().ui_window.clone();
         let Some(ui_window) = ui_window else {
-            return super::KeyboardPlacement::Hidden;
+            return (super::KeyboardPlacement::Hidden, false);
         };
         let screen = ui_window.screen();
         let rect = self
@@ -281,7 +289,10 @@ impl Window {
         };
         self.state.borrow_mut().keyboard_sample.guide = tuple(rect);
         let safe_bottom = self.view.safeAreaInsets().bottom;
-        super::keyboard_placement::guide_placement(tuple(bounds), tuple(rect), safe_bottom)
+        (
+            super::keyboard_placement::guide_placement(tuple(bounds), tuple(rect), safe_bottom),
+            super::keyboard_inset::near_bottom(tuple(bounds), tuple(rect)),
+        )
     }
 
     /// Records where the keyboard's frame notification puts it, and reports
@@ -386,11 +397,20 @@ impl Window {
         let relevant = self
             .keyboard_notification_context(notification)
             .is_relevant();
-        {
+        let previous_end = {
             let mut state = self.state.borrow_mut();
             state.keyboard_sample.notifications += 1;
             state.keyboard_sample.relevant += u32::from(relevant);
-        }
+            state.keyboard_sample.end
+        };
+        // A split keyboard's frame leaves the screen for a moment and comes
+        // back; the inset waits so the window does not shrink and grow.
+        let hold = relevant
+            && super::keyboard_inset::holds_inset(
+                keyboard_geometry::tuple(screen.bounds()),
+                previous_end,
+                keyboard_geometry::tuple(end_frame),
+            );
         if relevant {
             self.keyboard_placed(screen.bounds(), end_frame);
         }
@@ -419,6 +439,7 @@ impl Window {
             relevant,
             inset = target,
             ?duration,
+            hold,
             "keyboard frame inset computed"
         );
 
@@ -430,10 +451,18 @@ impl Window {
             let current = f32::from(state.insets.ime.bottom);
             match duration {
                 Some(duration) if state.can_draw() && current != target => {
+                    // A held inset stays at `current` until the wait ends
+                    // (`InsetAnimation::sample` before its start), unless a
+                    // newer notification replaces the animation first.
+                    let wait = if hold {
+                        Duration::from_secs_f64(super::keyboard_inset::OFF_SCREEN_HOLD_SECS)
+                    } else {
+                        Duration::ZERO
+                    };
                     state.keyboard_animation = Some(InsetAnimation::new(
                         current,
                         target,
-                        Instant::now(),
+                        Instant::now() + wait,
                         duration,
                     ));
                     None
