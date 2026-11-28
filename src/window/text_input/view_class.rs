@@ -151,6 +151,16 @@ define_class!(
                 .then(|| self.ivars().key_only_input_view.clone())
         }
 
+        // The consumer's accessory row, in text mode only: key-only mode has
+        // no software keyboard to put it on.
+        #[unsafe(method_id(inputAccessoryView))]
+        fn __input_accessory_view(&self) -> Option<Retained<UIView>> {
+            let _native_entry = crate::native_operation::refused();
+            (self.ivars().mode.get() != Some(Mode::KeyOnly))
+                .then(|| self.ivars().accessory.borrow().clone())
+                .flatten()
+        }
+
         // UIKit takes first responder away for the keyboard's dismiss key,
         // for another responder, and when the view leaves its window; the
         // flushes must not take it straight back.
@@ -650,6 +660,19 @@ impl GPUITextInputView {
         if let Some(display) = display {
             display.detach();
         }
+    }
+
+    /// Simulator QA: the primary language of the input mode UIKit gave this
+    /// view (`textInputMode.primaryLanguage`).
+    #[cfg(target_abi = "sim")]
+    pub(super) fn input_language(&self) -> Option<String> {
+        // SAFETY: UIResponder's `textInputMode` returns a nullable
+        // UITextInputMode, whose `primaryLanguage` is a nullable NSString.
+        let mode: Option<Retained<NSObject>> = unsafe { msg_send![self, textInputMode] };
+        let mode = mode?;
+        // SAFETY: as above.
+        let language: Option<Retained<NSString>> = unsafe { msg_send![&*mode, primaryLanguage] };
+        language.map(|language| language.to_string())
     }
 
     /// Simulator QA: this view's selection display on `drawing_view`.

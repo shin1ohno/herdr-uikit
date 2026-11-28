@@ -103,6 +103,38 @@ impl GPUITextInputView {
         self.apply_mode();
         self.apply_traits();
         self.sync_text_state();
+        self.apply_accessory();
+    }
+
+    /// Records that the accessory row was added or removed, for the next
+    /// flush.
+    pub(super) fn accessory_changed(&self) {
+        self.ivars().accessory_reload.set(true);
+        self.schedule_flush();
+    }
+
+    /// Reloads the input views after the accessory row was added or removed,
+    /// so UIKit shows or hides it. Not while text is being composed: a reload
+    /// can disturb marked text (`docs/keyboard-bar.md`), so it waits for a
+    /// flush after the composition ends. A view that is not first responder
+    /// reads the row when it becomes first responder.
+    fn apply_accessory(&self) {
+        let ivars = self.ivars();
+        if !ivars.accessory_reload.get() {
+            return;
+        }
+        if !self.isFirstResponder() || ivars.mode.get() != Some(Mode::Text) {
+            ivars.accessory_reload.set(false);
+            return;
+        }
+        if ivars.snapshot.borrow().marked.is_some() {
+            tracing::debug!("accessory row reload waits for the composition to end");
+            return;
+        }
+        ivars.accessory_reload.set(false);
+        tracing::debug!("reloading input views for the accessory row");
+        self.reloadInputViews();
+        ivars.target.reconcile_keyboard_layout();
     }
 
     /// Takes first responder only for a request (see [`Acquire`]); a flush
@@ -148,6 +180,8 @@ impl GPUITextInputView {
                 }
                 let mode_changed = ivars.applied_mode.replace(Some(mode)) != Some(mode);
                 if mode_changed {
+                    // Also reads the accessory row afresh.
+                    ivars.accessory_reload.set(false);
                     self.reloadInputViews();
                 }
                 if mode_changed || requested {
@@ -166,6 +200,8 @@ impl GPUITextInputView {
         // Becoming first responder reads `inputView` afresh.
         let became = switch.acquire(&**self);
         if became {
+            // Becoming first responder read the accessory row too.
+            ivars.accessory_reload.set(false);
             ivars.target.text_input_did_acquire();
             self.selection_display(|display| display.activate());
             ivars.applied_mode.set(Some(mode));

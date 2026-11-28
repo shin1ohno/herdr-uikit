@@ -79,12 +79,31 @@ pub fn guide_placement(
     }
 }
 
+/// Whether a frame notification's `keyboard` frame is only the consumer's
+/// accessory row, `row_height` points tall (0 without one): full width on
+/// the screen's bottom edge and no taller than the row. UIKit reports that
+/// frame for a floating keyboard, whose row stays at the screen's bottom
+/// (yebisu#276: (0, 1110, 756, 48) on the iPad mini (A20 Pro) Simulator), so
+/// it says nothing about where the keyboard is; a docked keyboard's frame
+/// holds the row and the keys.
+pub fn accessory_alone(
+    screen: (f64, f64, f64, f64),
+    keyboard: (f64, f64, f64, f64),
+    row_height: f64,
+) -> bool {
+    row_height > 0.0
+        && placement(screen, keyboard) == KeyboardPlacement::Docked
+        && keyboard.3 <= row_height + TOLERANCE
+}
+
 /// The placement to report from the last relevant frame notification's
 /// (`notified`) and the keyboard guide's (`guide`, `guide_placement`). A
 /// notification with a keyboard frame decides. One saying `Hidden` defers to
 /// the guide: UIKit ends a float with a zero-tall frame while the keyboard
-/// stays up, and a floating keyboard's own frame notification can be another
-/// screen object's (not taken as this window's). A guide that lags a real
+/// stays up, a floating keyboard's own frame notification can be another
+/// screen object's (not taken as this window's), and with an accessory row a
+/// floating keyboard's frame is the row alone (`accessory_alone`, which the
+/// window takes as `Hidden` here). A guide that lags a real
 /// frame never overrides it; after a hide, the next layout pass brings the
 /// guide back to the safe area.
 pub fn combine(notified: KeyboardPlacement, guide: KeyboardPlacement) -> KeyboardPlacement {

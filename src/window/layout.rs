@@ -242,6 +242,7 @@ impl Window {
             }
             _ => keyboard_geometry::bottom_inset(self.view.bounds(), keyboard) as f32,
         };
+        let target = target.max(self.accessory_inset(target));
         self.keyboard_guided(placement);
         let insets = {
             let mut state = self.state.borrow_mut();
@@ -263,6 +264,31 @@ impl Window {
         );
         call(&self.callbacks.insets_changed, |callback| callback(insets));
         self.force_frame();
+    }
+
+    /// The bottom inset the consumer's accessory row gives this view while
+    /// UIKit shows it, with the keyboard alone giving `keyboard_inset`
+    /// (`keyboard_inset::accessory_inset`); 0 without a row or a screen.
+    fn accessory_inset(&self, keyboard_inset: f32) -> f32 {
+        let Some(row) = self.text_input.accessory_screen_frame() else {
+            return 0.0;
+        };
+        let ui_window = self.state.borrow().ui_window.clone();
+        let Some(ui_window) = ui_window else {
+            return 0.0;
+        };
+        let screen = ui_window.screen();
+        let view = self
+            .view
+            .convertRect_toCoordinateSpace(self.view.bounds(), &screen.coordinateSpace());
+        let inset = super::keyboard_inset::accessory_inset(
+            keyboard_geometry::tuple(screen.bounds()),
+            keyboard_geometry::tuple(view),
+            row,
+            f64::from(keyboard_inset),
+        );
+        self.state.borrow_mut().keyboard_sample.accessory = row;
+        inset as f32
     }
 
     /// Where the guide's `keyboard` (in this view's coordinates) is on the
@@ -306,7 +332,18 @@ impl Window {
                 rect.size.height,
             )
         };
-        let notified = super::keyboard_placement::placement(tuple(screen), tuple(keyboard));
+        // The accessory row alone (a floating keyboard's) leaves the
+        // placement to the guide.
+        let row_height = self.text_input.accessory_height();
+        let notified = if super::keyboard_placement::accessory_alone(
+            tuple(screen),
+            tuple(keyboard),
+            row_height,
+        ) {
+            super::KeyboardPlacement::Hidden
+        } else {
+            super::keyboard_placement::placement(tuple(screen), tuple(keyboard))
+        };
         {
             let mut state = self.state.borrow_mut();
             if state.closed {

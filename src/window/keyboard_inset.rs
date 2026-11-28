@@ -1,9 +1,13 @@
-//! Which full-width undocked keyboards take a bottom inset. A docked keyboard
-//! covers the window's bottom, so the window ends above it. An undocked one
-//! usually leaves it alone: the user moved it up, and the lines under it stay
-//! visible (`layout/keyboard_geometry.rs`). A split keyboard, and one just
-//! unsplit, is undocked too but still sits at the screen's bottom edge, so it
-//! hides the window's last lines unless it takes an inset (yebisu#277).
+//! Which full-width undocked keyboards, and which accessory rows, take a
+//! bottom inset. A docked keyboard covers the window's bottom, so the window
+//! ends above it. An undocked one usually leaves it alone: the user moved it
+//! up, and the lines under it stay visible (`layout/keyboard_geometry.rs`). A
+//! split keyboard, and one just unsplit, is undocked too but still sits at
+//! the screen's bottom edge, so it hides the window's last lines unless it
+//! takes an inset (yebisu#277). The consumer's accessory row
+//! (`keyboard_accessory`) covers the window's bottom below a floating
+//! keyboard, and the lines above a keyboard that takes an inset
+//! (`accessory_inset`).
 //!
 //! Plain arithmetic in points, with no UIKit types, so host tests can run it
 //! (`tests/keyboard_inset.rs`).
@@ -73,4 +77,41 @@ pub fn holds_inset(
         && ex <= sx + TOLERANCE
         && ex + ew >= sx + sw - TOLERANCE;
     below && near_bottom(screen, previous)
+}
+
+/// How far, in points, the accessory row's bottom edge may be from the top
+/// of the keyboard inset below it and still sit on that keyboard.
+pub const ROW_ON_KEYBOARD_GAP: f64 = 4.0;
+
+/// The bottom inset the accessory `row` gives a `view` on a `screen`, all
+/// (x, y, width, height) in the screen's points, when the keyboard alone
+/// gives `keyboard_inset`. A full-width row on the screen's bottom edge (below
+/// a floating keyboard: UIKit puts it there) or on top of the keyboard's inset
+/// covers the window from its top edge down, so the window ends above it. A
+/// row above a keyboard the user moved up, which takes no inset, gives none,
+/// as that keyboard does; so does a narrower row.
+pub fn accessory_inset(
+    screen: (f64, f64, f64, f64),
+    view: (f64, f64, f64, f64),
+    row: (f64, f64, f64, f64),
+    keyboard_inset: f64,
+) -> f64 {
+    let (sx, sy, sw, sh) = screen;
+    let (rx, ry, rw, rh) = row;
+    let (_, vy, _, vh) = view;
+    let finite = [sx, sy, sw, sh, rx, ry, rw, rh, vy, vh, keyboard_inset]
+        .iter()
+        .all(|v| v.is_finite());
+    if !finite || rw <= 0.0 || rh <= 0.0 {
+        return 0.0;
+    }
+    let spans = rx <= sx + TOLERANCE && rx + rw >= sx + sw - TOLERANCE;
+    let row_bottom = ry + rh;
+    let at_bottom = (sy + sh - row_bottom).abs() <= NEAR_BOTTOM_GAP;
+    let on_keyboard = keyboard_inset > 0.0
+        && (row_bottom - (vy + vh - keyboard_inset)).abs() <= ROW_ON_KEYBOARD_GAP;
+    if !spans || !(at_bottom || on_keyboard) {
+        return 0.0;
+    }
+    near_bottom_inset(view, row)
 }

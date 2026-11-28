@@ -56,12 +56,13 @@ mod window_controls;
 
 pub use background_task::BackgroundTask;
 pub use error::{Error, Result};
-#[cfg(target_abi = "sim")]
-pub use keyboard_bar::keyboard_placement_sample;
 pub use keyboard_bar::{
-    KeyboardBar, KeyboardBarItem, KeyboardBarMenuEntry, KeyboardBarPresses, KeyboardPlacement,
-    keyboard_bar_presses, keyboard_placement, set_keyboard_bar,
+    KeyboardAccessory, KeyboardArrows, KeyboardBar, KeyboardBarItem, KeyboardBarMenuEntry,
+    KeyboardBarPresses, KeyboardPlacement, keyboard_bar_presses, keyboard_placement,
+    set_keyboard_accessory, set_keyboard_bar,
 };
+#[cfg(target_abi = "sim")]
+pub use keyboard_bar::{keyboard_placement_sample, text_input_language};
 pub use layout_direction::{LayoutDirection, layout_direction, set_layout_direction};
 pub use menu::set_menu_subtitles;
 pub use native_edit_action::{NativeEditAction, native_edit_action};

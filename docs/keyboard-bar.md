@@ -1,12 +1,20 @@
-# Keyboard bar
+# Keyboard bar and accessory row
 
-`set_keyboard_bar` puts a consumer's buttons on the software keyboard's
-shortcuts bar: the row above the keys, made of `UITextInputAssistantItem`'s
-leading and trailing `UIBarButtonItemGroup`s on the window's text input view
-(`GPUITextInputView`). `keyboard_bar_presses` streams the tapped item's `id`;
-`keyboard_placement` says where the keyboard is. Added for yebisu#229, whose
-terminal keys (ctrl, alt, esc, tab, symbols, arrows, ⌘) used to sit in an
-in-app band.
+Two places for a consumer's keys over the software keyboard:
+
+- `set_keyboard_bar` puts buttons on the keyboard's shortcuts bar: the row
+  above the keys, made of `UITextInputAssistantItem`'s leading and trailing
+  `UIBarButtonItemGroup`s on the window's text input view
+  (`GPUITextInputView`). Added for yebisu#229.
+- `set_keyboard_accessory` puts a full-width row of equal-width keys in the
+  text input view's `inputAccessoryView`: a keyboard-style `UIInputView`
+  (`window/keyboard_accessory.rs`). Added for yebisu#276, whose owner chose
+  layout D: the row normally, the shortcuts bar narrowed to seven items on a
+  docked keyboard in a short window.
+
+`keyboard_bar_presses` streams the tapped item's `id` from both;
+`keyboard_placement` says where the keyboard is. An item with `arrows` is one
+flick arrow key on either (below).
 
 ## What UIKit shows, by keyboard state
 
@@ -25,18 +33,46 @@ Simulator, iPad Pro 11-inch (M5), with a spike app (yebisu#229 task record):
 A responder that adopts only `UIKeyInput` gets no shortcuts bar at all;
 `GPUITextInputView` adopts `UITextInput`, so it gets one.
 
-So a consumer that needs its keys in every state draws them itself while
-`keyboard_placement` is `Floating`. herdr-uikit does not install an
-`inputAccessoryView` for it: switching one in and out needs
-`reloadInputViews` on the first responder, which can disturb marked text.
+So the shortcuts bar alone cannot hold a consumer's keys in every state: a
+floating keyboard has none, and a split one, or a Japanese keyboard whose
+candidates take the bar's middle, leaves the bar 124-239 pt (yebisu#276), so
+UIKit narrows 17 items to 8.5-15 pt each instead of dropping any. The
+accessory row shows with every software keyboard, in its own row.
+
+Adding or removing the row needs `reloadInputViews` on the first responder,
+which can disturb marked text. So `set_keyboard_accessory` reloads only when
+the row is added or removed (a row whose keys change updates them in place),
+from the run-loop flush rather than inside GPUI's frame, and never while text
+is being composed: the reload waits for a flush after the composition ends
+(`text_input/sync.rs` `apply_accessory`). A view that is not first responder
+reads the row when it becomes first responder.
 
 ## Behaviour
 
-- The bar belongs to the responder. `TextInputView` keeps the consumer's bar
-  and puts it on every replacement view (`finish_retirement`) before that
-  view can become first responder.
-- `set_keyboard_bar` with the bar already shown does nothing, so a consumer
-  can call it every frame. An empty bar removes every consumer group.
+- The bar and the row belong to the responder. `TextInputView` keeps the
+  consumer's bar and row and puts them on every replacement view
+  (`finish_retirement`) before that view can become first responder.
+- `set_keyboard_bar` and `set_keyboard_accessory` with what is already shown
+  do nothing, so a consumer can call them every frame. An empty bar removes
+  every group, the system's undo, redo and paste included (the first call is
+  always applied, an empty bar too): with English the keyboard then drops
+  its top row, 36-41 pt (yebisu#276; Japanese keeps its candidates' row). An
+  empty row removes the accessory view. A bar or a
+  row that differs only in `selected` (a latch) updates the buttons in place,
+  so a touch on another key, a held arrow key's repeat, is not cut off.
+- The row's keys are gray `UIButton`s (filled while `selected`), a `menu` key
+  opens its menu on tap, laid out equally wide with 6 pt between them, 48 pt
+  tall. Its accessibility identifier is `herdr-keyboard-accessory`.
+- The arrow key (`KeyboardBarItem::arrows`, `keyboard_bar/arrow.rs`, after
+  Blink Shell's behaviour; no code taken) is a `UIControl` that tracks one
+  touch: the arrow is the side of the key's centre the finger is on (the
+  key's diagonals divide the sides) when it lands and while it moves; a
+  dead zone at the centre (20 % of the width and 15 % of the height either
+  way) means none. The arrow is sent when the finger lifts; held 0.5 s it is
+  sent and repeats every 0.1 s, 0.07 s once the finger is beyond the key's
+  edge and 0.04 s three half-sizes from the centre, and lifting then sends
+  nothing more. On the shortcuts bar it is a `UIBarButtonItem`'s custom view,
+  52 x 36 pt.
 - A button's `UIAction` only queues its `id` (`keyboard_bar/queue.rs`, at
   most 64 unread presses); nothing calls GPUI from UIKit's callback. The
   stream ends after the window closes.
@@ -86,11 +122,22 @@ So a consumer that needs its keys in every state draws them itself while
 - The gap and the off-screen frames are Simulator measurements, with the
   split forced through a private API (`setSplit:YES animated:YES`); a
   device's split keyboard frame is unmeasured.
+- The accessory row takes a bottom inset of its own where it is the window's
+  last thing on the screen (`keyboard_inset::accessory_inset`, from the row's
+  frame at each layout pass): full width on the screen's bottom edge (below a
+  floating keyboard, where UIKit puts it), or on top of a keyboard that takes
+  an inset. The inset runs from the row's top edge, so the window's last lines
+  and status bar end above the row. A row above a keyboard moved up takes
+  none, as that keyboard does.
 
 ## Tests
 
+- `tests/keyboard_arrow.rs`: host tests of the arrow key's touch logic: the
+  arrow of each side, the dead zone, sending on release, the hold that starts
+  repeating and the faster repeats farther out.
 - `tests/keyboard_inset.rs`: host tests of `near_bottom`,
-  `near_bottom_inset` and `holds_inset` with the iPad mini frames above;
+  `near_bottom_inset`, `holds_inset` and `accessory_inset` with the iPad mini
+  frames above;
   `layout/keyboard_geometry/tests.rs` checks the notification's inset for
   the same frames in the Simulator test run.
 
@@ -98,8 +145,11 @@ So a consumer that needs its keys in every state draws them itself while
   the classification, `guide_placement` and `combine` (the Simulator's
   frame and guide sequences) and the queue.
 - `tests/keyboard_bar_uikit.rs`: the UIKit objects `apply` builds (groups,
-  identifiers, the selected state, the menu, the empty bar), on the
-  Simulator's main thread outside UIApplicationMain.
-- Whether UIKit draws the bar in each state, and that a tap reaches the
-  consumer, is yebisu's Simulator E2E (`scripts/ios/keyboard-bar-check.py`,
+  identifiers, the selected state, the menu, the empty bar, the arrow key as
+  a custom view, the in-place selected update) and the accessory row's keys
+  (kinds, identifiers, equal widths inside the row, the in-place update), on
+  the Simulator's main thread outside UIApplicationMain.
+- Whether UIKit draws the bar and the row in each state, that a tap or an
+  arrow key's flick reaches the consumer, and that marked text survives the
+  row's keys, are yebisu's Simulator E2E (`scripts/ios/keyboard-bar-check.py`,
   which also reads `keyboard_placement_sample`) and device checks.

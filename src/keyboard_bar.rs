@@ -1,18 +1,23 @@
-//! Keys on the software keyboard's shortcuts bar: the row above the keys
-//! (`UITextInputAssistantItem`'s leading and trailing groups on the window's
-//! text input view), and where the keyboard is.
+//! Keys over the software keyboard, in two places a consumer chooses
+//! between: the keyboard's shortcuts bar (`UITextInputAssistantItem`'s
+//! leading and trailing groups on the window's text input view,
+//! [`set_keyboard_bar`]) and a full-width row in the text input view's
+//! `inputAccessoryView` ([`set_keyboard_accessory`]). Also where the keyboard
+//! is ([`keyboard_placement`]).
 //!
 //! UIKit shows the bar on a docked keyboard (and, by Apple's design, on a
 //! split one), but not on a floating keyboard: there only the predictive
-//! row is drawn (`docs/keyboard-bar.md`, measured on the iPadOS 27.2
-//! Simulator). A consumer that needs its keys in every state reads
-//! [`keyboard_placement`] and draws the same keys itself while it is
-//! [`KeyboardPlacement::Floating`].
+//! row is drawn. The accessory row shows with every software keyboard: above
+//! a docked or split one, and full width at the screen's bottom edge below a
+//! floating one (`docs/keyboard-bar.md`, measured on the iPadOS 27.2
+//! Simulator).
 //!
 //! A press arrives on the window's [`KeyboardBarPresses`] stream as the
-//! item's `id` (or a menu entry's), after UIKit handled the touch. The bar
-//! never takes first responder. Every call is main-thread only.
+//! item's `id` (or a menu entry's, or an arrow's), after UIKit handled the
+//! touch. Neither the bar nor the row takes first responder. Every call is
+//! main-thread only.
 
+pub(crate) mod arrow;
 mod queue;
 
 use std::{
@@ -57,10 +62,39 @@ pub struct KeyboardBarItem {
     pub selected: bool,
     /// Entries of a menu the button opens on tap; empty for a plain button.
     pub menu: Vec<KeyboardBarMenuEntry>,
+    /// Draws the item as one flick arrow key instead of a button: the arrow
+    /// comes from where the finger is relative to the key's centre, the
+    /// centre sends nothing, the arrow is sent when the finger lifts, and a
+    /// held arrow repeats, faster farther from the centre
+    /// (`keyboard_bar/arrow.rs`). `id`, `title`, `symbol` and `menu` are
+    /// unused for it.
+    pub arrows: Option<KeyboardArrows>,
+}
+
+/// The ids an arrow key sends on [`KeyboardBarPresses`], one per arrow.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct KeyboardArrows {
+    pub up: u32,
+    pub down: u32,
+    pub left: u32,
+    pub right: u32,
+}
+
+impl KeyboardArrows {
+    pub(crate) fn id(&self, arrow: arrow::Arrow) -> u32 {
+        match arrow {
+            arrow::Arrow::Up => self.up,
+            arrow::Arrow::Down => self.down,
+            arrow::Arrow::Left => self.left,
+            arrow::Arrow::Right => self.right,
+        }
+    }
 }
 
 /// The bar's buttons. Each inner list is one group; UIKit keeps a group's
-/// buttons together. An empty bar shows no consumer buttons.
+/// buttons together. An empty bar shows no buttons at all, the system's
+/// (undo, redo, paste) included, so a keyboard whose language shows no
+/// candidates drops its top row.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct KeyboardBar {
     pub leading: Vec<Vec<KeyboardBarItem>>,
@@ -74,8 +108,10 @@ impl KeyboardBar {
 }
 
 /// Puts `bar` on `window`'s shortcuts bar, replacing what was there. The
-/// same bar again is a no-op, so a consumer may call this every frame.
-/// Returns false off the main thread or if the window no longer exists.
+/// same bar again is a no-op, so a consumer may call this every frame. A
+/// bar that differs only in `selected` updates its buttons in place, so a
+/// touch on one (a held arrow key) is not cut off. Returns false off the
+/// main thread or if the window no longer exists.
 pub fn set_keyboard_bar(window: AnyWindowHandle, bar: &KeyboardBar) -> bool {
     let Some(mtm) = MainThreadMarker::new() else {
         return false;
@@ -83,7 +119,39 @@ pub fn set_keyboard_bar(window: AnyWindowHandle, bar: &KeyboardBar) -> bool {
     crate::window::set_keyboard_bar(window, bar, mtm)
 }
 
-/// `window`'s bar presses, oldest first. A `futures::Stream` that ends when
+/// A full-width row of equal-width keys over the software keyboard: a
+/// keyboard-style `UIInputView` as the text input view's
+/// `inputAccessoryView`. An item's `selected` is drawn as a latched key, a
+/// `menu` opens on tap, `arrows` makes the flick arrow key. An empty row
+/// removes the accessory view. Presses arrive on [`keyboard_bar_presses`].
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct KeyboardAccessory {
+    pub items: Vec<KeyboardBarItem>,
+}
+
+impl KeyboardAccessory {
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+}
+
+/// Puts `row` in `window`'s `inputAccessoryView`, replacing what was there.
+/// The same row again is a no-op, so a consumer may call this every frame.
+/// A row whose keys keep their identifiers and kinds updates them in place,
+/// so a touch on one (a held arrow key) is not cut off. Adding or removing
+/// the row reloads the text input view's input views (`reloadInputViews`),
+/// but not while text is being composed: that reload waits for the
+/// composition to end, so marked text is not disturbed. Returns false off
+/// the main thread or if the window no longer exists.
+pub fn set_keyboard_accessory(window: AnyWindowHandle, row: &KeyboardAccessory) -> bool {
+    let Some(mtm) = MainThreadMarker::new() else {
+        return false;
+    };
+    crate::window::set_keyboard_accessory(window, row, mtm)
+}
+
+/// `window`'s bar and accessory row presses, oldest first. A
+/// `futures::Stream` that ends when
 /// the window closes. One reader per window: a second stream takes the
 /// wake-ups from the first. `None` off the main thread or for a closed
 /// window.
@@ -109,6 +177,15 @@ pub fn keyboard_placement(window: AnyWindowHandle) -> KeyboardPlacement {
 pub fn keyboard_placement_sample(window: AnyWindowHandle) -> Option<String> {
     MainThreadMarker::new()?;
     crate::window::keyboard_placement_sample(window)
+}
+
+/// Simulator QA: the primary language of the input mode the window's text
+/// input view has (`ja-JP`, `en-US`), `None` off the main thread, for a
+/// closed window or before UIKit gave it one.
+#[cfg(target_abi = "sim")]
+pub fn text_input_language(window: AnyWindowHandle) -> Option<String> {
+    MainThreadMarker::new()?;
+    crate::window::text_input_language(window)
 }
 
 /// See [`keyboard_bar_presses`].

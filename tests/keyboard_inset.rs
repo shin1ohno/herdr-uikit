@@ -11,7 +11,8 @@ mod keyboard_placement;
 mod keyboard_inset;
 
 use keyboard_inset::{
-    NEAR_BOTTOM_GAP, OFF_SCREEN_HOLD_SECS, holds_inset, near_bottom, near_bottom_inset,
+    NEAR_BOTTOM_GAP, OFF_SCREEN_HOLD_SECS, ROW_ON_KEYBOARD_GAP, accessory_inset, holds_inset,
+    near_bottom, near_bottom_inset,
 };
 use keyboard_placement::{KeyboardPlacement, placement};
 
@@ -132,4 +133,77 @@ fn other_frames_change_the_inset_at_once() {
     ] {
         assert!(!holds_inset(SCREEN, SPLIT, end), "{end:?}");
     }
+}
+
+/// The accessory row (48 pt) where UIKit puts it: at the screen's bottom
+/// edge below a floating keyboard, and on top of a docked, split or moved-up
+/// keyboard.
+const ROW_FLOATING: (f64, f64, f64, f64) = (0.0, 1110.0, 756.0, 48.0);
+const ROW_ON_DOCKED: (f64, f64, f64, f64) = (0.0, 770.0, 756.0, 48.0);
+const ROW_ON_SPLIT: (f64, f64, f64, f64) = (0.0, 763.0, 756.0, 48.0);
+const ROW_ON_MOVED_UP: (f64, f64, f64, f64) = (0.0, 510.0, 756.0, 48.0);
+/// The bottom safe area, the inset a floating or moved-up keyboard leaves.
+const SAFE_BOTTOM: f64 = 20.0;
+
+#[test]
+fn a_row_below_a_floating_keyboard_takes_its_height() {
+    assert_eq!(
+        accessory_inset(SCREEN, SCREEN, ROW_FLOATING, SAFE_BOTTOM),
+        48.0
+    );
+    // Also with no keyboard inset at all (a hardware keyboard's row).
+    assert_eq!(accessory_inset(SCREEN, SCREEN, ROW_FLOATING, 0.0), 48.0);
+}
+
+#[test]
+fn a_row_on_a_keyboard_that_takes_an_inset_adds_its_height() {
+    // A keyboard frame that leaves the row out: the row sits on its top.
+    let docked = SCREEN.3 - DOCKED.1;
+    assert_eq!(
+        accessory_inset(SCREEN, SCREEN, ROW_ON_DOCKED, docked),
+        388.0
+    );
+    let split = near_bottom_inset(SCREEN, SPLIT);
+    assert_eq!(accessory_inset(SCREEN, SCREEN, ROW_ON_SPLIT, split), 395.0);
+    // A keyboard frame that already holds the row: no more than its own.
+    assert!(accessory_inset(SCREEN, SCREEN, ROW_ON_DOCKED, 388.0) <= 388.0);
+}
+
+#[test]
+fn a_row_on_a_keyboard_moved_up_keeps_the_window_as_it_is() {
+    assert_eq!(
+        accessory_inset(SCREEN, SCREEN, ROW_ON_MOVED_UP, SAFE_BOTTOM),
+        0.0
+    );
+    // Just beyond the on-keyboard gap is not on the keyboard.
+    let off = (0.0, 770.0 - ROW_ON_KEYBOARD_GAP - 1.0, 756.0, 48.0);
+    assert_eq!(accessory_inset(SCREEN, SCREEN, off, 340.0), 0.0);
+}
+
+#[test]
+fn a_narrow_or_empty_row_takes_nothing() {
+    assert_eq!(
+        accessory_inset(SCREEN, SCREEN, (100.0, 1110.0, 556.0, 48.0), SAFE_BOTTOM),
+        0.0
+    );
+    assert_eq!(
+        accessory_inset(SCREEN, SCREEN, (0.0, 1158.0, 756.0, 0.0), SAFE_BOTTOM),
+        0.0
+    );
+    assert_eq!(
+        accessory_inset(SCREEN, SCREEN, (0.0, f64::NAN, 756.0, 48.0), SAFE_BOTTOM),
+        0.0
+    );
+}
+
+#[test]
+fn a_row_inset_is_the_views_own() {
+    // A window whose bottom is 100 pt above the screen's (Stage Manager).
+    let view = (0.0, 0.0, 756.0, 1058.0);
+    assert_eq!(
+        accessory_inset(SCREEN, view, ROW_FLOATING, SAFE_BOTTOM),
+        0.0
+    );
+    let tall_row = (0.0, 1010.0, 756.0, 148.0);
+    assert_eq!(accessory_inset(SCREEN, view, tall_row, SAFE_BOTTOM), 48.0);
 }
