@@ -88,3 +88,36 @@ fn hidden_keyboard_and_empty_layout_guide_reserve_no_space() {
     assert_eq!(bottom_inset(view, rect(0.0, 1376.0, 1032.0, 456.0)), 0.0);
     assert_eq!(bottom_inset(view, rect(0.0, 1376.0, 1032.0, 0.0)), 0.0);
 }
+
+/// The iPad mini (A20 Pro) Simulator in portrait, 756 x 1158 points
+/// (yebisu#277): a split keyboard and one just unsplit end 11 pt above the
+/// bottom edge and take their overlap; one moved up and a floating one take
+/// none; a docked one keeps its height.
+#[test]
+fn a_near_bottom_undocked_keyboard_reserves_its_overlap() {
+    let screen = rect(0.0, 0.0, 756.0, 1158.0);
+    for (keyboard, inset) in [
+        (rect(0.0, 811.0, 756.0, 336.0), 347.0),
+        (rect(0.0, 807.0, 756.0, 340.0), 351.0),
+        (rect(0.0, 558.0, 756.0, 340.0), 0.0),
+        (rect(0.0, 818.0, 756.0, 340.0), 340.0),
+        (rect(210.0, 655.0, 334.0, 236.5), 0.0),
+        (rect(0.0, 1158.0, 756.0, 336.0), 0.0),
+    ] {
+        assert_eq!(
+            screen_inset(screen, screen, keyboard, true),
+            Some(inset),
+            "{keyboard:?}"
+        );
+    }
+    // A Stage Manager window ends above the split keyboard too.
+    let view_in_screen = rect(80.0, 120.0, 600.0, 900.0);
+    assert_eq!(
+        screen_inset(view_in_screen, screen, rect(0.0, 811.0, 756.0, 336.0), true),
+        Some(209.0)
+    );
+    assert_eq!(
+        near_bottom_inset(screen, rect(0.0, 811.0, 756.0, 336.0)),
+        347.0
+    );
+}
