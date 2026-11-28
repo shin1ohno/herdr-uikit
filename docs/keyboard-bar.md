@@ -39,13 +39,23 @@ candidates take the bar's middle, leaves the bar 124-239 pt (yebisu#276), so
 UIKit narrows 17 items to 8.5-15 pt each instead of dropping any. The
 accessory row shows with every software keyboard, in its own row.
 
-Adding or removing the row needs `reloadInputViews` on the first responder,
-which can disturb marked text. So `set_keyboard_accessory` reloads only when
-the row is added or removed (a row whose keys change updates them in place),
-from the run-loop flush rather than inside GPUI's frame, and never while text
-is being composed: the reload waits for a flush after the composition ends
-(`text_input/sync.rs` `apply_accessory`). A view that is not first responder
-reads the row when it becomes first responder.
+Installing an `inputAccessoryView` while the keyboard is up needs
+`reloadInputViews` on the first responder, which can disturb marked text.
+So `set_keyboard_accessory` reloads only once, when its first non-empty row
+installs the row view, from the run-loop flush rather than inside GPUI's
+frame, and never while text is being composed: the reload waits for a flush
+after the composition ends (`text_input/sync.rs` `apply_accessory`). A view
+that is not first responder reads the row when it becomes first responder.
+After that the row view stays installed. A row whose keys change updates
+them in place; an empty row collapses the view to zero height, hidden, and a
+later row expands it: the view sizes itself (`allowsSelfSizing`,
+`intrinsicContentSize`), so UIKit resizes the keyboard without a reload.
+Removing the row with a reload while the keyboard was up (iPad mini (A20 Pro)
+Simulator, iPadOS 27.2, the row replaced by the narrowed shortcuts bar when
+the window turned landscape) left the bar drawn but taking no touches at
+all, its buttons' actions and the arrow key's tracking alike (yebisu#276
+runs r04 and r09; the same bar without a row before it took every touch,
+run r05).
 
 ## Behaviour
 
@@ -57,7 +67,7 @@ reads the row when it becomes first responder.
   every group, the system's undo, redo and paste included (the first call is
   always applied, an empty bar too): with English the keyboard then drops
   its top row, 36-41 pt (yebisu#276; Japanese keeps its candidates' row). An
-  empty row removes the accessory view. A bar or a
+  empty row collapses the accessory view (above). A bar or a
   row that differs only in `selected` (a latch) updates the buttons in place,
   so a touch on another key, a held arrow key's repeat, is not cut off.
 - The row's keys are gray `UIButton`s (filled while `selected`), a `menu` key

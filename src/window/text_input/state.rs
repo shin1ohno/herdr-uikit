@@ -110,11 +110,11 @@ pub(in crate::window) struct Ivars {
     /// indicator; `None` until the window attaches it.
     pub(super) selection_display: RefCell<Option<super::selection_display::SelectionDisplay>>,
     /// The consumer's accessory row (`inputAccessoryView` in text mode), or
-    /// `None` for no row.
+    /// `None` before the consumer's first row.
     pub(super) accessory: RefCell<Option<Retained<UIView>>>,
-    /// The row was added or removed while this view was first responder:
-    /// the next flush reloads the input views, once no text is being
-    /// composed (`sync.rs`).
+    /// The row was installed while this view was first responder: the next
+    /// flush reloads the input views, once no text is being composed
+    /// (`sync.rs`).
     pub(super) accessory_reload: Cell<bool>,
 }
 

@@ -232,8 +232,8 @@ fn accessory_row(mtm: MainThreadMarker, queue: &Rc<RefCell<PressQueue>>) {
         identifier(&*view),
         super::super::keyboard_accessory::ROW_IDENTIFIER
     );
-    let keys = view.subviews();
-    let ids: Vec<String> = keys.iter().map(|key| identifier(&*key)).collect();
+    let keys = view.key_views();
+    let ids: Vec<String> = keys.iter().map(|key| identifier(&**key)).collect();
     assert_eq!(ids, ["bar-ctrl", "bar-esc", "bar-arrows", "bar-more"]);
     let frames: Vec<CGRect> = keys.iter().map(|key| key.frame()).collect();
     for (index, frame) in frames.iter().enumerate() {
@@ -254,7 +254,7 @@ fn accessory_row(mtm: MainThreadMarker, queue: &Rc<RefCell<PressQueue>>) {
         }
     }
     let button = |index: usize| -> Retained<UIButton> {
-        let Some(view) = keys.iter().nth(index) else {
+        let Some(view) = keys.get(index).cloned() else {
             panic!("no key {index}");
         };
         let Ok(button) = view.downcast::<UIButton>() else {
@@ -267,7 +267,7 @@ fn accessory_row(mtm: MainThreadMarker, queue: &Rc<RefCell<PressQueue>>) {
     assert!(!button(1).isSelected());
     assert!(button(3).menu().is_some(), "the more key has a menu");
     assert!(button(3).showsMenuAsPrimaryAction());
-    let Some(arrow) = keys.iter().nth(2) else {
+    let Some(arrow) = keys.get(2).cloned() else {
         panic!("no arrow key");
     };
     assert!(arrow.downcast::<HerdrArrowKey>().is_ok());
@@ -275,14 +275,14 @@ fn accessory_row(mtm: MainThreadMarker, queue: &Rc<RefCell<PressQueue>>) {
     let mut unlatched = row.clone();
     unlatched.items[0].selected = false;
     view.update(&unlatched, queue);
-    let kept = view.subviews();
-    assert_eq!(kept.count(), 4);
-    let Some(first) = kept.iter().next() else {
+    let kept = view.key_views();
+    assert_eq!(kept.len(), 4);
+    let Some(first) = kept.first() else {
         panic!("no first key after the update");
     };
     assert!(
         std::ptr::eq(
-            Retained::as_ptr(&first).cast::<u8>(),
+            Retained::as_ptr(first).cast::<u8>(),
             Retained::as_ptr(&ctrl).cast::<u8>()
         ),
         "the ctrl key is kept"
@@ -293,8 +293,28 @@ fn accessory_row(mtm: MainThreadMarker, queue: &Rc<RefCell<PressQueue>>) {
     shorter.items.truncate(2);
     view.update(&shorter, queue);
     assert_eq!(
-        view.subviews().count(),
+        view.key_views().len(),
         2,
         "another shape builds the keys anew"
+    );
+
+    // An empty row collapses the view to zero height, hidden; a row expands
+    // it again. The view sizes itself, so UIKit needs no reload.
+    assert!(view.allowsSelfSizing());
+    assert_eq!(
+        view.intrinsicContentSize().height,
+        super::super::keyboard_accessory::ROW_HEIGHT
+    );
+    view.update(&KeyboardAccessory::default(), queue);
+    view.set_collapsed(true);
+    assert!(view.is_collapsed() && view.isHidden());
+    assert_eq!(view.intrinsicContentSize().height, 0.0);
+    assert_eq!(view.key_views().len(), 0, "an empty row has no keys");
+    view.update(&shorter, queue);
+    view.set_collapsed(false);
+    assert!(!view.is_collapsed() && !view.isHidden());
+    assert_eq!(
+        view.intrinsicContentSize().height,
+        super::super::keyboard_accessory::ROW_HEIGHT
     );
 }

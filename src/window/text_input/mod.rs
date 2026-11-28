@@ -156,9 +156,11 @@ impl TextInputView {
         }
     }
 
-    /// Shows `row` in the accessory row unless it is already there. Adding
-    /// or removing the row reloads the input views on the next flush that
-    /// finds no text being composed.
+    /// Shows `row` in the accessory row unless it is already there. The
+    /// first non-empty row installs the row view, which reloads the input
+    /// views on the next flush that finds no text being composed; after
+    /// that the view stays installed, and an empty row only collapses it to
+    /// zero height (`HerdrKeyboardRow::set_collapsed`), with no reload.
     pub(crate) fn set_keyboard_accessory(&self, row: &crate::keyboard_bar::KeyboardAccessory) {
         if *self.keyboard_accessory.borrow() == *row {
             return;
@@ -172,30 +174,30 @@ impl TextInputView {
                 .get_or_insert_with(|| HerdrKeyboardRow::new(view.mtm()))
                 .clone();
             row_view.update(row, &self.keyboard_bar_presses);
+            row_view.set_collapsed(false);
+        } else if let Some(row_view) = self.accessory_row.borrow().as_ref() {
+            row_view.update(row, &self.keyboard_bar_presses);
+            row_view.set_collapsed(true);
         }
         if self.apply_keyboard_accessory(&view) {
             view.accessory_changed();
         }
     }
 
-    /// Puts the accessory row (or none) on `view`; whether that added or
-    /// removed it.
+    /// Puts the row view, once made, on `view`; whether that installed it.
     fn apply_keyboard_accessory(&self, view: &GPUITextInputView) -> bool {
-        let row = if self.keyboard_accessory.borrow().is_empty() {
-            None
-        } else {
-            self.accessory_row
-                .borrow()
-                .as_ref()
-                .map(|row| Retained::into_super(Retained::into_super(row.clone())))
-        };
+        let row = self
+            .accessory_row
+            .borrow()
+            .as_ref()
+            .map(|row| Retained::into_super(Retained::into_super(row.clone())));
         let mut slot = view.ivars().accessory.borrow_mut();
         let changed = slot.is_some() != row.is_some();
         *slot = row;
         changed
     }
 
-    /// The accessory row's height in points, 0 without a row.
+    /// The accessory row's height in points, 0 without a row or collapsed.
     pub(super) fn accessory_height(&self) -> f64 {
         if self.keyboard_accessory.borrow().is_empty() {
             0.0
@@ -219,13 +221,14 @@ impl TextInputView {
         self.current().input_language()
     }
 
-    /// Simulator QA: the accessory row's keys and frame, or `none`.
+    /// Simulator QA: the accessory row's keys and frame, `collapsed`, or
+    /// `none` before the first row.
     #[cfg(target_abi = "sim")]
     pub(super) fn accessory_sample(&self) -> String {
-        if self.keyboard_accessory.borrow().is_empty() {
-            return "none".into();
-        }
         match self.accessory_row.borrow().as_ref() {
+            Some(row) if row.is_collapsed() => {
+                format!("collapsed {}", super::keyboard_accessory::qa_sample(row))
+            }
             Some(row) => super::keyboard_accessory::qa_sample(row),
             None => "none".into(),
         }

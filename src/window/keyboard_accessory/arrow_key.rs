@@ -176,6 +176,15 @@ impl HerdrArrowKey {
         this
     }
 
+    /// Keeps the key as wide as `BAR_SIZE` as a shortcuts bar item's custom view:
+    /// UIKit narrows custom views to fit a crowded bar (12.5 pt in one run,
+    /// yebisu#276 r12), too narrow to flick.
+    pub(in crate::window) fn hold_bar_width(&self) {
+        self.widthAnchor()
+            .constraintEqualToConstant(BAR_SIZE.width)
+            .setActive(true);
+    }
+
     /// The ids this key sends.
     pub(in crate::window) fn arrows(&self) -> KeyboardArrows {
         self.ivars().arrows

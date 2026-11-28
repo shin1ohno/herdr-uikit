@@ -9,7 +9,12 @@
 //! UIKit places the row: above a docked or split keyboard, and full width at
 //! the screen's bottom edge below a floating one. The row stays one object
 //! for the window's life; a new row of the same shape updates the keys in
-//! place (`update`), so a touch on one is not cut off.
+//! place (`update`), so a touch on one is not cut off. An empty row collapses
+//! to zero height (`set_collapsed`) rather than leaving the input views: the
+//! row sizes itself (`allowsSelfSizing`, `intrinsicContentSize`), so UIKit
+//! resizes the keyboard without `reloadInputViews`. Removing the row with a
+//! reload while the keyboard was up left the shortcuts bar shown but taking
+//! no touches on the iPadOS 27.2 Simulator (yebisu#276 runs r04 and r09).
 #![allow(
     unsafe_code,
     reason = "an Objective-C UIInputView subclass, and its keys' accessibility setters"
@@ -28,9 +33,9 @@ use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_se
 use objc2_core_foundation::{CGFloat, CGPoint, CGRect, CGSize};
 use objc2_foundation::NSString;
 use objc2_ui_kit::{
-    NSDirectionalEdgeInsets, UIButton, UIButtonConfiguration, UIButtonConfigurationCornerStyle,
-    UIButtonConfigurationSize, UICoordinateSpace, UIInputView, UIInputViewStyle, UIResponder,
-    UIView, UIViewAutoresizing,
+    NSDirectionalEdgeInsets, NSLayoutConstraint, UIButton, UIButtonConfiguration,
+    UIButtonConfigurationCornerStyle, UIButtonConfigurationSize, UICoordinateSpace, UIInputView,
+    UIInputViewStyle, UIResponder, UIView,
 };
 
 use self::arrow_key::HerdrArrowKey;
@@ -44,6 +49,8 @@ const GAP: CGFloat = 6.0;
 const KEY_MARGIN: CGFloat = 4.0;
 /// The row's accessibility identifier (for UI tests).
 pub(crate) const ROW_IDENTIFIER: &str = "herdr-keyboard-accessory";
+/// UIKit's `UIViewNoIntrinsicMetric`.
+const NO_INTRINSIC_METRIC: CGFloat = -1.0;
 
 /// One key of the row.
 enum Key {
@@ -66,6 +73,11 @@ pub(in crate::window) struct Ivars {
     row: RefCell<KeyboardAccessory>,
     /// The keys' width at the last layout, for QA.
     key_width: Cell<CGFloat>,
+    /// The row is collapsed to zero height: no keys show.
+    collapsed: Cell<bool>,
+    /// The row's height constraint, which UIKit's self-sizing input view
+    /// follows (`set_collapsed` changes its constant).
+    height: RefCell<Option<Retained<NSLayoutConstraint>>>,
 }
 
 define_class!(
@@ -85,6 +97,20 @@ define_class!(
             let () = unsafe { msg_send![super(self), layoutSubviews] };
             self.lay_out_keys();
         }
+
+        // The row's height for UIKit's self-sizing input view: ROW_HEIGHT,
+        // or zero while collapsed; the width is the keyboard's.
+        #[unsafe(method(intrinsicContentSize))]
+        fn __intrinsic_content_size(&self) -> CGSize {
+            CGSize {
+                width: NO_INTRINSIC_METRIC,
+                height: if self.ivars().collapsed.get() {
+                    0.0
+                } else {
+                    ROW_HEIGHT
+                },
+            }
+        }
     }
 );
 
@@ -94,6 +120,8 @@ impl HerdrKeyboardRow {
             keys: RefCell::default(),
             row: RefCell::default(),
             key_width: Cell::new(0.0),
+            collapsed: Cell::new(false),
+            height: RefCell::new(None),
         });
         let frame = CGRect {
             origin: CGPoint::ZERO,
@@ -107,11 +135,51 @@ impl HerdrKeyboardRow {
         let this: Retained<Self> = unsafe {
             msg_send![super(this), initWithFrame: frame, inputViewStyle: UIInputViewStyle::Keyboard]
         };
-        // UIKit sets the width; the height stays the frame's.
-        this.setAutoresizingMask(UIViewAutoresizing::FlexibleWidth);
-        this.setAllowsSelfSizing(false);
+        // UIKit sets the width; the height is the row's own constraint
+        // (and `intrinsicContentSize`), so collapsing needs no reload.
+        this.setTranslatesAutoresizingMaskIntoConstraints(false);
+        this.setAllowsSelfSizing(true);
+        let height = this.heightAnchor().constraintEqualToConstant(ROW_HEIGHT);
+        height.setActive(true);
+        *this.ivars().height.borrow_mut() = Some(height);
         set_accessibility(&*this, ROW_IDENTIFIER, None);
         this
+    }
+
+    /// Collapses the row to zero height and hides it (`true`), or shows it
+    /// at `ROW_HEIGHT`; UIKit resizes the keyboard around it.
+    pub(in crate::window) fn set_collapsed(&self, collapsed: bool) {
+        if self.ivars().collapsed.replace(collapsed) == collapsed {
+            return;
+        }
+        if let Some(height) = self.ivars().height.borrow().as_ref() {
+            height.setConstant(if collapsed { 0.0 } else { ROW_HEIGHT });
+        }
+        self.setHidden(collapsed);
+        self.invalidateIntrinsicContentSize();
+        self.setNeedsLayout();
+        // The keyboard's host lays the row out with its own constraints.
+        if let Some(host) = self.superview() {
+            host.setNeedsLayout();
+            host.layoutIfNeeded();
+        }
+    }
+
+    /// The row's key views, left to right (UIKit's keyboard-style input
+    /// view also has subviews of its own, the background).
+    #[cfg(feature = "test-support")]
+    pub(in crate::window) fn key_views(&self) -> Vec<Retained<UIView>> {
+        self.ivars()
+            .keys
+            .borrow()
+            .iter()
+            .map(|key| objc2::Message::retain(key.view()))
+            .collect()
+    }
+
+    /// Whether the row is collapsed (`set_collapsed`).
+    pub(in crate::window) fn is_collapsed(&self) -> bool {
+        self.ivars().collapsed.get()
     }
 
     /// Shows `row`'s keys. A row of the same shape (`same_shape`) updates

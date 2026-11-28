@@ -106,18 +106,17 @@ impl GPUITextInputView {
         self.apply_accessory();
     }
 
-    /// Records that the accessory row was added or removed, for the next
-    /// flush.
+    /// Records that the accessory row was installed, for the next flush.
     pub(super) fn accessory_changed(&self) {
         self.ivars().accessory_reload.set(true);
         self.schedule_flush();
     }
 
-    /// Reloads the input views after the accessory row was added or removed,
-    /// so UIKit shows or hides it. Not while text is being composed: a reload
-    /// can disturb marked text (`docs/keyboard-bar.md`), so it waits for a
-    /// flush after the composition ends. A view that is not first responder
-    /// reads the row when it becomes first responder.
+    /// Reloads the input views after the accessory row was installed, so
+    /// UIKit shows it. Not while text is being composed: a reload can disturb
+    /// marked text (`docs/keyboard-bar.md`), so it waits for a flush after
+    /// the composition ends. A view that is not first responder reads the
+    /// row when it becomes first responder.
     fn apply_accessory(&self) {
         let ivars = self.ivars();
         if !ivars.accessory_reload.get() {

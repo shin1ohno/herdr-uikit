@@ -123,7 +123,8 @@ pub fn set_keyboard_bar(window: AnyWindowHandle, bar: &KeyboardBar) -> bool {
 /// keyboard-style `UIInputView` as the text input view's
 /// `inputAccessoryView`. An item's `selected` is drawn as a latched key, a
 /// `menu` opens on tap, `arrows` makes the flick arrow key. An empty row
-/// removes the accessory view. Presses arrive on [`keyboard_bar_presses`].
+/// collapses the accessory view to zero height. Presses arrive on
+/// [`keyboard_bar_presses`].
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct KeyboardAccessory {
     pub items: Vec<KeyboardBarItem>,
@@ -138,11 +139,13 @@ impl KeyboardAccessory {
 /// Puts `row` in `window`'s `inputAccessoryView`, replacing what was there.
 /// The same row again is a no-op, so a consumer may call this every frame.
 /// A row whose keys keep their identifiers and kinds updates them in place,
-/// so a touch on one (a held arrow key) is not cut off. Adding or removing
-/// the row reloads the text input view's input views (`reloadInputViews`),
-/// but not while text is being composed: that reload waits for the
-/// composition to end, so marked text is not disturbed. Returns false off
-/// the main thread or if the window no longer exists.
+/// so a touch on one (a held arrow key) is not cut off. The first non-empty
+/// row installs the accessory view and reloads the text input view's input
+/// views (`reloadInputViews`), but not while text is being composed: that
+/// reload waits for the composition to end, so marked text is not
+/// disturbed. From then on the view stays installed: an empty row collapses
+/// it to zero height and a later row expands it, both without a reload.
+/// Returns false off the main thread or if the window no longer exists.
 pub fn set_keyboard_accessory(window: AnyWindowHandle, row: &KeyboardAccessory) -> bool {
     let Some(mtm) = MainThreadMarker::new() else {
         return false;

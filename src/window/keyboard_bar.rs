@@ -98,6 +98,7 @@ fn button(
     if let Some(arrows) = item.arrows {
         let key = HerdrArrowKey::new(arrows, queue, mtm);
         set_accessibility(&*key, &item.identifier, Some(&item.accessibility_label));
+        key.hold_bar_width();
         let button = UIBarButtonItem::initWithCustomView(UIBarButtonItem::alloc(mtm), &key);
         set_accessibility(&*button, &item.identifier, Some(&item.accessibility_label));
         return button;
