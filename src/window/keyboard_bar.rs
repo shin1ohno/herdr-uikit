@@ -12,9 +12,11 @@ use std::{cell::RefCell, ptr::NonNull, rc::Rc};
 
 use block2::RcBlock;
 use objc2::{MainThreadMarker, MainThreadOnly as _, msg_send, rc::Retained};
+use objc2_core_foundation::{CGPoint, CGRect, CGSize};
 use objc2_foundation::{NSArray, NSString};
 use objc2_ui_kit::{
     UIAction, UIBarButtonItem, UIBarButtonItemGroup, UIImage, UIMenu, UIMenuElement, UIResponder,
+    UIView,
 };
 
 use crate::keyboard_bar::{KeyboardBar, KeyboardBarItem, KeyboardBarMenuEntry, PressQueue};
@@ -22,25 +24,47 @@ use crate::keyboard_bar::{KeyboardBar, KeyboardBarItem, KeyboardBarMenuEntry, Pr
 #[cfg(feature = "test-support")]
 pub(crate) mod contract;
 
-/// Replaces `responder`'s shortcuts bar groups with `bar`'s. UIKit applies
-/// the change to a visible bar at once (`UIResponder.h`).
+/// The sentinel item's accessibility identifier (tests).
+pub(crate) const SENTINEL_IDENTIFIER: &str = "herdr-keyboard-bar-sentinel";
+
+/// Replaces `responder`'s shortcuts bar groups with `bar`'s. With
+/// `with_sentinel` (a consumer has set a bar), the trailing groups start
+/// with the sentinel: an item whose transparent custom view shows where UIKit
+/// drew the trailing groups, which tells a split bar from a whole one
+/// (`keyboard_placement::bar_split`). UIKit packs trailing groups against the
+/// bar's right end, so a sentinel in front of them moves none of the
+/// consumer's buttons while the trailing half has room (iPad mini (A20 Pro)
+/// portrait: 98 points); at the end it would push every one of them 24
+/// points left (yebisu#276). An empty bar keeps only the sentinel, so a
+/// consumer that empties its bar while the keyboard is split still learns
+/// when it joins again. UIKit applies the change to a visible bar at once
+/// (`UIResponder.h`). Returns the sentinel's view.
 pub(super) fn apply(
     responder: &UIResponder,
     bar: &KeyboardBar,
     queue: &Rc<RefCell<PressQueue>>,
+    with_sentinel: bool,
     mtm: MainThreadMarker,
-) {
+) -> Option<Retained<UIView>> {
     let assistant = responder.inputAssistantItem();
-    assistant.setLeadingBarButtonGroups(&groups(&bar.leading, queue, mtm));
-    assistant.setTrailingBarButtonGroups(&groups(&bar.trailing, queue, mtm));
+    let leading = groups(&bar.leading, queue, mtm);
+    assistant.setLeadingBarButtonGroups(&NSArray::from_retained_slice(&leading));
+    let mut trailing = groups(&bar.trailing, queue, mtm);
+    let view = with_sentinel.then(|| {
+        let (group, view) = sentinel(mtm);
+        trailing.insert(0, group);
+        view
+    });
+    assistant.setTrailingBarButtonGroups(&NSArray::from_retained_slice(&trailing));
+    view
 }
 
 fn groups(
     groups: &[Vec<KeyboardBarItem>],
     queue: &Rc<RefCell<PressQueue>>,
     mtm: MainThreadMarker,
-) -> Retained<NSArray<UIBarButtonItemGroup>> {
-    let groups: Vec<_> = groups
+) -> Vec<Retained<UIBarButtonItemGroup>> {
+    groups
         .iter()
         .filter(|group| !group.is_empty())
         .map(|group| {
@@ -51,8 +75,30 @@ fn groups(
                 None,
             )
         })
-        .collect();
-    NSArray::from_retained_slice(&groups)
+        .collect()
+}
+
+/// The sentinel group and its view: one item with a 1-point transparent
+/// custom view that takes no touches and is hidden from accessibility.
+fn sentinel(mtm: MainThreadMarker) -> (Retained<UIBarButtonItemGroup>, Retained<UIView>) {
+    let frame = CGRect::new(CGPoint::new(0.0, 0.0), CGSize::new(1.0, 1.0));
+    let view = UIView::initWithFrame(UIView::alloc(mtm), frame);
+    let item = UIBarButtonItem::initWithCustomView(UIBarButtonItem::alloc(mtm), &view);
+    // After the item takes the view: `initWithCustomView:` turns user
+    // interaction back on (the Simulator contract caught it).
+    view.setUserInteractionEnabled(false);
+    // SAFETY: UIView's UIAccessibility category; both setters take a BOOL.
+    unsafe {
+        let _: () = msg_send![&*view, setIsAccessibilityElement: false];
+        let _: () = msg_send![&*view, setAccessibilityElementsHidden: true];
+    }
+    set_accessibility(&*item, SENTINEL_IDENTIFIER, None);
+    let group = UIBarButtonItemGroup::initWithBarButtonItems_representativeItem(
+        UIBarButtonItemGroup::alloc(mtm),
+        &NSArray::from_retained_slice(&[item]),
+        None,
+    );
+    (group, view)
 }
 
 fn button(

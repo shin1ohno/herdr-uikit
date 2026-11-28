@@ -263,7 +263,10 @@ pub(crate) fn set_keyboard_bar(
     if window.state.borrow().closed {
         return false;
     }
-    window.text_input.set_keyboard_bar(bar);
+    if window.text_input.set_keyboard_bar(bar) {
+        // The new groups bring a new sentinel; UIKit draws it a moment later.
+        window.schedule_keyboard_split_samples();
+    }
     true
 }
 
@@ -285,12 +288,22 @@ pub(crate) fn keyboard_placement_sample(handle: AnyWindowHandle) -> Option<Strin
     let window = menu_window(handle)?;
     let state = window.state.borrow();
     Some(format!(
-        "{:?} notified={:?} guide={:?} {:?}",
+        "{:?} notified={:?} guide={:?} split={} {:?}",
         state.keyboard_placement,
         state.keyboard_notified,
         state.keyboard_guide,
+        state.keyboard_split,
         state.keyboard_sample
     ))
+}
+
+/// Whether UIKit draws `handle`'s shortcuts bar split
+/// (`keyboard_bar_split`); false for a closed window.
+pub(crate) fn keyboard_bar_split(handle: AnyWindowHandle, _mtm: MainThreadMarker) -> bool {
+    menu_window(handle).is_some_and(|window| {
+        let state = window.state.borrow();
+        !state.closed && state.keyboard_split
+    })
 }
 
 /// Where `handle`'s software keyboard is (`keyboard_placement`).

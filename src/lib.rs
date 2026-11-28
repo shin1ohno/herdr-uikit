@@ -60,7 +60,7 @@ pub use error::{Error, Result};
 pub use keyboard_bar::keyboard_placement_sample;
 pub use keyboard_bar::{
     KeyboardBar, KeyboardBarItem, KeyboardBarMenuEntry, KeyboardBarPresses, KeyboardPlacement,
-    keyboard_bar_presses, keyboard_placement, set_keyboard_bar,
+    keyboard_bar_presses, keyboard_bar_split, keyboard_placement, set_keyboard_bar,
 };
 pub use layout_direction::{LayoutDirection, layout_direction, set_layout_direction};
 pub use menu::set_menu_subtitles;

@@ -237,6 +237,7 @@ impl Window {
             _ => keyboard_geometry::bottom_inset(self.view.bounds(), keyboard) as f32,
         };
         self.keyboard_guided(placement);
+        self.sample_keyboard_split();
         let insets = {
             let mut state = self.state.borrow_mut();
             // The notification's target is animated on display-link ticks;
@@ -318,6 +319,72 @@ impl Window {
             .detach();
     }
 
+    /// Reads where UIKit drew the shortcuts bar's sentinel and records
+    /// whether the bar is split (`keyboard_placement::split_after`). A change
+    /// draws a frame, as the keyboard's frame may not change with it.
+    pub(super) fn sample_keyboard_split(&self) {
+        let ui_window = self.state.borrow().ui_window.clone();
+        let Some(ui_window) = ui_window else {
+            return;
+        };
+        let screen = ui_window.screen();
+        let tuple = |rect: CGRect| {
+            (
+                rect.origin.x,
+                rect.origin.y,
+                rect.size.width,
+                rect.size.height,
+            )
+        };
+        let sentinel = self.text_input.keyboard_bar_sentinel_frame().map(tuple);
+        let changed = {
+            let mut state = self.state.borrow_mut();
+            if state.closed {
+                return;
+            }
+            state.keyboard_sample.sentinel = sentinel;
+            let split = super::keyboard_placement::split_after(
+                state.keyboard_split,
+                tuple(screen.bounds()),
+                sentinel,
+                state.keyboard_placement,
+            );
+            std::mem::replace(&mut state.keyboard_split, split) != split
+        };
+        if changed {
+            tracing::debug!(?sentinel, "keyboard bar split changed");
+            self.force_frame();
+        }
+    }
+
+    /// UIKit lays the bar out again some time after a keyboard frame
+    /// notification or a change of the bar's groups, with no callback this
+    /// view sees; on the measured Simulator it moved within 0.1 s
+    /// (yebisu#276). So the sentinel is read again a few times after either.
+    pub(super) fn schedule_keyboard_split_samples(&self) {
+        const AFTER: [Duration; 4] = [
+            Duration::from_millis(100),
+            Duration::from_millis(300),
+            Duration::from_millis(700),
+            Duration::from_millis(1500),
+        ];
+        let view = self.view.clone();
+        let timers = gpui::BackgroundExecutor::new(self.executor.dispatcher().clone());
+        self.executor
+            .spawn(async move {
+                let mut waited = Duration::ZERO;
+                for at in AFTER {
+                    timers.timer(at - waited).await;
+                    waited = at;
+                    let Some(window) = view.owner() else {
+                        return;
+                    };
+                    window.sample_keyboard_split();
+                }
+            })
+            .detach();
+    }
+
     /// Records the guide's placement from a layout pass and reports.
     fn keyboard_guided(&self, guide: super::KeyboardPlacement) {
         {
@@ -394,6 +461,7 @@ impl Window {
         if relevant {
             self.keyboard_placed(screen.bounds(), end_frame);
         }
+        self.schedule_keyboard_split_samples();
         let screen_matches = notification
             .object()
             .and_then(|object| object.downcast::<UIScreen>().ok())

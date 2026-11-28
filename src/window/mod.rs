@@ -83,9 +83,10 @@ pub(crate) use self::retirement::{retire_text_input_session, text_input_session_
 #[cfg(target_abi = "sim")]
 pub(crate) use self::scene::keyboard_placement_sample;
 pub(crate) use self::scene::{
-    active_window, keyboard_bar_queue, keyboard_placement, scene_activation_changed,
-    scene_connected, scene_disconnected, scene_geometry_changed, set_keyboard_bar,
-    set_native_edit_availability, window_control_insets, window_fills_screen, window_stack,
+    active_window, keyboard_bar_queue, keyboard_bar_split, keyboard_placement,
+    scene_activation_changed, scene_connected, scene_disconnected, scene_geometry_changed,
+    set_keyboard_bar, set_native_edit_availability, window_control_insets, window_fills_screen,
+    window_stack,
 };
 pub(crate) use self::state::Window;
 #[cfg(target_abi = "sim")]

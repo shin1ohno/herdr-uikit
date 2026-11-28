@@ -108,6 +108,9 @@ pub(super) struct State {
     /// the keyboard at the last layout; combined into `keyboard_placement`.
     pub(super) keyboard_notified: super::KeyboardPlacement,
     pub(super) keyboard_guide: super::KeyboardPlacement,
+    /// UIKit drew the shortcuts bar split at the last sentinel sample
+    /// (`keyboard_bar_split`).
+    pub(super) keyboard_split: bool,
     /// What the placement was made from, for Simulator QA
     /// (`keyboard_placement_sample`).
     pub(super) keyboard_sample: KeyboardSample,
@@ -136,14 +139,15 @@ pub(super) struct State {
 }
 
 /// The inputs of `keyboard_placement`: frame notifications seen and taken
-/// as this window's, the last end frame, and the keyboard guide's frame (all
-/// in screen points).
+/// as this window's, the last end frame, and the keyboard guide's frame; and
+/// of `keyboard_bar_split`, the bar sentinel's frame (all in screen points).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct KeyboardSample {
     pub(crate) notifications: u32,
     pub(crate) relevant: u32,
     pub(crate) end: (f64, f64, f64, f64),
     pub(crate) guide: (f64, f64, f64, f64),
+    pub(crate) sentinel: Option<(f64, f64, f64, f64)>,
 }
 
 impl State {
@@ -175,6 +179,7 @@ impl State {
             keyboard_placement: super::KeyboardPlacement::Hidden,
             keyboard_notified: super::KeyboardPlacement::Hidden,
             keyboard_guide: super::KeyboardPlacement::Hidden,
+            keyboard_split: false,
             keyboard_sample: KeyboardSample::default(),
             last_text_state: None,
             modifiers: Modifiers::default(),

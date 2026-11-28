@@ -71,6 +71,11 @@ pub(crate) struct TextInputView {
     pub(super) replacing: Cell<bool>,
     /// The consumer's shortcuts bar, put on every view this one replaces too.
     keyboard_bar: RefCell<crate::keyboard_bar::KeyboardBar>,
+    /// A consumer has set a bar, so the bar carries the sentinel.
+    keyboard_bar_set: Cell<bool>,
+    /// The sentinel's custom view on the current view's bar
+    /// (`keyboard_bar::apply`).
+    keyboard_bar_sentinel: RefCell<Option<Retained<UIView>>>,
     keyboard_bar_presses: Rc<RefCell<crate::keyboard_bar::PressQueue>>,
 }
 
@@ -122,23 +127,53 @@ impl TextInputView {
             view: RefCell::new(GPUITextInputView::new(mtm, target)),
             replacing: Cell::new(false),
             keyboard_bar: RefCell::default(),
+            keyboard_bar_set: Cell::new(false),
+            keyboard_bar_sentinel: RefCell::default(),
             keyboard_bar_presses: Rc::default(),
         }
     }
 
-    /// Shows `bar` on the shortcuts bar unless it is already there.
-    pub(crate) fn set_keyboard_bar(&self, bar: &crate::keyboard_bar::KeyboardBar) {
+    /// Shows `bar` on the shortcuts bar unless it is already there; true if
+    /// the bar changed.
+    pub(crate) fn set_keyboard_bar(&self, bar: &crate::keyboard_bar::KeyboardBar) -> bool {
         if *self.keyboard_bar.borrow() == *bar {
-            return;
+            return false;
         }
         *self.keyboard_bar.borrow_mut() = bar.clone();
+        self.keyboard_bar_set.set(true);
         let view = self.current();
         self.apply_keyboard_bar(&view);
+        true
     }
 
     fn apply_keyboard_bar(&self, view: &GPUITextInputView) {
         let bar = self.keyboard_bar.borrow().clone();
-        super::keyboard_bar::apply(view, &bar, &self.keyboard_bar_presses, view.mtm());
+        let sentinel = super::keyboard_bar::apply(
+            view,
+            &bar,
+            &self.keyboard_bar_presses,
+            self.keyboard_bar_set.get(),
+            view.mtm(),
+        );
+        *self.keyboard_bar_sentinel.borrow_mut() = sentinel;
+    }
+
+    /// Where UIKit drew the shortcuts bar's sentinel, in screen points;
+    /// `None` while it is in no window, as with a floating or hidden
+    /// keyboard, or before a consumer set a bar. The bar lives in UIKit's
+    /// keyboard window, not this view's: converting to the screen's
+    /// coordinate space from there gave a null rectangle on the iPadOS 27.2
+    /// Simulator, so the frame goes through that window's coordinates and
+    /// the window's origin.
+    pub(crate) fn keyboard_bar_sentinel_frame(&self) -> Option<objc2_core_foundation::CGRect> {
+        let sentinel = self.keyboard_bar_sentinel.borrow();
+        let view = sentinel.as_ref()?;
+        let window = view.window()?;
+        let mut rect = view.convertRect_toView(view.bounds(), None);
+        let origin = window.frame().origin;
+        rect.origin.x += origin.x;
+        rect.origin.y += origin.y;
+        Some(rect)
     }
 
     pub(crate) fn keyboard_bar_presses(&self) -> Rc<RefCell<crate::keyboard_bar::PressQueue>> {

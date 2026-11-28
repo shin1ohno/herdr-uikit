@@ -2,12 +2,13 @@
 //! (`UITextInputAssistantItem`'s leading and trailing groups on the window's
 //! text input view), and where the keyboard is.
 //!
-//! UIKit shows the bar on a docked keyboard (and, by Apple's design, on a
-//! split one), but not on a floating keyboard: there only the predictive
-//! row is drawn (`docs/keyboard-bar.md`, measured on the iPadOS 27.2
-//! Simulator). A consumer that needs its keys in every state reads
-//! [`keyboard_placement`] and draws the same keys itself while it is
-//! [`KeyboardPlacement::Floating`].
+//! UIKit shows the bar on a docked keyboard, but not on a floating keyboard:
+//! there only the predictive row is drawn. On a split keyboard it squeezes
+//! every group over the left half until the buttons overlap
+//! (`docs/keyboard-bar.md`, measured on the iPadOS 27.2 Simulator). A
+//! consumer that needs its keys in every state reads [`keyboard_placement`]
+//! and [`keyboard_bar_split`], and draws the same keys itself while the
+//! keyboard is [`KeyboardPlacement::Floating`] or split.
 //!
 //! A press arrives on the window's [`KeyboardBarPresses`] stream as the
 //! item's `id` (or a menu entry's), after UIKit handled the touch. The bar
@@ -100,6 +101,21 @@ pub fn keyboard_placement(window: AnyWindowHandle) -> KeyboardPlacement {
         return KeyboardPlacement::Hidden;
     };
     crate::window::keyboard_placement(window, mtm)
+}
+
+/// Whether UIKit draws `window`'s shortcuts bar split, with every group over
+/// the left half of a split keyboard (yebisu#276). The keyboard's frame
+/// cannot tell: a split keyboard's frame notification stays full width,
+/// docked or undocked. So this reads where UIKit drew the bar's sentinel, the
+/// first trailing item (`docs/keyboard-bar.md`), after each layout pass and
+/// shortly after each keyboard frame notification; a change draws a frame.
+/// False off the main thread, for a closed window, before a consumer set a
+/// bar, and while UIKit draws no bar (floating, hidden).
+pub fn keyboard_bar_split(window: AnyWindowHandle) -> bool {
+    let Some(mtm) = MainThreadMarker::new() else {
+        return false;
+    };
+    crate::window::keyboard_bar_split(window, mtm)
 }
 
 /// Simulator QA: the placement and what it was made from (the frame

@@ -66,7 +66,24 @@ pub(crate) fn run() {
         ],
         trailing: vec![vec![more]],
     };
-    super::apply(&view, &bar, &queue, mtm);
+    let Some(sentinel) = super::apply(&view, &bar, &queue, true, mtm) else {
+        panic!("a consumer's bar carries the sentinel");
+    };
+    assert!(
+        !sentinel.isUserInteractionEnabled(),
+        "the sentinel takes no touches"
+    );
+    // SAFETY: UIView's UIAccessibility category getters return BOOL.
+    let (element, hidden): (bool, bool) = unsafe {
+        (
+            msg_send![&*sentinel, isAccessibilityElement],
+            msg_send![&*sentinel, accessibilityElementsHidden],
+        )
+    };
+    assert!(
+        !element && hidden,
+        "the sentinel is hidden from accessibility"
+    );
 
     let assistant = view.inputAssistantItem();
     let leading = assistant.leadingBarButtonGroups();
@@ -84,10 +101,23 @@ pub(crate) fn run() {
     assert!(ctrl.menu().is_none());
 
     let trailing = assistant.trailingBarButtonGroups();
-    assert_eq!(identifiers(&trailing), [vec!["bar-more"]]);
-    let more = trailing
+    // The sentinel leads the trailing groups, so it moves none of them.
+    assert_eq!(
+        identifiers(&trailing),
+        [vec![super::SENTINEL_IDENTIFIER], vec!["bar-more"]]
+    );
+    let custom = trailing
         .iter()
         .next()
+        .and_then(|group| group.barButtonItems().iter().next())
+        .and_then(|item| item.customView());
+    assert!(
+        custom.is_some_and(|custom| std::ptr::eq(&*custom, &*sentinel)),
+        "the sentinel item shows the returned view"
+    );
+    let more = trailing
+        .iter()
+        .nth(1)
         .and_then(|group| group.barButtonItems().iter().next());
     let Some(more) = more else {
         panic!("no more item");
@@ -102,8 +132,22 @@ pub(crate) fn run() {
         .collect();
     assert_eq!(entries, ["bar-paste"]);
 
-    // An empty bar removes every consumer group.
-    super::apply(&view, &KeyboardBar::default(), &queue, mtm);
+    // An empty bar removes every consumer group and keeps the sentinel, so a
+    // split keyboard is still seen while the consumer shows no keys.
+    let kept = super::apply(&view, &KeyboardBar::default(), &queue, true, mtm);
+    assert!(kept.is_some(), "an emptied bar keeps the sentinel");
+    assert_eq!(
+        view.inputAssistantItem().leadingBarButtonGroups().count(),
+        0
+    );
+    assert_eq!(
+        identifiers(&view.inputAssistantItem().trailingBarButtonGroups()),
+        [vec![super::SENTINEL_IDENTIFIER]]
+    );
+
+    // Before a consumer set a bar (a replacement view), no group at all.
+    let none = super::apply(&view, &KeyboardBar::default(), &queue, false, mtm);
+    assert!(none.is_none(), "no sentinel before a consumer set a bar");
     assert_eq!(
         view.inputAssistantItem().leadingBarButtonGroups().count(),
         0

@@ -5,7 +5,9 @@
 #[path = "../src/window/keyboard_placement.rs"]
 mod keyboard_placement;
 
-use keyboard_placement::{KeyboardPlacement, TOLERANCE, combine, guide_placement, placement};
+use keyboard_placement::{
+    KeyboardPlacement, TOLERANCE, bar_split, combine, guide_placement, placement, split_after,
+};
 
 const SCREEN: (f64, f64, f64, f64) = (0.0, 0.0, 834.0, 1210.0);
 
@@ -154,5 +156,92 @@ fn only_a_hidden_notification_defers_to_the_guide() {
             let expected = if notified == Hidden { guide } else { notified };
             assert_eq!(combine(notified, guide), expected, "{notified:?} {guide:?}");
         }
+    }
+}
+
+/// iPad mini (A20 Pro) in portrait, 756 x 1158 points: where UIKit drew the
+/// bar's sentinel, the first trailing item (yebisu#276 Simulator run 8, the
+/// split forced from a Simulator-only patch).
+const MINI: (f64, f64, f64, f64) = (0.0, 0.0, 756.0, 1158.0);
+
+#[test]
+fn a_sentinel_on_the_right_half_is_not_split() {
+    // Undocked after an animated unsplit, frame (0, 807, 756, 340): with the
+    // consumer's keys (in front of the arrows at x 476), and alone.
+    assert!(!bar_split(MINI, Some((449.0, 808.0, 3.0, 49.0))));
+    assert!(!bar_split(MINI, Some((451.0, 808.0, 1.0, 49.0))));
+    assert!(!bar_split(MINI, Some((727.0, 808.0, 1.0, 49.0))));
+    // iPad Pro 11-inch (M5), which does not split (run 3, the sentinel then
+    // last): far right.
+    assert!(!bar_split(SCREEN, Some((800.0, 871.0, 6.0, 49.0))));
+}
+
+#[test]
+fn a_sentinel_on_the_left_half_is_split() {
+    // Split with animation, frame (0, 811, 756, 336) (Undocked): with the
+    // consumer's keys, and alone.
+    assert!(bar_split(MINI, Some((146.4, 812.0, 0.0, 49.0))));
+    assert!(bar_split(MINI, Some((144.4, 812.0, 3.0, 49.0))));
+    assert!(bar_split(MINI, Some((238.0, 812.0, 1.0, 49.0))));
+}
+
+#[test]
+fn a_sentinel_on_the_middle_is_not_split() {
+    // A keyboard shrinking into a floating one (run 8, 0.7 s).
+    assert!(!bar_split(MINI, Some((377.13, 711.0, 1.0, 49.0))));
+    assert!(!bar_split(MINI, Some((377.0, 711.0, 1.0, 49.0))));
+    assert!(bar_split(MINI, Some((376.9, 711.0, 1.0, 49.0))));
+}
+
+#[test]
+fn no_drawn_sentinel_is_not_split() {
+    // Floating, hidden, or no bar set: UIKit draws no bar.
+    assert!(!bar_split(MINI, None));
+    // A keyboard sliding off the bottom edge.
+    assert!(!bar_split(MINI, Some((238.0, 1158.0, 1.0, 49.0))));
+    // A view not laid out yet, or not finite.
+    assert!(!bar_split(MINI, Some((0.0, 0.0, 0.0, 0.0))));
+    assert!(!bar_split(MINI, Some((f64::NAN, 812.0, 1.0, 49.0))));
+    assert!(!bar_split(
+        MINI,
+        Some((f64::INFINITY, f64::INFINITY, 0.0, 0.0))
+    ));
+    // Off the left edge altogether.
+    assert!(!bar_split(MINI, Some((-20.0, 812.0, 1.0, 49.0))));
+}
+
+#[test]
+fn a_drawn_sentinel_decides_the_split_unless_floating() {
+    use KeyboardPlacement::*;
+    let left = Some((238.0, 812.0, 1.0, 49.0));
+    let right = Some((727.0, 808.0, 1.0, 49.0));
+    for was in [false, true] {
+        // Hidden too: UIKit posts off-screen frames during a split.
+        for placement in [Hidden, Docked, Undocked] {
+            assert!(
+                split_after(was, MINI, left, placement),
+                "{was} {placement:?}"
+            );
+            assert!(
+                !split_after(was, MINI, right, placement),
+                "{was} {placement:?}"
+            );
+        }
+        assert!(!split_after(was, MINI, left, Floating), "{was}");
+    }
+}
+
+#[test]
+fn an_undrawn_sentinel_keeps_the_split_while_the_keyboard_spans_the_screen() {
+    use KeyboardPlacement::*;
+    // The consumer replaced the bar's groups: UIKit draws the new sentinel a
+    // moment later.
+    for placement in [Docked, Undocked] {
+        assert!(split_after(true, MINI, None, placement));
+        assert!(!split_after(false, MINI, None, placement));
+    }
+    // A floating or hidden keyboard draws no bar.
+    for placement in [Floating, Hidden] {
+        assert!(!split_after(true, MINI, None, placement));
     }
 }
