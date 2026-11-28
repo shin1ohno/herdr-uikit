@@ -108,6 +108,9 @@ pub(super) struct State {
     /// the keyboard at the last layout; combined into `keyboard_placement`.
     pub(super) keyboard_notified: super::KeyboardPlacement,
     pub(super) keyboard_guide: super::KeyboardPlacement,
+    /// The accessory row sat alone on the screen's bottom edge at the last
+    /// layout (`keyboard_inset::row_alone_at_bottom`): no docked keyboard.
+    pub(super) keyboard_row_at_bottom: bool,
     /// What the placement was made from, for Simulator QA
     /// (`keyboard_placement_sample`).
     pub(super) keyboard_sample: KeyboardSample,
@@ -136,14 +139,16 @@ pub(super) struct State {
 }
 
 /// The inputs of `keyboard_placement`: frame notifications seen and taken
-/// as this window's, the last end frame, and the keyboard guide's frame (all
-/// in screen points).
+/// as this window's, the last end frame, the keyboard guide's frame and the
+/// accessory row's (all in screen points).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct KeyboardSample {
     pub(crate) notifications: u32,
     pub(crate) relevant: u32,
     pub(crate) end: (f64, f64, f64, f64),
     pub(crate) guide: (f64, f64, f64, f64),
+    /// The accessory row's frame at the last layout that found it shown.
+    pub(crate) accessory: (f64, f64, f64, f64),
 }
 
 impl State {
@@ -175,6 +180,7 @@ impl State {
             keyboard_placement: super::KeyboardPlacement::Hidden,
             keyboard_notified: super::KeyboardPlacement::Hidden,
             keyboard_guide: super::KeyboardPlacement::Hidden,
+            keyboard_row_at_bottom: false,
             keyboard_sample: KeyboardSample::default(),
             last_text_state: None,
             modifiers: Modifiers::default(),

@@ -35,6 +35,7 @@ mod frame;
 pub(crate) mod input_diagnostics;
 mod input_target;
 mod keyboard;
+mod keyboard_accessory;
 pub(crate) mod keyboard_bar;
 mod keyboard_inset;
 mod keyboard_placement;
@@ -81,13 +82,14 @@ pub(crate) use self::native_retirement_request::{
 };
 pub(crate) use self::pointer::set_cursor_style;
 pub(crate) use self::retirement::{retire_text_input_session, text_input_session_state};
-#[cfg(target_abi = "sim")]
-pub(crate) use self::scene::keyboard_placement_sample;
 pub(crate) use self::scene::{
     active_window, keyboard_bar_queue, keyboard_placement, scene_activation_changed,
-    scene_connected, scene_disconnected, scene_geometry_changed, set_keyboard_bar,
-    set_native_edit_availability, window_control_insets, window_fills_screen, window_stack,
+    scene_connected, scene_disconnected, scene_geometry_changed, set_keyboard_accessory,
+    set_keyboard_bar, set_native_edit_availability, window_control_insets, window_fills_screen,
+    window_stack,
 };
+#[cfg(target_abi = "sim")]
+pub(crate) use self::scene::{keyboard_placement_sample, text_input_language};
 pub(crate) use self::state::Window;
 #[cfg(target_abi = "sim")]
 pub use self::text_input::{InputModeIndicatorState, input_mode_indicator_state};

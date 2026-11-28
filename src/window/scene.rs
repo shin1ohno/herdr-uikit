@@ -267,6 +267,22 @@ pub(crate) fn set_keyboard_bar(
     true
 }
 
+/// Shows `row` in `handle`'s accessory row (`crate::keyboard_bar`).
+pub(crate) fn set_keyboard_accessory(
+    handle: AnyWindowHandle,
+    row: &crate::keyboard_bar::KeyboardAccessory,
+    _mtm: MainThreadMarker,
+) -> bool {
+    let Some(window) = menu_window(handle) else {
+        return false;
+    };
+    if window.state.borrow().closed {
+        return false;
+    }
+    window.text_input.set_keyboard_accessory(row);
+    true
+}
+
 /// `handle`'s shortcuts bar press queue, `None` for a closed window.
 pub(crate) fn keyboard_bar_queue(
     handle: AnyWindowHandle,
@@ -285,12 +301,24 @@ pub(crate) fn keyboard_placement_sample(handle: AnyWindowHandle) -> Option<Strin
     let window = menu_window(handle)?;
     let state = window.state.borrow();
     Some(format!(
-        "{:?} notified={:?} guide={:?} {:?}",
+        "{:?} notified={:?} guide={:?} {:?} accessory={} inset={}",
         state.keyboard_placement,
         state.keyboard_notified,
         state.keyboard_guide,
-        state.keyboard_sample
+        state.keyboard_sample,
+        window.text_input.accessory_sample(),
+        f32::from(state.insets.ime.bottom),
     ))
+}
+
+/// Simulator QA: `handle`'s text input mode language (`text_input_language`).
+#[cfg(target_abi = "sim")]
+pub(crate) fn text_input_language(handle: AnyWindowHandle) -> Option<String> {
+    let window = menu_window(handle)?;
+    if window.state.borrow().closed {
+        return None;
+    }
+    window.text_input.input_language()
 }
 
 /// Where `handle`'s software keyboard is (`keyboard_placement`).

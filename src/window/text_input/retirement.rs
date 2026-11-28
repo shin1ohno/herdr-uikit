@@ -71,9 +71,11 @@ impl TextInputView {
             UIViewAutoresizing::FlexibleWidth | UIViewAutoresizing::FlexibleHeight,
         );
         *self.view.borrow_mut() = view.clone();
-        // The shortcuts bar belongs to the responder, so the successor gets
-        // the consumer's bar before it can become first responder.
+        // The shortcuts bar and the accessory row belong to the responder,
+        // so the successor gets the consumer's before it can become first
+        // responder (which reads the row; no reload is needed).
         self.apply_keyboard_bar(&view);
+        let _ = self.apply_keyboard_accessory(&view);
         if old_was_responder {
             // Old observer callbacks have a dead target. Record the planned
             // transfer on the live target before UIKit can post WillHide.

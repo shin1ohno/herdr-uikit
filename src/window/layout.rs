@@ -242,6 +242,7 @@ impl Window {
             }
             _ => keyboard_geometry::bottom_inset(self.view.bounds(), keyboard) as f32,
         };
+        let target = target.max(self.accessory_inset(target));
         self.keyboard_guided(placement);
         let insets = {
             let mut state = self.state.borrow_mut();
@@ -263,6 +264,38 @@ impl Window {
         );
         call(&self.callbacks.insets_changed, |callback| callback(insets));
         self.force_frame();
+    }
+
+    /// The bottom inset the consumer's accessory row gives this view while
+    /// UIKit shows it, with the keyboard alone giving `keyboard_inset`
+    /// (`keyboard_inset::accessory_inset`); 0 without a row or a screen.
+    fn accessory_inset(&self, keyboard_inset: f32) -> f32 {
+        let ui_window = self.state.borrow().ui_window.clone();
+        let (Some(row), Some(ui_window)) = (self.text_input.accessory_screen_frame(), ui_window)
+        else {
+            self.state.borrow_mut().keyboard_row_at_bottom = false;
+            return 0.0;
+        };
+        let screen = ui_window.screen();
+        let view = self
+            .view
+            .convertRect_toCoordinateSpace(self.view.bounds(), &screen.coordinateSpace());
+        let inset = super::keyboard_inset::accessory_inset(
+            keyboard_geometry::tuple(screen.bounds()),
+            keyboard_geometry::tuple(view),
+            row,
+            f64::from(keyboard_inset),
+        );
+        let at_bottom = super::keyboard_inset::row_alone_at_bottom(
+            keyboard_geometry::tuple(screen.bounds()),
+            row,
+        );
+        {
+            let mut state = self.state.borrow_mut();
+            state.keyboard_sample.accessory = row;
+            state.keyboard_row_at_bottom = at_bottom;
+        }
+        inset as f32
     }
 
     /// Where the guide's `keyboard` (in this view's coordinates) is on the
@@ -306,7 +339,18 @@ impl Window {
                 rect.size.height,
             )
         };
-        let notified = super::keyboard_placement::placement(tuple(screen), tuple(keyboard));
+        // The accessory row alone (a floating keyboard's) leaves the
+        // placement to the guide.
+        let row_height = self.text_input.accessory_height();
+        let notified = if super::keyboard_placement::accessory_alone(
+            tuple(screen),
+            tuple(keyboard),
+            row_height,
+        ) {
+            super::KeyboardPlacement::Hidden
+        } else {
+            super::keyboard_placement::placement(tuple(screen), tuple(keyboard))
+        };
         {
             let mut state = self.state.borrow_mut();
             if state.closed {
@@ -352,6 +396,14 @@ impl Window {
             }
             let (notified, guide) = (state.keyboard_notified, state.keyboard_guide);
             let placement = super::keyboard_placement::combine(notified, guide);
+            // The accessory row alone on the screen's bottom edge: the
+            // keyboard floats, though the last notification was a docked one.
+            let placement =
+                if state.keyboard_row_at_bottom && placement == super::KeyboardPlacement::Docked {
+                    super::KeyboardPlacement::Floating
+                } else {
+                    placement
+                };
             let changed = std::mem::replace(&mut state.keyboard_placement, placement) != placement;
             (placement, notified, guide, changed)
         };

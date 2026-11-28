@@ -56,6 +56,7 @@ use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, rc::Retained, runtim
 use objc2_ui_kit::UIView;
 
 pub(crate) use self::keymap::{named_key_char, us_shifted};
+use super::keyboard_accessory::HerdrKeyboardRow;
 use super::{input_target::InputTarget, keyboard::ResignReason};
 use crate::menu::Shortcut;
 #[cfg(target_abi = "sim")]
@@ -69,8 +70,15 @@ pub(super) use view_class::GPUITextInputView as NativeEndpoint;
 pub(crate) struct TextInputView {
     view: RefCell<Retained<GPUITextInputView>>,
     pub(super) replacing: Cell<bool>,
-    /// The consumer's shortcuts bar, put on every view this one replaces too.
-    keyboard_bar: RefCell<crate::keyboard_bar::KeyboardBar>,
+    /// The consumer's shortcuts bar, put on every view this one replaces too;
+    /// `None` until the consumer sets one, so a first empty bar is applied
+    /// and removes the system's items as well.
+    keyboard_bar: RefCell<Option<crate::keyboard_bar::KeyboardBar>>,
+    /// The consumer's accessory row, and the view that shows it (one for the
+    /// window's life, made with the first non-empty row); both go on every
+    /// view this one replaces too.
+    keyboard_accessory: RefCell<crate::keyboard_bar::KeyboardAccessory>,
+    accessory_row: RefCell<Option<Retained<HerdrKeyboardRow>>>,
     keyboard_bar_presses: Rc<RefCell<crate::keyboard_bar::PressQueue>>,
 }
 
@@ -121,23 +129,117 @@ impl TextInputView {
         Self {
             view: RefCell::new(GPUITextInputView::new(mtm, target)),
             replacing: Cell::new(false),
-            keyboard_bar: RefCell::default(),
+            keyboard_bar: RefCell::new(None),
+            keyboard_accessory: RefCell::default(),
+            accessory_row: RefCell::new(None),
             keyboard_bar_presses: Rc::default(),
         }
     }
 
-    /// Shows `bar` on the shortcuts bar unless it is already there.
+    /// Shows `bar` on the shortcuts bar unless it is already there. A bar
+    /// that only draws other keys selected updates the buttons in place.
     pub(crate) fn set_keyboard_bar(&self, bar: &crate::keyboard_bar::KeyboardBar) {
-        if *self.keyboard_bar.borrow() == *bar {
-            return;
-        }
-        *self.keyboard_bar.borrow_mut() = bar.clone();
+        let in_place = {
+            let applied = self.keyboard_bar.borrow();
+            match applied.as_ref() {
+                Some(applied) if *applied == *bar => return,
+                Some(applied) => super::keyboard_bar::same_shape(applied, bar),
+                None => false,
+            }
+        };
+        *self.keyboard_bar.borrow_mut() = Some(bar.clone());
         let view = self.current();
-        self.apply_keyboard_bar(&view);
+        if in_place {
+            super::keyboard_bar::update_selected(&view, bar);
+        } else {
+            self.apply_keyboard_bar(&view);
+        }
     }
 
+    /// Shows `row` in the accessory row unless it is already there. The
+    /// first non-empty row installs the row view, which reloads the input
+    /// views on the next flush that finds no text being composed; after
+    /// that the view stays installed, and an empty row only collapses it to
+    /// zero height (`HerdrKeyboardRow::set_collapsed`), with no reload.
+    pub(crate) fn set_keyboard_accessory(&self, row: &crate::keyboard_bar::KeyboardAccessory) {
+        if *self.keyboard_accessory.borrow() == *row {
+            return;
+        }
+        *self.keyboard_accessory.borrow_mut() = row.clone();
+        let view = self.current();
+        if !row.is_empty() {
+            let row_view = self
+                .accessory_row
+                .borrow_mut()
+                .get_or_insert_with(|| HerdrKeyboardRow::new(view.mtm()))
+                .clone();
+            row_view.update(row, &self.keyboard_bar_presses);
+            row_view.set_collapsed(false);
+        } else if let Some(row_view) = self.accessory_row.borrow().as_ref() {
+            row_view.update(row, &self.keyboard_bar_presses);
+            row_view.set_collapsed(true);
+        }
+        if self.apply_keyboard_accessory(&view) {
+            view.accessory_changed();
+        }
+    }
+
+    /// Puts the row view, once made, on `view`; whether that installed it.
+    fn apply_keyboard_accessory(&self, view: &GPUITextInputView) -> bool {
+        let row = self
+            .accessory_row
+            .borrow()
+            .as_ref()
+            .map(|row| Retained::into_super(Retained::into_super(row.clone())));
+        let mut slot = view.ivars().accessory.borrow_mut();
+        let changed = slot.is_some() != row.is_some();
+        *slot = row;
+        changed
+    }
+
+    /// The accessory row's height in points, 0 without a row or collapsed.
+    pub(super) fn accessory_height(&self) -> f64 {
+        if self.keyboard_accessory.borrow().is_empty() {
+            0.0
+        } else {
+            super::keyboard_accessory::ROW_HEIGHT
+        }
+    }
+
+    /// The accessory row's frame in screen points while UIKit shows it.
+    pub(super) fn accessory_screen_frame(&self) -> Option<(f64, f64, f64, f64)> {
+        if self.keyboard_accessory.borrow().is_empty() {
+            return None;
+        }
+        let row = self.accessory_row.borrow();
+        super::keyboard_accessory::screen_frame(row.as_ref()?)
+    }
+
+    /// Simulator QA: the primary language of the current view's input mode.
+    #[cfg(target_abi = "sim")]
+    pub(super) fn input_language(&self) -> Option<String> {
+        self.current().input_language()
+    }
+
+    /// Simulator QA: the accessory row's keys and frame, `collapsed`, or
+    /// `none` before the first row.
+    #[cfg(target_abi = "sim")]
+    pub(super) fn accessory_sample(&self) -> String {
+        match self.accessory_row.borrow().as_ref() {
+            Some(row) if row.is_collapsed() => {
+                format!("collapsed {}", super::keyboard_accessory::qa_sample(row))
+            }
+            Some(row) => super::keyboard_accessory::qa_sample(row),
+            None => "none".into(),
+        }
+    }
+
+    /// Puts the consumer's bar on `view`; a view gets the system's items
+    /// until the consumer sets a bar.
     fn apply_keyboard_bar(&self, view: &GPUITextInputView) {
-        let bar = self.keyboard_bar.borrow().clone();
+        let Some(bar) = self.keyboard_bar.borrow().clone() else {
+            return;
+        };
         super::keyboard_bar::apply(view, &bar, &self.keyboard_bar_presses, view.mtm());
     }
 

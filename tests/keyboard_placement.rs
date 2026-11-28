@@ -5,7 +5,9 @@
 #[path = "../src/window/keyboard_placement.rs"]
 mod keyboard_placement;
 
-use keyboard_placement::{KeyboardPlacement, TOLERANCE, combine, guide_placement, placement};
+use keyboard_placement::{
+    KeyboardPlacement, TOLERANCE, accessory_alone, combine, guide_placement, placement,
+};
 
 const SCREEN: (f64, f64, f64, f64) = (0.0, 0.0, 834.0, 1210.0);
 
@@ -155,4 +157,35 @@ fn only_a_hidden_notification_defers_to_the_guide() {
             assert_eq!(combine(notified, guide), expected, "{notified:?} {guide:?}");
         }
     }
+}
+
+/// yebisu#276, iPad mini (A20 Pro) portrait, 756 x 1158 points: with the
+/// 48 pt accessory row, a floating keyboard's notification ends at the row
+/// alone, (0, 1110, 756, 48), while the guide follows the floating keyboard;
+/// a docked keyboard's frame holds the row and the keys.
+#[test]
+fn the_accessory_row_alone_leaves_the_placement_to_the_guide() {
+    const MINI: (f64, f64, f64, f64) = (0.0, 0.0, 756.0, 1158.0);
+    const ROW: f64 = 48.0;
+    let row_alone = (0.0, 1110.0, 756.0, 48.0);
+    let docked_with_row = (0.0, 770.0, 756.0, 388.0);
+    let floating_guide = (210.0, 657.0, 334.0, 337.5);
+    assert!(accessory_alone(MINI, row_alone, ROW));
+    assert!(!accessory_alone(MINI, docked_with_row, ROW));
+    // Without a row the same frame is a docked bar, as before.
+    assert!(!accessory_alone(MINI, row_alone, 0.0));
+    // A frame off the bottom edge or narrower is not the row alone.
+    assert!(!accessory_alone(MINI, (0.0, 1000.0, 756.0, 48.0), ROW));
+    assert!(!accessory_alone(MINI, (100.0, 1110.0, 556.0, 48.0), ROW));
+    // The window takes the row alone as Hidden, so the guide decides.
+    let guide = guide_placement(MINI, floating_guide, 20.0);
+    assert_eq!(guide, KeyboardPlacement::Floating);
+    assert_eq!(
+        combine(KeyboardPlacement::Hidden, guide),
+        KeyboardPlacement::Floating
+    );
+    assert_eq!(
+        combine(placement(MINI, docked_with_row), guide),
+        KeyboardPlacement::Docked
+    );
 }
