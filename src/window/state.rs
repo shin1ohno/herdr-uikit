@@ -108,6 +108,9 @@ pub(super) struct State {
     /// the keyboard at the last layout; combined into `keyboard_placement`.
     pub(super) keyboard_notified: super::KeyboardPlacement,
     pub(super) keyboard_guide: super::KeyboardPlacement,
+    /// The accessory row sat alone on the screen's bottom edge at the last
+    /// layout (`keyboard_inset::row_alone_at_bottom`): no docked keyboard.
+    pub(super) keyboard_row_at_bottom: bool,
     /// What the placement was made from, for Simulator QA
     /// (`keyboard_placement_sample`).
     pub(super) keyboard_sample: KeyboardSample,
@@ -177,6 +180,7 @@ impl State {
             keyboard_placement: super::KeyboardPlacement::Hidden,
             keyboard_notified: super::KeyboardPlacement::Hidden,
             keyboard_guide: super::KeyboardPlacement::Hidden,
+            keyboard_row_at_bottom: false,
             keyboard_sample: KeyboardSample::default(),
             last_text_state: None,
             modifiers: Modifiers::default(),

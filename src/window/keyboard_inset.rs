@@ -115,3 +115,23 @@ pub fn accessory_inset(
     }
     near_bottom_inset(view, row)
 }
+
+/// Whether the accessory `row` (its frame on the `screen`, both in screen
+/// points) sits full width on the screen's bottom edge. UIKit puts it there
+/// only below a floating keyboard; above a docked or split keyboard it is
+/// that keyboard's height higher. So the keyboard is not docked then,
+/// whatever the last frame notification said: on the iPad Pro 13-inch (M5)
+/// Simulator a pinch to floating posted no notification the window took, and
+/// the docked keyboard's last one stayed (yebisu#276 run r19).
+pub fn row_alone_at_bottom(screen: (f64, f64, f64, f64), row: (f64, f64, f64, f64)) -> bool {
+    let (sx, sy, sw, sh) = screen;
+    let (rx, ry, rw, rh) = row;
+    [sx, sy, sw, sh, rx, ry, rw, rh]
+        .iter()
+        .all(|v| v.is_finite())
+        && rw > 0.0
+        && rh > 0.0
+        && rx <= sx + TOLERANCE
+        && rx + rw >= sx + sw - TOLERANCE
+        && (ry + rh - (sy + sh)).abs() <= TOLERANCE
+}

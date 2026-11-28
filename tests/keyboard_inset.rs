@@ -12,7 +12,7 @@ mod keyboard_inset;
 
 use keyboard_inset::{
     NEAR_BOTTOM_GAP, OFF_SCREEN_HOLD_SECS, ROW_ON_KEYBOARD_GAP, accessory_inset, holds_inset,
-    near_bottom, near_bottom_inset,
+    near_bottom, near_bottom_inset, row_alone_at_bottom,
 };
 use keyboard_placement::{KeyboardPlacement, placement};
 
@@ -206,4 +206,22 @@ fn a_row_inset_is_the_views_own() {
     );
     let tall_row = (0.0, 1010.0, 756.0, 148.0);
     assert_eq!(accessory_inset(SCREEN, view, tall_row, SAFE_BOTTOM), 48.0);
+}
+
+/// The row alone on the screen's bottom edge means a floating keyboard: on
+/// the iPad Pro 13-inch (M5) Simulator, 1032 x 1376, the row sat at
+/// (0, 1328, 1032, 48) while the last frame notification was the docked
+/// keyboard's (yebisu#276 run r19). Above a docked, split or moved-up
+/// keyboard it is not on the edge.
+#[test]
+fn only_a_row_on_the_bottom_edge_is_alone() {
+    let pro13 = (0.0, 0.0, 1032.0, 1376.0);
+    assert!(row_alone_at_bottom(pro13, (0.0, 1328.0, 1032.0, 48.0)));
+    assert!(row_alone_at_bottom(SCREEN, ROW_FLOATING));
+    for row in [ROW_ON_DOCKED, ROW_ON_SPLIT, ROW_ON_MOVED_UP] {
+        assert!(!row_alone_at_bottom(SCREEN, row), "{row:?}");
+    }
+    assert!(!row_alone_at_bottom(SCREEN, (100.0, 1110.0, 556.0, 48.0)));
+    assert!(!row_alone_at_bottom(SCREEN, (0.0, 1158.0, 756.0, 0.0)));
+    assert!(!row_alone_at_bottom(SCREEN, (0.0, f64::NAN, 756.0, 48.0)));
 }

@@ -139,6 +139,14 @@ run r05).
   an inset. The inset runs from the row's top edge, so the window's last lines
   and status bar end above the row. A row above a keyboard moved up takes
   none, as that keyboard does.
+- A row alone on the screen's bottom edge also says the keyboard floats
+  (`keyboard_inset::row_alone_at_bottom`): the placement is then not
+  `Docked`, whatever the last notification said. On the iPad Pro 13-inch
+  (M5) Simulator a pinch to floating posted no frame notification the
+  window took, so the docked keyboard's last one stayed, while the guide
+  already said `Floating` (yebisu#276 run r19). The guide alone cannot
+  decide there: just after a redock it still shows the float for a layout
+  pass, and the notification's real frame must win (`combine`).
 
 ## Tests
 

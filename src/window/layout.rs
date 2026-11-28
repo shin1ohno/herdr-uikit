@@ -270,11 +270,10 @@ impl Window {
     /// UIKit shows it, with the keyboard alone giving `keyboard_inset`
     /// (`keyboard_inset::accessory_inset`); 0 without a row or a screen.
     fn accessory_inset(&self, keyboard_inset: f32) -> f32 {
-        let Some(row) = self.text_input.accessory_screen_frame() else {
-            return 0.0;
-        };
         let ui_window = self.state.borrow().ui_window.clone();
-        let Some(ui_window) = ui_window else {
+        let (Some(row), Some(ui_window)) = (self.text_input.accessory_screen_frame(), ui_window)
+        else {
+            self.state.borrow_mut().keyboard_row_at_bottom = false;
             return 0.0;
         };
         let screen = ui_window.screen();
@@ -287,7 +286,15 @@ impl Window {
             row,
             f64::from(keyboard_inset),
         );
-        self.state.borrow_mut().keyboard_sample.accessory = row;
+        let at_bottom = super::keyboard_inset::row_alone_at_bottom(
+            keyboard_geometry::tuple(screen.bounds()),
+            row,
+        );
+        {
+            let mut state = self.state.borrow_mut();
+            state.keyboard_sample.accessory = row;
+            state.keyboard_row_at_bottom = at_bottom;
+        }
         inset as f32
     }
 
@@ -389,6 +396,14 @@ impl Window {
             }
             let (notified, guide) = (state.keyboard_notified, state.keyboard_guide);
             let placement = super::keyboard_placement::combine(notified, guide);
+            // The accessory row alone on the screen's bottom edge: the
+            // keyboard floats, though the last notification was a docked one.
+            let placement =
+                if state.keyboard_row_at_bottom && placement == super::KeyboardPlacement::Docked {
+                    super::KeyboardPlacement::Floating
+                } else {
+                    placement
+                };
             let changed = std::mem::replace(&mut state.keyboard_placement, placement) != placement;
             (placement, notified, guide, changed)
         };
